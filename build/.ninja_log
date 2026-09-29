@@ -1,0 +1,17 @@
+# ninja log v7
+39873	84434	8123750582189400	CMakeFiles/Cuebase.dir/src/main.cpp.obj	ab983e529c630d29
+255	4693	8123758331468770	Cuebase.exe	9681c7197dabdfef
+500	39289	8123750553465137	Cuebase_autogen/timestamp	91186419cd409b10
+500	39289	8123750553465137	Cuebase_autogen/mocs_compilation.cpp	91186419cd409b10
+500	39289	8123750553465137	C:/Users/JusticeNick/.dev/C++/Cuebase/build/Cuebase_autogen/timestamp	91186419cd409b10
+500	39289	8123750553465137	C:/Users/JusticeNick/.dev/C++/Cuebase/build/Cuebase_autogen/mocs_compilation.cpp	91186419cd409b10
+39606	88237	8123750574189575	CMakeFiles/Cuebase.dir/Cuebase_autogen/mocs_compilation.cpp.obj	c337fdd1a5ce01b0
+40812	129750	8123750585845564	CMakeFiles/Cuebase.dir/src/MainWindow.cpp.obj	8c1e7c299010b349
+84690	164231	8123751026071622	CMakeFiles/Cuebase.dir/src/HelpCenter.cpp.obj	2c61fe371ea2ddbc
+88469	165814	8123751060962224	CMakeFiles/Cuebase.dir/src/Data.cpp.obj	df277d6309363688
+129778	174697	8123751475895088	CMakeFiles/Cuebase.dir/src/Playout.cpp.obj	e785757a0490dd8f
+165902	205089	8123751835316061	CMakeFiles/Cuebase.dir/src/TimelineWidget.cpp.obj	583b0eba06898b0f
+164288	205844	8123751819167108	CMakeFiles/Cuebase.dir/src/ViewportWidget.cpp.obj	eeff36087233cb27
+174815	217540	8123751924413919	CMakeFiles/Cuebase.dir/src/QueueStrip.cpp.obj	ec4fba789a2e2c55
+205877	238728	8123752235042725	CMakeFiles/Cuebase.dir/src/ControlPanel.cpp.obj	1bfaab7b254f9815
+205150	249318	8123752227786360	CMakeFiles/Cuebase.dir/src/EditorPanel.cpp.obj	d2a644eef6928f08

@@ -1,0 +1,5 @@
+C:/Users/JusticeNick/.dev/C++/Cuebase/build/CMakeFiles/Cuebase.dir
+C:/Users/JusticeNick/.dev/C++/Cuebase/build/CMakeFiles/edit_cache.dir
+C:/Users/JusticeNick/.dev/C++/Cuebase/build/CMakeFiles/rebuild_cache.dir
+C:/Users/JusticeNick/.dev/C++/Cuebase/build/CMakeFiles/Cuebase_autogen_timestamp_deps.dir
+C:/Users/JusticeNick/.dev/C++/Cuebase/build/CMakeFiles/Cuebase_autogen.dir
