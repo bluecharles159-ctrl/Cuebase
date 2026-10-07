@@ -4,6 +4,7 @@
 
 class Library;
 class Playout;
+class NetworkOutput;
 class QCheckBox;
 class QLabel;
 class QPushButton;
@@ -13,7 +14,7 @@ class QVBoxLayout;
 class ControlPanel : public QFrame {
     Q_OBJECT
 public:
-    ControlPanel(Library *lib, Playout *play, QWidget *parent = nullptr);
+    ControlPanel(Library *lib, Playout *play, QWidget *parent = nullptr, NetworkOutput *output = nullptr);
 
 private:
     void refresh();

@@ -1,9 +1,11 @@
 #include <QApplication>
+#include "UiControls.h"
 
 #include "MainWindow.h"
 
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
+    installUiBehavior(&app);
     QApplication::setApplicationName("Cuebase");
     QApplication::setOrganizationName("Cuebase");
     QApplication::setApplicationVersion(QStringLiteral(CUEBASE_VERSION));

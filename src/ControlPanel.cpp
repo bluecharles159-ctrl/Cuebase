@@ -2,7 +2,10 @@
 
 #include <QAudioOutput>
 #include <QCheckBox>
+#include <QFrame>
+#include <QHBoxLayout>
 #include <QLabel>
+#include <QScrollArea>
 #include <QPushButton>
 #include <QSlider>
 #include <QStyle>
@@ -11,6 +14,7 @@
 
 #include "Data.h"
 #include "Playout.h"
+#include "NetworkOutputPanel.h"
 
 namespace {
 QLabel *caption(const QString &t) {
@@ -20,12 +24,21 @@ QLabel *caption(const QString &t) {
 }
 } // namespace
 
-ControlPanel::ControlPanel(Library *lib, Playout *play, QWidget *parent)
+ControlPanel::ControlPanel(Library *lib, Playout *play, QWidget *parent, NetworkOutput *output)
     : QFrame(parent), m_lib(lib), m_play(play) {
     setObjectName("panel");
     setMinimumWidth(220);
-    auto *l = new QVBoxLayout(this);
-    l->setContentsMargins(14, 12, 14, 12);
+    auto *outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0, 0, 0, 0);
+    auto *sa = new QScrollArea;
+    sa->setWidgetResizable(true);
+    sa->setFrameShape(QFrame::NoFrame);
+    sa->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    auto *inner = new QWidget;
+    sa->setWidget(inner);
+    outer->addWidget(sa);
+    auto *l = new QVBoxLayout(inner);
+    l->setContentsMargins(14, 12, 10, 12);
     l->setSpacing(8);
 
     l->addWidget(caption("CONTROL"));
@@ -69,7 +82,57 @@ ControlPanel::ControlPanel(Library *lib, Playout *play, QWidget *parent)
     auto *mute = new QCheckBox("Mute");
     l->addWidget(volume);
     l->addWidget(mute);
-    play->audio()->setVolume(0.8);
+    play->setVolume(0.8);
+    if(output)l->addWidget(new NetworkOutputPanel(output,lib,play));
+
+    // ---- one set of controls per timeline: the main one is always shown and broadcast; the others can be
+    // muted, turned down or hidden while they keep running
+    l->addSpacing(6);
+    l->addWidget(caption("TIMELINES"));
+    for (int k = 0; k < 4; ++k) {
+        auto *box = new QFrame;
+        box->setStyleSheet("QFrame#tlRow { background:#0f172a; border:1px solid #243044; border-radius:8px; }");
+        box->setObjectName("tlRow");
+        auto *bl = new QVBoxLayout(box);
+        bl->setContentsMargins(10, 6, 10, 8);
+        bl->setSpacing(4);
+        auto *top = new QHBoxLayout;
+        auto *name = new QLabel(k == 0 ? "Main  ·  on air" : QString("Timeline %1").arg(k + 1));
+        name->setStyleSheet(k == 0 ? "font-weight:700;" : "font-weight:600; color:#cbd5e1;");
+        auto *mute = new QCheckBox("Mute");
+        mute->setChecked(lib->layers[k].muted);
+        top->addWidget(name);
+        top->addStretch();
+        top->addWidget(mute);
+        QCheckBox *show = nullptr;
+        if (k > 0) {
+            show = new QCheckBox("Show");
+            show->setToolTip("Show this timeline's screen elements in the viewport");
+            show->setChecked(lib->layers[k].visible);
+            top->addWidget(show);
+        }
+        auto *vol = new QSlider(Qt::Horizontal);
+        vol->setRange(0, 100);
+        vol->setValue(lib->layers[k].volume);
+        bl->addLayout(top);
+        bl->addWidget(vol);
+        l->addWidget(box);
+
+        connect(mute, &QCheckBox::toggled, this, [lib, k](bool on) {
+            lib->layers[k].muted = on;
+            lib->commitLayers();
+        });
+        if (show)
+            connect(show, &QCheckBox::toggled, this, [lib, k](bool on) {
+                lib->layers[k].visible = on;
+                lib->commitLayers();
+            });
+        connect(vol, &QSlider::valueChanged, this, [lib, k](int v) {
+            lib->layers[k].volume = v;
+            emit lib->layersChanged();  // applied live; saved when the slider is let go
+        });
+        connect(vol, &QSlider::sliderReleased, this, [lib] { lib->save(); });
+    }
 
     l->addSpacing(6);
     l->addWidget(caption("ON SCREEN"));
@@ -82,13 +145,13 @@ ControlPanel::ControlPanel(Library *lib, Playout *play, QWidget *parent)
 
     connect(m_start, &QPushButton::clicked, this, [this] {
         if (m_play->isLive()) m_play->stop();
-        else m_play->start(0);
+        else m_play->startFromCue();  // from the playhead when it was dragged, else the beginning
     });
     connect(m_pause, &QPushButton::clicked, m_play, &Playout::togglePause);
     connect(m_skip, &QPushButton::clicked, m_play, &Playout::skip);
     connect(m_break, &QPushButton::clicked, m_play, &Playout::breakNow);
-    connect(volume, &QSlider::valueChanged, this, [play](int v) { play->audio()->setVolume(v / 100.0); });
-    connect(mute, &QCheckBox::toggled, this, [play](bool m) { play->audio()->setMuted(m); });
+    connect(volume, &QSlider::valueChanged, this, [play](int v) { play->setVolume(v / 100.0); });
+    connect(mute, &QCheckBox::toggled, this, [play](bool m) { play->setMuted(m); });
 
     connect(play, &Playout::stateChanged, this, [this] { refresh(); });
     connect(play, &Playout::segmentChanged, this, [this] { refresh(); });

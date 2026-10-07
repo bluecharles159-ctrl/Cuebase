@@ -1,0 +1,15 @@
+# Local CMake output and packaged builds
+/build/
+/build-*/
+/Cuebase*.zip
+
+# Downloaded local streaming test receiver (see tools/mediamtx/README.md)
+/tools/mediamtx/*.exe
+/tools/mediamtx/*.zip
+/tools/mediamtx/mediamtx.yml
+/tools/mediamtx/test.yml
+
+# Temporary Python caches and local receiver certificates
+__pycache__/
+/auto.key
+/auto.crt

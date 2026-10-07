@@ -26,6 +26,7 @@ QDialog *makeDialog(QWidget *parent, const QString &title, int w, int h) {
     d->setAttribute(Qt::WA_DeleteOnClose);
     d->setWindowTitle(title);
     d->resize(w, h);
+    d->setStyleSheet("QDialog{background:#303030;border-radius:10px;} QWidget{font-size:11px;} QPushButton{background:#484848;border:0;border-radius:4px;padding:5px 12px;} QScrollBar:vertical{width:6px;}");
     return d;
 }
 
@@ -92,7 +93,7 @@ void showWalkthrough(QWidget *parent) {
         "(timeline and programs queue) is underneath, and the <b>control panel</b> is on the right. "
         "Drag the thin gaps between panels to resize them. Window &rarr; Reset Layout puts them back.</p>",
 
-        "<h2 style='color:#60a5fa'>Program Planner</h2>"
+        "<h2 style='color:#60a5fa'>Programs</h2>"
         "<p>In the editor, open the calendar icon. Add programs with a title, type and length, and optionally a "
         "media file. Programs play one after the other in list order. Use the arrows to reorder them.</p>",
 
@@ -158,7 +159,7 @@ void showReleaseNotes(QWidget *parent) {
         "<h2 style='color:#60a5fa'>Release Notes</h2>"
         "<h3>0.4.0</h3><ul>"
         "<li>New layout: viewport, editor, preview and control panel, all resizable.</li>"
-        "<li>Editor tools: Display, Ads, Program Planner and Screen Elements.</li>"
+        "<li>Editor tools: Display, Ads, Programs and Screen Elements.</li>"
         "<li>Timeline with breaks (BR) around ads, and a programs queue that slides played items away.</li>"
         "<li>Live monitor with a moving timeline bar and a Breaking in countdown.</li>"
         "<li>Optional media file playback for programs and ads.</li></ul>"
@@ -175,12 +176,19 @@ void showReleaseNotes(QWidget *parent) {
 }
 
 void showShortcuts(QWidget *parent, const QList<QPair<QString, QString>> &rows) {
-    QString html = "<h2 style='color:#60a5fa'>Keyboard Shortcuts</h2><table cellpadding='6' width='100%'>";
-    for (const auto &r : rows)
-        html += "<tr><td>" + r.first.toHtmlEscaped() + "</td><td align='right'><b>" +
-                r.second.toHtmlEscaped() + "</b></td></tr>";
-    html += "</table>";
-    htmlDialog(parent, "Keyboard Shortcuts", html, 480, 420);
+    QString html="<style>body{font-family:'Segoe UI';font-size:11px;color:#ddd}h3{font-size:12px;color:#9ebbe0;margin-top:18px}td{padding:5px}</style><h2>Keyboard shortcuts</h2>";
+    const QStringList groups{"Application","Objects and navigation","Animation","Mesh editing","Graph editor","Property controls"};
+    for(int group=0;group<groups.size();++group){html+="<h3>"+groups[group]+"</h3><table width='100%' cellspacing='0'>";
+        for(const auto &row:rows){const QString label=row.first;int category=0;
+            if(label.startsWith("Build mesh")||label.contains("mesh edit"))category=3;
+            else if(label.startsWith("Graph:"))category=4;
+            else if(label.startsWith("Values:")||label.startsWith("Property key:"))category=5;
+            else if(label.startsWith("Build:"))category=(label.contains("key")||label.contains("frame")&&!label.contains("artboard")||label.contains("play"))?2:1;
+            if(category!=group)continue;QString description=label;const int colon=description.indexOf(':');if(colon>=0)description=description.mid(colon+1).trimmed();
+            html+="<tr><td>"+description.toHtmlEscaped()+"</td><td align='right' nowrap='nowrap' style='color:#eee;background:#3b3b3b'><b>"+row.second.toHtmlEscaped()+"</b></td></tr>";
+        }html+="</table>";
+    }
+    htmlDialog(parent,"Keyboard Shortcuts",html,680,660);
 }
 
 void showLicense(QWidget *parent) {
@@ -195,11 +203,11 @@ void showLicense(QWidget *parent) {
 void showPrivacy(QWidget *parent) {
     htmlDialog(parent, "Privacy Policy",
         "<h2 style='color:#60a5fa'>Privacy Policy</h2>"
-        "<p>Cuebase keeps everything on this computer and does not send your data anywhere.</p>"
+        "<p>Cuebase stores your library on this computer. When you start network output, it sends the program picture and mixed audio to the RTMP or SRT destination you configure.</p>"
         "<ul><li><b>Programs, ads, screen elements and display settings</b> are saved in <i>" + dataFolder().toHtmlEscaped() +
         "/cuebase.json</i>.</li>"
         "<li>Your panel sizes are remembered in your Windows user profile.</li>"
-        "<li>Media files you choose are played from where they are. Cuebase never copies or uploads them.</li>"
+        "<li>Imported media stays at its original file path. Broadcast output transmits the selected media as part of the live program.</li>"
         "<li>Links in the Help menu open in your web browser, which follows that site's own policy.</li></ul>",
         540, 340);
 }
