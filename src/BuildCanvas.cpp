@@ -221,6 +221,7 @@ void BuildCanvas::drawGizmos(QPainter &p, const ViewCam &cam, const QRectF &r) {
     const ElementDesign &d = m_m->design;
     for (const DObject &o : d.objects) {
         if (!o.visible || (o.type != "Light" && o.type != "Camera")) continue;
+        if((o.type=="Light"&&!showLights)||(o.type=="Camera"&&!showCamera))continue;
         const bool isSel = m_m->sel.contains(o.id), isAct = o.id == m_m->activeId;
         const QColor col = isAct ? kOrangeLight : isSel ? kOrange : (o.type == "Camera" ? QColor(210, 214, 222) : kGizmo);
         const QMatrix4x4 W = d.worldMatrix(o, m_m->t);
@@ -387,6 +388,7 @@ void BuildCanvas::paintEvent(QPaintEvent *) {
     p.restore();
 
     // Broadcast-safe overlays are editor-only.
+    if(!showOverlays)return;
     p.setPen(QPen(QColor(255,255,255,90), 1));
     p.setBrush(Qt::NoBrush);
     p.drawRect(r);
@@ -434,7 +436,7 @@ void BuildCanvas::paintEvent(QPaintEvent *) {
     p.setPen(QPen(QColor("#3a3a3a"), 1));
     p.setBrush(Qt::NoBrush);
     p.drawRoundedRect(QRectF(rect()).adjusted(0.5,0.5,-0.5,-0.5),10,10);
-    QPointF cursorPoint;if(cam.toScreen(d.cursor,r,&cursorPoint)){
+    QPointF cursorPoint;if(showCursor&&cam.toScreen(d.cursor,r,&cursorPoint)){
         p.setBrush(Qt::NoBrush);p.setPen(QPen(QColor("#eeeeee"),1));p.drawEllipse(cursorPoint,7,7);p.setPen(QPen(QColor("#d65e5e"),1.4));p.drawArc(QRectF(cursorPoint-QPointF(7,7),QSizeF(14,14)),0,180*16);p.drawLine(cursorPoint-QPointF(12,0),cursorPoint+QPointF(12,0));p.drawLine(cursorPoint-QPointF(0,12),cursorPoint+QPointF(0,12));
     }
     drawHud(p, QRectF(rect()));
@@ -497,7 +499,7 @@ QString BuildCanvas::pickObject(const QPointF &pos, bool cycle) {
         if (o.type == "Light" || o.type == "Camera") {
             QPointF c;
             double depth;
-            if (!showGizmos || (o.type == "Camera" && m_cameraView) || !cam.toScreen(W.map(QVector3D(0, 0, 0)), r, &c, &depth)) continue;
+            if (!showOverlays || !showGizmos || (o.type=="Light"&&!showLights) || (o.type=="Camera"&&!showCamera) || (o.type == "Camera" && m_cameraView) || !cam.toScreen(W.map(QVector3D(0, 0, 0)), r, &c, &depth)) continue;
             if (QLineF(c, pos).length() <= 13 && depth - 0.5 < bestDepth) {
                 bestDepth = depth - 0.5;  // gizmos win over what is behind them
                 best = o.id;

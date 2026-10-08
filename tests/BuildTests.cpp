@@ -1,5 +1,7 @@
 #include <QtTest>
 #include <QToolButton>
+#include <QMenu>
+#include <QSettings>
 #include "AssetImport.h"
 #include "DesignAudio.h"
 #include "MediaFrames.h"
@@ -21,6 +23,9 @@
 #include "UiControls.h"
 #include "ColorPicker.h"
 #include "BuildContextAction.h"
+#include "SurfaceEffects.h"
+#include "AnimationCuePanel.h"
+#include <QCheckBox>
 
 class BuildTests:public QObject {
     Q_OBJECT
@@ -81,6 +86,7 @@ private slots:
         QImage image(640,360,QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);QPainter p(&image);m.design.render(p,image.rect(),0);p.end();
         QVERIFY(qGreen(image.pixel(350,180))>200);QCOMPARE(qAlpha(image.pixel(390,180)),0);
         m.editProperty("parent","position.x",2);QCOMPARE(m.design.worldMatrix(*m.byId("child"),0).map(QVector3D()).x(),3.5f);
+        m.isolateParents=true;const auto childBefore=m.design.worldMatrix(*m.byId("child"),0);m.editProperty("parent","position.x",4);QCOMPARE(m.design.worldMatrix(*m.byId("child"),0),childBefore);m.isolateParents=false;
         m.setSelection({"parent","child"},"child");QVERIFY(!m.parentSelected());
         m.select("child");const auto world=m.design.worldMatrix(*m.active(),0);QVERIFY(m.parentSelected(true));QVERIFY(m.active()->parentId.isEmpty());QCOMPARE(m.design.worldMatrix(*m.active(),0),world);
         auto roundtrip=ElementDesign::fromJson(m.design.toJson());QCOMPARE(roundtrip.worldMatrix(*roundtrip.find("child"),0),world);
@@ -89,6 +95,9 @@ private slots:
         ValueInput input;input.setRange(0,100);input.setValue(25);input.show();
         QWheelEvent vertical(QPointF(10,10),QPointF(10,10),QPoint(),QPoint(0,120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);QApplication::sendEvent(&input,&vertical);QCOMPARE(input.value(),25.0);
         QWheelEvent horizontal(QPointF(10,10),QPointF(10,10),QPoint(),QPoint(120,0),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);QApplication::sendEvent(&input,&horizontal);QCOMPARE(input.value(),26.0);
+        auto *line=input.findChild<QLineEdit*>();QVERIFY(line);const QPoint center=line->rect().center();QTest::mousePress(line,Qt::LeftButton,Qt::NoModifier,center);QTest::mouseMove(line,center+QPoint(20,0));QVERIFY(input.value()>26);
+        QTest::mousePress(line,Qt::RightButton,Qt::NoModifier,center+QPoint(20,0));QTest::mouseRelease(line,Qt::RightButton,Qt::NoModifier,center+QPoint(20,0));QTest::mouseRelease(line,Qt::LeftButton,Qt::NoModifier,center+QPoint(20,0));QCOMPARE(input.value(),26.);
+        QTest::mouseClick(line,Qt::LeftButton,Qt::NoModifier,center);QVERIFY(line->hasSelectedText());QTest::mouseClick(line,Qt::LeftButton,Qt::NoModifier,QPoint(5,center.y()));QVERIFY(!line->hasSelectedText());line->selectAll();QTest::keyClicks(line,"42");QTest::keyClick(line,Qt::Key_Return);QCOMPARE(input.value(),42.);QVERIFY(!line->hasSelectedText());QVERIFY(!line->hasFocus());
     }
     void colorPickerAndContext(){
         bool inspected=false;QTimer::singleShot(50,[&]{auto *dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());if(!dialog)return;auto *hex=dialog->findChild<QLineEdit*>();if(!hex)return;hex->setText("#804488cc");QMetaObject::invokeMethod(hex,"editingFinished");QDir().mkpath("artifacts");inspected=dialog->grab().save("artifacts/color-picker.png");dialog->accept();});
@@ -176,8 +185,11 @@ private slots:
         auto *channel=group->child(0);QVERIFY(channel);
         QTest::mouseClick(tree->viewport(),Qt::LeftButton,Qt::NoModifier,tree->visualItemRect(channel).center());
         auto *curve=graph.findChild<QWidget*>("animationCurve");QVERIFY(curve);
-        const QRectF area=QRectF(curve->rect()).adjusted(62,24,-14,-28);
-        QPoint first(qRound(area.left()),qRound(area.bottom()-area.height()*.15/1.3));
+        for(auto *button:graph.findChildren<QToolButton*>())if(button->toolTip()=="View All")button->click();
+        const QRectF area=QRectF(curve->rect()).adjusted(62,28,-14,-26);
+        const auto range=curve->property("viewRange").toList();
+        auto graphPoint=[&](double time,double value){return QPoint(qRound(area.left()+(time-range[0].toDouble())/(range[1].toDouble()-range[0].toDouble())*area.width()),qRound(area.bottom()-(value-range[2].toDouble())/(range[3].toDouble()-range[2].toDouble())*area.height()));};
+        QPoint first=graphPoint(0,110);
         QTest::mousePress(curve,Qt::LeftButton,Qt::NoModifier,first);
         QCOMPARE(m->t,qint64(1000));
         QTest::mouseMove(curve,first+QPoint(35,-25));QTest::mouseRelease(curve,Qt::LeftButton,Qt::NoModifier,first+QPoint(35,-25));
@@ -187,7 +199,7 @@ private slots:
         track=m->byId(id)->track("text.size");track->keys.first().interpolation="Bezier";m->notify();
         QTest::mouseClick(curve,Qt::LeftButton,Qt::NoModifier,first);
         const QPointF handle=track->handle(0,true);
-        const QPoint handlePoint(qRound(area.left()+handle.x()/m->design.durationMs*area.width()),qRound(area.bottom()-(handle.y()-99.5)/91.0*area.height()));
+        const QPoint handlePoint=graphPoint(handle.x(),handle.y());
         const double beforeCurve=track->evaluate(500,0);
         QTest::mousePress(curve,Qt::LeftButton,Qt::NoModifier,handlePoint);QTest::mouseMove(curve,handlePoint+QPoint(5,-25));QTest::mouseRelease(curve,Qt::LeftButton,Qt::NoModifier,handlePoint+QPoint(5,-25));
         track=m->byId(id)->track("text.size");QVERIFY(track->keys.first().customHandles);QVERIFY(track->evaluate(500,0)!=beforeCurve);QCOMPARE(m->t,qint64(1000));
@@ -197,6 +209,59 @@ private slots:
         QPushButton *save=nullptr;for(auto *button:workspace.findChildren<QPushButton*>())if(button->toolTip()=="Save to Screen Elements")save=button;
         QVERIFY(save);QTest::mouseClick(save,Qt::LeftButton);
         Library reloaded;reloaded.load();QVERIFY(reloaded.element("saved"));QCOMPARE(reloaded.element("saved")->design,m->design.toJson());
+    }
+    void editingTransactionsAndSurfaces(){
+        BuildModel model;auto id=model.addMesh("Cube");model.editProperty(id,"corner.radius",20);
+        uiGesture()->begin();model.pushUndo();model.editProperty(id,"corner.radius",35);model.pushUndo();model.editProperty(id,"corner.radius",50);uiGesture()->finish(false);
+        QVERIFY(model.undo());QCOMPARE(model.byId(id)->propertyBase("corner.radius"),20.);
+        uiGesture()->begin();model.pushUndo();model.editProperty(id,"corner.radius",45);uiGesture()->finish(true);QCOMPARE(model.byId(id)->propertyBase("corner.radius"),20.);
+        DObject shape;shape.style["corner.unit"]="%";shape.style["corner.radius"]=50.;auto outline=surfaceOutline(QRectF(0,0,200,100),shape);QVERIFY(!outline.contains(QPointF(1,1)));QVERIFY(outline.contains(QPointF(100,1)));
+        QImage image(21,21,QImage::Format_ARGB32_Premultiplied);image.fill(Qt::black);image.setPixelColor(10,10,Qt::white);auto blurred=backdropImage(image,2,1.);QVERIFY(blurred.pixelColor(10,10).red()<255);QVERIFY(blurred.pixelColor(11,10).red()>0);QCOMPARE(blurred.pixelColor(0,0),QColor(Qt::black));
+        Element element;element.type="Custom";auto design=ElementDesign::defaultScene();design.durationMs=1540;element.design=design.toJson();QCOMPARE(element.lengthMs(),qint64(1540));
+        Placement placement;placement.seconds=2;placement.durationMs=1540;QCOMPARE(placement.lengthMs(),qint64(1540));
+        DObject audio;audio.id="track";audio.type="Audio";audio.style["audio.file"]="music.wav";audio.style["audio.duration"]=10000.;audio.style["audio.offset"]=1000.;audio.style["audio.speed"]=2.;audio.style["audio.length"]=6000.;audio.style["audio.fadeIn"]=1000.;audio.style["audio.fadeOut"]=1000.;audio.style["audio.repeat"]="Loop";design.objects.append(audio);
+        auto cues=designAudioCues(design,500,true,{},1,false);QCOMPARE(cues.size(),1);QCOMPARE(cues[0].position,qint64(2000));QCOMPARE(cues[0].volume,.5);QCOMPARE(cues[0].rate,2.);
+        cues=designAudioCues(design,5500,true,{},1,false);QCOMPARE(cues[0].position,qint64(3000));QCOMPARE(cues[0].volume,.5);
+    }
+    void cueEditorPersistence(){
+        BuildModel model;auto *editor=animationCueEditor(&model);editor->resize(340,390);editor->show();
+        QPushButton *add=nullptr,*apply=nullptr;for(auto *b:editor->findChildren<QPushButton*>()){if(b->text()=="Add")add=b;if(b->text()=="Apply")apply=b;}QVERIFY(add&&apply);QTest::mouseClick(add,Qt::LeftButton);QCOMPARE(model.design.animationCues.size(),1);
+        editor->findChild<QLineEdit*>("cueName")->setText("Exit");editor->findChild<QSpinBox*>("cueEnd")->setValue(50);editor->findChild<QCheckBox*>("cueHold")->setChecked(false);QTest::mouseClick(apply,Qt::LeftButton);
+        auto cue=model.design.animationCues.first().toObject();QCOMPARE(cue["name"].toString(),QString("Exit"));QVERIFY(!cue["hold"].toBool());QCOMPARE(cue["end"].toInt(),50*model.frameMs());QCOMPARE(ElementDesign::fromJson(model.design.toJson()).animationCues,model.design.animationCues);
+        QVERIFY(editor->grab().save("artifacts/animation-cues.png"));QVERIFY(model.undo());QVERIFY(model.design.animationCues.first().toObject()["hold"].toBool());delete editor;
+    }
+    void graphCoordinatesAndInterpolation(){
+        QSettings().remove("animation/graphView");
+        BuildModel model;model.reset(ElementDesign::defaultScene());auto id=model.addMesh("Cube");auto *object=model.byId(id);
+        object->keyChannel("position.x",1000,2);object->keyChannel("position.x",2000,6);
+        object->keyChannel("position.y",1000,1);object->keyChannel("position.y",2000,3);
+        object->track("position.x")->keys[0].interpolation="Linear";
+        object->track("position.y")->keys[0].interpolation="Constant";
+        AnimationEditor editor(&model,true);editor.resize(1000,400);editor.show();QTest::qWait(40);
+        auto *tree=editor.findChild<QTreeWidget*>();auto *curve=editor.findChild<QWidget*>("animationCurve");QVERIFY(tree&&curve);
+        tree->setCurrentItem(tree->topLevelItem(0));
+        QToolButton *interpolation=nullptr;for(auto *b:editor.findChildren<QToolButton*>())if(b->toolTip().startsWith("Interpolation:"))interpolation=b;
+        QVERIFY(interpolation);QCOMPARE(interpolation->text(),QString("Mixed"));
+        for(auto *action:interpolation->menu()->actions())if(action->text()=="Bezier")action->trigger();
+        for(auto &track:model.byId(id)->tracks)for(auto &key:track.keys)QCOMPARE(key.interpolation,QString("Bezier"));
+        QCOMPARE(interpolation->text(),QString("Bezier"));
+        auto initial=curve->property("viewRange").toList();auto saved=model.design.toJson();
+        QPoint center=curve->rect().center();QTest::mousePress(curve,Qt::MiddleButton,Qt::NoModifier,center);
+        QTest::mouseMove(curve,center+QPoint(50,30));QTest::mouseRelease(curve,Qt::MiddleButton,Qt::NoModifier,center+QPoint(50,30));
+        auto panned=curve->property("viewRange").toList();QVERIFY(initial!=panned);QCOMPARE(model.design.toJson(),saved);
+        const QRectF area=QRectF(curve->rect()).adjusted(62,28,-14,-26);
+        QVERIFY(qAbs(panned[0].toDouble()-(initial[0].toDouble()-50/area.width()*(initial[1].toDouble()-initial[0].toDouble())))<.001);
+        model.setTime(500);model.notify();QCOMPARE(curve->property("viewRange").toList(),panned);
+        QTest::mousePress(curve,Qt::LeftButton,Qt::ControlModifier,center);QTest::mouseMove(curve,center+QPoint(60,2));QTest::mouseRelease(curve,Qt::LeftButton,Qt::ControlModifier,center+QPoint(60,2));
+        auto zoomed=curve->property("viewRange").toList();QVERIFY(zoomed[1].toDouble()-zoomed[0].toDouble()<panned[1].toDouble()-panned[0].toDouble());QCOMPARE(zoomed[2],panned[2]);QCOMPARE(model.design.toJson(),saved);
+        auto *track=model.byId(id)->track("position.x");auto key=track->keys[0];
+        QPoint point(qRound(area.left()+(key.ms-zoomed[0].toDouble())/(zoomed[1].toDouble()-zoomed[0].toDouble())*area.width()),qRound(area.bottom()-(key.value-zoomed[2].toDouble())/(zoomed[3].toDouble()-zoomed[2].toDouble())*area.height()));
+        QTest::mousePress(curve,Qt::LeftButton,Qt::NoModifier,point);QTest::mouseMove(curve,point+QPoint(0,-20));QTest::mouseRelease(curve,Qt::LeftButton,Qt::NoModifier,point+QPoint(0,-20));
+        double expected=key.value+20/area.height()*(zoomed[3].toDouble()-zoomed[2].toDouble());
+        QVERIFY(qAbs(model.byId(id)->track("position.x")->keys[0].value-expected)<.001);QCOMPARE(model.t,qint64(500));QCOMPARE(curve->property("viewRange").toList(),zoomed);
+        auto moved=model.design.toJson();QTest::keyClick(curve,Qt::Key_Escape);QCOMPARE(model.design.toJson(),moved);
+        QVERIFY(model.undo());QCOMPARE(model.design.toJson(),saved);
+        AnimationEditor reopened(&model,true);auto *restored=reopened.findChild<QWidget*>("animationCurve");QCOMPARE(restored->property("viewRange").toList(),zoomed);
     }
     void cleanupTestCase(){QFile::remove(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)+"/cuebase.json");}
 };

@@ -1,4 +1,7 @@
 #include "UiControls.h"
+#include "AnimationCuePanel.h"
+#include <QJsonDocument>
+#include <QJsonArray>
 #include "EditorPanel.h"
 #include "BuildContextAction.h"
 #include <QMenu>
@@ -171,6 +174,7 @@ QString placeElement(Library *lib, Playout *play, const QString &elementId) {
     pl.refId = e->id;
     pl.name = e->name;
     pl.seconds = e->type == "Custom" ? qMax(1, e->seconds) : 8;
+    pl.durationMs=e->lengthMs();
     pl.startMs = slot ? play->groupEndMs(lib->pendingAfter) : play->playheadMs();
     lib->placements.append(pl);
     lib->commitPlacements();
@@ -1004,6 +1008,12 @@ QWidget *makeElementsPage(Library *lib, Playout *play) {
 
     auto *list = new QListWidget;
     list->setMinimumHeight(120);
+    auto *filters=new QHBoxLayout;auto *search=new QLineEdit;search->setPlaceholderText("Search screen elements");auto *category=new QComboBox;category->addItems({"All elements","Overlays","Breaks"});filters->addWidget(search,1);filters->addWidget(category);l->addLayout(filters);
+    list->setSpacing(4);list->setStyleSheet("QListWidget::item{padding:8px;border:1px solid #45474d;border-radius:6px;}QListWidget::item:selected{background:#3c5878;border-color:#7393ba;}");
+    auto filterElements=[=]{for(int i=0;i<list->count();++i){auto *item=list->item(i);const auto *e=lib->element(item->data(Qt::UserRole).toString());const bool matches=e&&e->name.contains(search->text(),Qt::CaseInsensitive)&&(category->currentIndex()==0||(category->currentIndex()==2)==(e->type=="Break"));item->setHidden(!matches);}};
+    QObject::connect(search,&QLineEdit::textChanged,page,filterElements);QObject::connect(category,&QComboBox::currentIndexChanged,page,filterElements);
+    auto *cueHost=new QWidget;auto *cueLayout=new QVBoxLayout(cueHost);cueLayout->setContentsMargins(0,0,0,0);
+    QObject::connect(play,&Playout::ticked,page,[=]{for(int i=0;i<list->count();++i){auto *item=list->item(i);if(const auto *e=lib->element(item->data(Qt::UserRole).toString())){const auto playback=play->graphicPlayback(*e,play->timelinePosMs());item->setIcon(uiIcon(playback.visible?"eye":"composition"));item->setForeground(playback.visible?QColor("#a6c9ee"):QColor("#c2c4cb"));item->setToolTip(playback.visible?(playback.advancing?"On screen · animation playing":"On screen · holding final frame"):"Off screen");}}});
     auto *name = new QLineEdit;
     name->setPlaceholderText("Element name");
     auto *type = new QComboBox;
@@ -1051,9 +1061,12 @@ QWidget *makeElementsPage(Library *lib, Playout *play) {
     auto *editBuild = smallButton("Edit in Build");
     editBuild->hide();
     l->addWidget(list);
-    l->addLayout(form);
+    l->addWidget(cueHost);
+    auto *detailsButton=new QToolButton;detailsButton->setText("Element details");detailsButton->setIcon(uiIcon("right"));detailsButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);detailsButton->setCheckable(true);l->addWidget(detailsButton);
+    auto *details=new QWidget;details->setLayout(form);details->hide();l->addWidget(details);QObject::connect(detailsButton,&QToolButton::toggled,page,[=](bool on){details->setVisible(on);fx->setVisible(on);detailsButton->setIcon(uiIcon(on?"down":"right"));});
     l->addWidget(hint);
     l->addWidget(fx);
+    fx->hide();
     l->addWidget(editBuild);
     l->addLayout(buttons);
     l->addWidget(msg);
@@ -1077,7 +1090,7 @@ QWidget *makeElementsPage(Library *lib, Playout *play) {
         browse->setEnabled(t == "Logo");
         seconds->setEnabled(isBreak);
         live->setEnabled(!isBreak);
-        fx->setVisible(!isBreak);
+        fx->setVisible(!isBreak&&detailsButton->isChecked());
         if (isBreak) live->setChecked(false);
         text->setPlaceholderText(isBreak ? "e.g. Now showing: {title}" : "Text shown on screen");
         hint->setText(isBreak ? "A break (BR) plays before and after an ad. Use {title} for the program, {next} for "
@@ -1091,7 +1104,8 @@ QWidget *makeElementsPage(Library *lib, Playout *play) {
         QSignalBlocker b(list);
         list->clear();
         for (const Element &e : lib->elements) {
-            auto *it = new QListWidgetItem(QString("%1   ·   %2%3").arg(e.name, e.type, e.live ? "   ·   ● on screen" : ""));
+            const auto cues=QJsonDocument::fromJson(e.design.toUtf8()).object()["animationCues"].toArray();
+            auto *it = new QListWidgetItem(uiIcon(e.type=="Break"?"play":"composition"),QString("%1\n%2 · %3%4").arg(e.name,e.type=="Break"?"Break":("Overlay / "+e.type),cues.isEmpty()?formatDuration(e.lengthMs()/1000):QString("%1 animations").arg(cues.size()),e.live?" · On screen":""));
             it->setData(Qt::UserRole, e.id);
             list->addItem(it);
             if (e.id == keep) {
@@ -1101,6 +1115,7 @@ QWidget *makeElementsPage(Library *lib, Playout *play) {
                 *loading = false;
             }
         }
+        filterElements();
     };
     auto clearForm = [=] {
         *loading = true;
@@ -1117,6 +1132,7 @@ QWidget *makeElementsPage(Library *lib, Playout *play) {
         fx->set(Transition());
         editBuild->hide();
         save->setText("Add Element");
+        while(auto *item=cueLayout->takeAt(0)){if(item->widget())item->widget()->deleteLater();delete item;}
         *loading = false;
         adaptToType();
     };
@@ -1146,6 +1162,8 @@ QWidget *makeElementsPage(Library *lib, Playout *play) {
         live->setChecked(e->live);
         fx->set(e->fx);
         editBuild->setVisible(e->type == "Custom");
+        while(auto *item=cueLayout->takeAt(0)){if(item->widget())item->widget()->deleteLater();delete item;}
+        const auto elementId=e->id;if(e->type=="Custom")cueLayout->addWidget(animationCueControls(lib,elementId,[=](QString cue){play->triggerElementAnimation(elementId,cue);}));
         save->setText("Update Element");
         *loading = false;
         adaptToType();
@@ -1156,6 +1174,7 @@ QWidget *makeElementsPage(Library *lib, Playout *play) {
         for (Element &e : lib->elements)
             if (e.id == selId()) {
                 e.live = on;
+                const auto cues=QJsonDocument::fromJson(e.design.toUtf8()).object()["animationCues"].toArray();if(!cues.isEmpty())play->triggerElementAnimation(e.id,on?cues.first().toObject()["id"].toString():QString());
                 lib->commitElementLive();
             }
     });
@@ -1195,7 +1214,7 @@ QWidget *makeElementsPage(Library *lib, Playout *play) {
         }
         lib->commitElements();
         if (!updated) clearForm();
-        say(msg, updated ? "Element updated." : "Element added.", true);
+        say(msg, "Saved to screen elements", true);
     });
     QObject::connect(remove, &QPushButton::clicked, page, [=] {
         const QString id = selId();

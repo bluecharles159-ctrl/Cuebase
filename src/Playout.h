@@ -75,6 +75,9 @@ public:
     void applyAudio();                        // re-applies master + per-timeline volume and mute
     double volume() const { return m_volume; }
     bool muted() const { return m_muted; }
+    struct GraphicPlayback {bool visible=false,controlled=false; qint64 time=0;QString cue;bool advancing=true;};
+    GraphicPlayback graphicPlayback(const Element &element,qint64 timelineTime,qint64 placementStart=-1,qint64 offset=0) const;
+    void triggerElementAnimation(const QString &elementId,const QString &cueId);
 
 public slots:
     void start(int segment = 0, qint64 inSegmentMs = 0);
@@ -116,6 +119,8 @@ private:
     void syncDesignAudio();
     DesignAudio *m_designAudio = nullptr;
     QHash<QString,QPair<QString,ElementDesign>> m_audioDesigns;
+    QHash<QString,QPair<QString,qint64>> m_manualCues;
+    mutable QHash<QString,QPair<QString,QJsonArray>> m_cueCache;
     void resetSounds();
     void playSound(const Placement &pl, qint64 inMs);
     void layerAudio(const Placement &pl, Sfx &s) const;

@@ -8,6 +8,7 @@
 #include <QJsonObject>
 #include <QLinearGradient>
 #include <QPainter>
+#include "SurfaceEffects.h"
 #include <QTransform>
 #include <QUuid>
 #include <QtMath>
@@ -202,7 +203,7 @@ QString ElementDesign::toJson() const {
             QJsonArray values;
             for (const auto &key : track.keys)
                 values.append(QJsonObject{{"ms", key.ms}, {"value", key.value}, {"interpolation", key.interpolation},
-                    {"left",QJsonArray{key.leftHandle.x(),key.leftHandle.y()}},{"right",QJsonArray{key.rightHandle.x(),key.rightHandle.y()}},{"customHandles",key.customHandles}});
+                    {"left",QJsonArray{key.leftHandle.x(),key.leftHandle.y()}},{"right",QJsonArray{key.rightHandle.x(),key.rightHandle.y()}},{"customHandles",key.customHandles},{"handleType",key.handleType}});
             if (!values.isEmpty()) tracks.append(QJsonObject{{"property", track.property}, {"keys", values}});
         }
         QJsonArray mods;
@@ -240,13 +241,14 @@ QString ElementDesign::toJson() const {
                         {"ambientColor", world.ambientColor.name()}, {"fogColor", world.fogColor.name()}, {"gradient", world.gradient},
                         {"transparent", world.transparent}, {"ambient", world.ambient}, {"fog", world.fog}, {"gravity", world.gravity},
                         {"floor", world.floor}};
-    return QString::fromUtf8(QJsonDocument(QJsonObject{{"version", 5}, {"cursor",vec(cursor)}, {"start",startMs}, {"duration", durationMs}, {"loop", loop}, {"world", w}, {"objects", arr}})
+    return QString::fromUtf8(QJsonDocument(QJsonObject{{"version", 6}, {"animationCues",animationCues}, {"cursor",vec(cursor)}, {"start",startMs}, {"duration", durationMs}, {"loop", loop}, {"world", w}, {"objects", arr}})
                                  .toJson(QJsonDocument::Compact));
 }
 
 ElementDesign ElementDesign::fromJson(const QString &json) {
     ElementDesign d;
     const QJsonObject root = QJsonDocument::fromJson(json.toUtf8()).object();
+    d.animationCues=root["animationCues"].toArray();
     d.durationMs = root["duration"].toInt(5000);
     d.cursor=vecOf(root["cursor"]);
     d.startMs=qBound(0,root["start"].toInt(),qMax(0,d.durationMs-1));
@@ -407,6 +409,7 @@ ElementDesign ElementDesign::fromJson(const QString &json) {
                     auto &key=track.keys[track.indexAt(qMax(0,kj["ms"].toInt()))];
                     auto left=kj["left"].toArray(),right=kj["right"].toArray();
                     if(left.size()==2&&right.size()==2){key.leftHandle={left[0].toDouble(),left[1].toDouble()};key.rightHandle={right[0].toDouble(),right[1].toDouble()};key.customHandles=kj["customHandles"].toBool();}
+                    key.handleType=kj["handleType"].toString(key.customHandles?"Free":"Auto");
                 }
                 if (!track.keys.isEmpty()) o.tracks.append(track);
             }
@@ -636,6 +639,7 @@ const Mesh &ElementDesign::evalMesh(const DObject &o, qint64 ms) const {
 namespace {
 
 struct Item {
+    QPainterPath backdropClip;double backdrop=0,brightness=1;
     QPainterPath clip;
     double depth = 0;
     QPolygonF poly;
@@ -668,6 +672,8 @@ QColor toColor(float r, float g, float b) {
 } // namespace
 
 void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, qint64 ms, const PaintOpts &o) const {
+    if(p.device()->devType()!=QInternal::Image){bool needs=false;for(const auto &object:objects)needs|=object.propertyValue("backdrop.blur",ms)>0||object.propertyValue("backdrop.brightness",ms)!=1;
+        if(needs){QImage image(rect.size().toSize(),QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);QPainter composite(&image);composite.translate(-rect.topLeft());paint(composite,rect,cam,ms,o);composite.end();p.drawImage(rect.topLeft(),image);return;}}
     p.save();
     p.setRenderHint(QPainter::Antialiasing);
     p.setRenderHint(QPainter::SmoothPixmapTransform);
@@ -859,6 +865,9 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
             src << QPointF(0, 0) << QPointF(tex.width(), 0) << QPointF(tex.width(), tex.height()) << QPointF(0, tex.height());
             Item it;it.clip=clip;
             if (!QTransform::quadToQuad(src, dst, it.tr)) continue;
+            it.backdrop=obj.propertyBase("backdrop.blur");it.brightness=obj.propertyBase("backdrop.brightness");
+            const double px=paddingX*kPxPerUnit,py=paddingY*kPxPerUnit;
+            it.backdropClip=it.tr.map(surfaceOutline(QRectF(px,py,tex.width()-2*px,tex.height()-2*py),obj));
             it.textured = true;
             it.img = tex;
             it.depth = depth / 4;
@@ -874,6 +883,11 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
         p.save();p.setClipPath(it.clip,Qt::IntersectClip);
         p.setOpacity(it.alpha);
         p.setCompositionMode(it.blend);
+        if(it.alpha>0&&(it.backdrop>0||it.brightness!=1)&&p.device()->devType()==QInternal::Image){
+            auto *device=static_cast<QImage*>(p.device());const double scale=qSqrt(qAbs((it.tr*base).determinant()));const auto source=device->copy().convertToFormat(QImage::Format_ARGB32_Premultiplied);auto blurred=backdropImage(source,qRound(it.backdrop*scale),it.brightness);
+            if(it.alpha<1)for(int y=0;y<blurred.height();++y){auto *row=reinterpret_cast<QRgb*>(blurred.scanLine(y));const auto *old=reinterpret_cast<const QRgb*>(source.constScanLine(y));for(int x=0;x<blurred.width();++x){auto mix=[&](int a,int b){return qRound(a*(1-it.alpha)+b*it.alpha);};row[x]=qRgba(mix(qRed(old[x]),qRed(row[x])),mix(qGreen(old[x]),qGreen(row[x])),mix(qBlue(old[x]),qBlue(row[x])),mix(qAlpha(old[x]),qAlpha(row[x])));}}
+            p.save();p.setClipPath(it.backdropClip,Qt::IntersectClip);p.resetTransform();p.setOpacity(1);p.setCompositionMode(QPainter::CompositionMode_Source);p.drawImage(0,0,blurred);p.restore();
+        }
         if (it.textured) {
             p.setTransform(it.tr * base);
             p.drawImage(0, 0, it.img);
@@ -892,10 +906,10 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
     p.restore();
 }
 
-void ElementDesign::render(QPainter &p, const QRectF &target, qint64 tMs, bool clip, const RenderSettings *rs) const {
+void ElementDesign::render(QPainter &p, const QRectF &target, qint64 tMs, bool clip, const RenderSettings *rs,bool loopPlayback) const {
     if (isEmpty() || target.width() < 2 || target.height() < 2) return;
     qint64 t = tMs;
-    if (durationMs > startMs && loop && tMs >= durationMs) t = startMs+(tMs-startMs)%(durationMs-startMs);
+    if (durationMs > startMs && loop && loopPlayback && tMs >= durationMs) t = startMs+(tMs-startMs)%(durationMs-startMs);
     else t = qBound<qint64>(0, tMs, qint64(durationMs));
     const double aspect = target.width() / target.height();
     PaintOpts o;

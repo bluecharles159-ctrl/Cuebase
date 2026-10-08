@@ -38,13 +38,16 @@
 #include "BuildModel.h"
 #include "Data.h"
 #include "AnimationEditor.h"
+#include "AnimationCuePanel.h"
 #include "PropertyInspector.h"
 #include "LayerPanel.h"
+#include <QTreeWidgetItemIterator>
 #include "AssetImport.h"
 #include "DesignAudio.h"
 #include <QFileInfo>
 #include <QFile>
 #include <QSaveFile>
+#include <QSettings>
 #include <QMessageBox>
 
 namespace {
@@ -114,13 +117,15 @@ QFrame *box(const QString &title, QVBoxLayout **inner) {
     l->setContentsMargins(10, 8, 10, 10);
     l->setSpacing(6);
     auto *c = new QToolButton;
-    c->setText(title); c->setCheckable(true); c->setChecked(true);
-    c->setToolButtonStyle(Qt::ToolButtonTextBesideIcon); c->setIcon(uiIcon("down"));c->setIconSize(QSize(12,12));
+    const QString expansionKey="build/sections/"+title;const bool expanded=QSettings().value(expansionKey,title=="TRANSFORM").toBool();
+    c->setText(title); c->setCheckable(true); c->setChecked(expanded);
+    c->setToolButtonStyle(Qt::ToolButtonTextBesideIcon); c->setIcon(uiIcon(expanded?"down":"right"));c->setIconSize(QSize(12,12));
     l->addWidget(c);
     auto *content = new QWidget;
     auto *contents = new QVBoxLayout(content); contents->setContentsMargins(0,0,0,0); contents->setSpacing(4);
     l->addWidget(content);
-    QObject::connect(c, &QToolButton::toggled, content, [c, content](bool on) {content->setVisible(on);c->setIcon(uiIcon(on ? "down" : "right"));});
+    content->setVisible(expanded);
+    QObject::connect(c, &QToolButton::toggled, content, [c, content,expansionKey](bool on) {content->setVisible(on);c->setIcon(uiIcon(on ? "down" : "right"));QSettings().setValue(expansionKey,on);});
     *inner = contents;
     return f;
 }
@@ -244,6 +249,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
         connect(action,&QAction::toggled,canvas,[canvas,value](bool on){*value=on;canvas->update();});
     };
     overlay("Title safe",&canvas->showTitleSafe);overlay("Action safe",&canvas->showActionSafe);
+    overlay("All overlays",&canvas->showOverlays);overlay("Placement cursor",&canvas->showCursor);overlay("Lights",&canvas->showLights);overlay("Camera",&canvas->showCamera);
     overlay("Center guides",&canvas->showAxes);overlay("Grid",&canvas->showGrid);overlay("Rulers · drag to create guides",&canvas->showRulers);
     overlay("Snap · Alt temporarily bypasses",&canvas->snapping);
     helperMenu->addAction("Clear guides",canvas,&BuildCanvas::clearGuides);
@@ -334,7 +340,13 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     views->addWidget(new CompositionPreview(m,lib));views->addWidget(canvas);views->setSizes({420,640});
     auto *lower=new QSplitter(Qt::Horizontal);
     auto *layers=new LayerPanel(m);layers->setMaximumWidth(QWIDGETSIZE_MAX);
-    lower->addWidget(layers);lower->addWidget(tlFrame);lower->setSizes({240,820});
+    auto *layerPanel=new QWidget;auto *layerLayout=new QVBoxLayout(layerPanel);layerLayout->setContentsMargins(0,0,0,0);layerLayout->setSpacing(2);
+    auto *layerBar=new QHBoxLayout;auto *searchButton=new QToolButton;searchButton->setIcon(uiIcon("100%"));searchButton->setToolTip("Search layers");auto *reveal=new QToolButton;reveal->setIcon(uiIcon("composition"));reveal->setToolTip("Reveal active layer");auto *search=new QLineEdit;search->setPlaceholderText("Search layers");search->hide();layerBar->addWidget(searchButton);layerBar->addWidget(reveal);layerBar->addWidget(search,1);layerLayout->addLayout(layerBar);layerLayout->addWidget(layers,1);
+    connect(searchButton,&QToolButton::clicked,search,[search]{search->setVisible(!search->isVisible());if(search->isVisible())search->setFocus();else search->clear();});
+    connect(reveal,&QToolButton::clicked,layers,[layers,m,search]{search->clear();for(QTreeWidgetItemIterator it(layers);*it;++it)if((*it)->data(0,Qt::UserRole).toString()==m->activeId){for(auto *parent=(*it)->parent();parent;parent=parent->parent())parent->setExpanded(true);layers->scrollToItem(*it,QAbstractItemView::PositionAtCenter);break;}});
+    auto filterLayers=[layers,search]{const auto text=search->text();for(QTreeWidgetItemIterator it(layers);*it;++it)(*it)->setHidden(!text.isEmpty()&&!(*it)->text(0).contains(text,Qt::CaseInsensitive));if(!text.isEmpty())for(QTreeWidgetItemIterator it(layers);*it;++it)if(!(*it)->isHidden())for(auto *parent=(*it)->parent();parent;parent=parent->parent()){parent->setHidden(false);parent->setExpanded(true);}};
+    connect(search,&QLineEdit::textChanged,layers,filterLayers);connect(m,&BuildModel::changed,layers,filterLayers);
+    lower->addWidget(layerPanel);lower->addWidget(tlFrame);lower->setSizes({240,820});
     for(auto *split:{views,lower}){split->setHandleWidth(4);split->setChildrenCollapsible(false);}
     left->addWidget(views);
     left->addWidget(lower);
@@ -353,7 +365,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     sideL->setSpacing(6);
     auto *tabs = new QVBoxLayout;
     tabs->setSpacing(4);
-    const QStringList tabNames{"Inspector", "Modifiers", "Material", "World"};
+    const QStringList tabNames{"Inspector", "Modifiers", "Material", "World", "Animation Cues"};
     QVector<QPushButton *> tabBtns;
     for (const QString &n : tabNames) {
         auto *b = new QPushButton(n);
@@ -615,6 +627,11 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     wl->setSpacing(8);
     QVBoxLayout *wbl;
     auto *worldBox = box("BACKGROUND", &wbl);
+    auto *addAudio=new QPushButton(uiIcon("audio"),QString());addAudio->setFixedSize(24,22);addAudio->setToolTip("Add background audio tracks");wbl->addWidget(addAudio,0,Qt::AlignRight);
+    connect(addAudio,&QPushButton::clicked,this,[this]{for(const auto &path:QFileDialog::getOpenFileNames(this,"Add background audio",{},"Audio (*.wav *.mp3 *.aac *.m4a *.flac *.ogg)"))importFile(path);});
+    auto *audioTracks=new QListWidget;audioTracks->setMaximumHeight(110);audioTracks->setToolTip("Select an audio track to edit its mix, timing and fades in the inspector");wbl->addWidget(audioTracks);
+    connect(m,&BuildModel::changed,audioTracks,[=]{QSignalBlocker block(audioTracks);audioTracks->clear();for(const auto &o:m->design.objects)if(o.type=="Audio"){auto *item=new QListWidgetItem(uiIcon("audio"),o.name,audioTracks);item->setData(Qt::UserRole,o.id);}audioTracks->setVisible(audioTracks->count()>0);});
+    connect(audioTracks,&QListWidget::itemClicked,this,[=](QListWidgetItem *item){m->select(item->data(Qt::UserRole).toString());tabBtns[0]->click();});
     auto *wTransparent = new QCheckBox("Transparent (film): lay the scene over the video");
     auto *wColor = new QPushButton;
     auto *wGrad = new QCheckBox("Sky gradient");
@@ -666,6 +683,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     wl->addWidget(dispHint);
     wl->addStretch();
     stack->addWidget(scrollPage(worldPage));
+    stack->addWidget(scrollPage(animationCueEditor(m)));
 
     // ================================================================ menus
     auto *addMenu = new QMenu(this);
@@ -678,12 +696,12 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
             o.style["shape"] = kind;o.base.loc=m->design.cursor;o.captureDefaults(); m->design.objects.append(o); m->select(o.id); m->notify();
         });
         QMenu *mesh = addMenu->addMenu("3D Mesh");
-        for (const QString &k : Mesh::primitiveKinds()) (k=="Plane"?shapes:mesh)->addAction(k, this, [m, k] { m->addMesh(k); });
+        for (const QString &k : Mesh::primitiveKinds()) ((k=="Plane"||k=="Circle")?shapes:mesh)->addAction(k, this, [m, k] { m->addMesh(k); });
         addMenu->addAction("Text", this, [m] { m->addText(); });
-        addMenu->addAction("Image...", this, [this, m] {
-            const QString path = QFileDialog::getOpenFileName(this, "Choose a picture", QString(), "Images (*.png *.jpg *.jpeg *.bmp *.webp *.gif);;All files (*)");
-            if (!path.isEmpty() && m->addImage(path).isEmpty()) say("That picture could not be opened", true);
-        });
+        auto *media=addMenu->addMenu(uiIcon("image"),"Media");
+        media->addAction(uiIcon("image"),"Image or SVG…",this,[this]{const auto path=QFileDialog::getOpenFileName(this,"Add image",{},"Images (*.png *.jpg *.jpeg *.bmp *.webp *.gif *.svg)");if(!path.isEmpty())importFile(path);});
+        media->addAction(uiIcon("play"),"Video…",this,[this]{const auto path=QFileDialog::getOpenFileName(this,"Add video",{},"Videos (*.mp4 *.mov *.mkv *.avi *.webm)");if(!path.isEmpty())importFile(path);});
+        media->addAction(uiIcon("audio"),"Audio…",this,[this]{const auto paths=QFileDialog::getOpenFileNames(this,"Add audio",{},"Audio (*.wav *.mp3 *.aac *.m4a *.flac *.ogg)");for(const auto &path:paths)importFile(path);});
         QMenu *light = addMenu->addMenu("Light");
         for (const QString &k : {"Point", "Sun", "Spot", "Area"}) light->addAction(k, this, [m, k] { m->addLight(k); });
     }
@@ -692,6 +710,8 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
 
     auto *originMenu = new QMenu(this);
     originMenu->addAction("Origin to Geometry", this, [this, m] { if (!m->setOrigin("Geometry")) say("Select a mesh first", true); });
+    originMenu->addAction("Origin to Cursor",this,[m]{m->setOrigin("Cursor");});
+    auto *boundsOrigin=originMenu->addMenu("Position");for(const auto &name:QStringList{"Top Left","Top Center","Top Right","Center Left","Center","Center Right","Bottom Left","Bottom Center","Bottom Right"})boundsOrigin->addAction(name,this,[m,name]{m->setOrigin("Bounds:"+name);});
     originMenu->addAction("Origin to Bottom", this, [this, m] { if (!m->setOrigin("Bottom")) say("Select a mesh first", true); });
     originMenu->addAction("Origin to World Origin", this, [this, m] { if (!m->setOrigin("World")) say("Select a mesh first", true); });
     originMenu->addAction("Origin to Selected (Edit Mode)", this, [this, m] { if (!m->setOrigin("Selected")) say("In Edit Mode, select vertices first", true); });
@@ -1403,6 +1423,7 @@ void BuildWorkspace::save() {
         return;
     }
     if (m_model->editMode) m_model->exitEdit();
+    if(const auto *existing=m_lib->element(m_editingId)){const auto saved=ElementDesign::fromJson(existing->design).animationCues;for(int i=0;i<m_model->design.animationCues.size();++i){auto cue=m_model->design.animationCues[i].toObject();for(auto value:saved){const auto prior=value.toObject();if(prior["id"]==cue["id"])for(const auto *key:{"trigger","triggerMs"})if(prior.contains(key))cue[key]=prior[key];}m_model->design.animationCues[i]=cue;}}
     const QString json = m_model->design.toJson();
     const int secs = qMax(1, int(qCeil(m_model->design.durationMs / 1000.0)));
     QString color = "#6366f1";
@@ -1430,5 +1451,5 @@ void BuildWorkspace::save() {
     }
     m_lib->commitElements();
     m_savedJson=m_model->design.toJson();m_savedName=m_name->text();
-    say(updated ? "Saved. Find it in Screen Elements." : "Added to Screen Elements.");
+    say("Saved to screen elements");
 }

@@ -197,7 +197,24 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     setAcceptDrops(true);
     setWindowTitle("Cuebase");
     resize(1400, 860);
-    qApp->setStyleSheet(kStyle);
+    qApp->setStyleSheet(QString::fromUtf8(kStyle)+R"(
+QWidget { font-size:11px; }
+QMainWindow { background:#242528; }
+QFrame#panel,QFrame#editorFg,QFrame#qcard { background:#303135; border:1px solid #414247; border-radius:6px; }
+QFrame#editorBg,QFrame#tlBox { background:#28292c; border:1px solid #414247; border-radius:6px; }
+QLineEdit,QComboBox,QDoubleSpinBox,QSpinBox,QPlainTextEdit { background:#45464b; border:1px solid #515359; border-radius:3px; padding:2px 5px; }
+QPushButton { background:#424449; border:1px solid #53555b; border-radius:4px; padding:4px 8px; font-weight:400; }
+QPushButton:hover { background:#51545b; }
+QToolButton#rail { font-size:15px; border-radius:5px; }
+QToolButton#addBtn { background:#494b50; font-size:12px; }
+QListWidget { background:#2c2d31; border:1px solid #414247; padding:2px; }
+QListWidget::item { padding:3px; }
+QMenu::item { padding:4px 22px 4px 10px; }
+QScrollBar:vertical { width:6px; margin:0; }
+QScrollBar:horizontal { height:6px; margin:0; }
+QScrollBar::handle:vertical,QScrollBar::handle:horizontal { background:#64666d; border-radius:3px; }
+QCheckBox { spacing:4px; }
+)");
     setWindowIcon(QIcon(makeLogo(64)));
 
     buildUi();
@@ -300,7 +317,7 @@ void MainWindow::buildMenus() {
         [this] { HelpCenter::openLink(this, "Check For Updates", AppLinks::updates); });
     add(help, "Privacy Policy", QKeySequence(), [this] { HelpCenter::showPrivacy(this); });
     add(help, "Documentation", QKeySequence(),
-        [this] { HelpCenter::openLink(this, "Documentation", AppLinks::documentation); });
+        [this] { HelpCenter::showDocumentation(this); });
     add(help, "About", QKeySequence(), [this] { HelpCenter::showAbout(this); });
 
     // Window
@@ -357,6 +374,12 @@ QList<QPair<QString, QString>> MainWindow::shortcutRows() const {
     rows.append(QPair<QString,QString>{"Build: mesh edit / vertex / edge / face", "Tab / 1 / 2 / 3"});
     rows.append(QPair<QString,QString>{"Build mesh: extrude / inset / loop cut / fill / flatten", "E / I / Ctrl+R / F / Shift+F"});
     rows.append(QPair<QString,QString>{"Graph: select multiple / delete keys", "Shift+click / Delete"});
+    rows.append(QPair<QString,QString>{"Graph: pan / axis zoom", "Middle-drag / Ctrl+drag"});
+    rows.append(QPair<QString,QString>{"Graph: move / scale / constrain", "G / S / X or Y"});
+    rows.append(QPair<QString,QString>{"Graph: select all / insert", "Ctrl+A / I"});
+    rows.append(QPair<QString,QString>{"Graph: copy / paste / duplicate", "Ctrl+C / Ctrl+V / Shift+D"});
+    rows.append(QPair<QString,QString>{"Graph: step frame / cancel", "Alt+wheel / Esc"});
+    rows.append(QPair<QString,QString>{"Values: cancel adjustment / commit typed value", "Right-click / Enter"});
     rows.append(QPair<QString,QString>{"Graph: align opposite Bézier handle while dragging", "Shift+drag"});
     rows.append(QPair<QString,QString>{"Values: horizontal scrub / fine adjust / type", "Drag / Shift+drag / double-click"});
     rows.append(QPair<QString,QString>{"Property key: insert or remove at playhead", "Click diamond"});
@@ -633,6 +656,7 @@ void MainWindow::showBuild(const QString &elementId, bool fresh) {
         else m_build->editElement(elementId);
     }
     m_stack->setCurrentWidget(m_build);
+    statusBar()->hide();
     if (m_workspaceAct) m_workspaceAct->setText("Studio");
     setWindowTitle("Cuebase — Build");
     report("Build opened");
@@ -640,6 +664,7 @@ void MainWindow::showBuild(const QString &elementId, bool fresh) {
 
 void MainWindow::showStudio() {
     m_stack->setCurrentWidget(m_studio);
+    statusBar()->show();
     if (m_workspaceAct) m_workspaceAct->setText("Build");
     setWindowTitle("Cuebase");
     report("Studio opened");
@@ -989,6 +1014,7 @@ void MainWindow::onTimelineDrop(const DragPayload &d, int lane, qint64 startMs, 
         pl.refId = e->id;
         pl.name = e->name;
         pl.seconds = e->type == "Custom" ? qMax(1, e->seconds) : 8;
+        pl.durationMs=e->lengthMs();
     } else {
         return;
     }
@@ -1002,7 +1028,7 @@ void MainWindow::onSpotRemoved(const QString &spotId) {
     if (!p) return;
     const QString name = p->title;
     const qint64 end = m_play->groupEndMs(spotId);
-    const qint64 len = qint64(p->seconds) * 1000;
+    const qint64 len = qint64(p->seconds)*1000;
     m_lib->removeItem(spotId);
     m_lib->shiftPlacements(end, -len);  // whatever was placed after it moves back with the timeline
     report(QString("Ad \u201c%1\u201d removed from the timeline").arg(name));
@@ -1026,6 +1052,7 @@ void MainWindow::onPlacementLength(const QString &id) {
     const int secs = QInputDialog::getInt(this, "Length on timeline", "How long should it stay (seconds)?", pl->seconds, 1, 3600, 1, &ok);
     if (!ok) return;
     pl->seconds = secs;
+    pl->durationMs=qint64(secs)*1000;
     m_lib->commitPlacements();
     report(QString("\u201c%1\u201d now lasts %2 s").arg(pl->name).arg(secs));
 }

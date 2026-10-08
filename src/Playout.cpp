@@ -383,6 +383,7 @@ void Playout::playProgram(const QString &programId) {
 }
 
 void Playout::stop() {
+    m_manualCues.clear();
     if (m_state == Stopped) return;
     m_state = Stopped;
     m_index = -1;
@@ -516,7 +517,7 @@ void Playout::syncSounds() {
     const qint64 pos = timelinePosMs();
     for (const Placement &pl : std::as_const(m_lib->placements)) {
         if (pl.type == "Element") continue;  // elements are drawn by the viewport, only media makes sound
-        const bool active = on && pos >= pl.startMs && pos < pl.startMs + qint64(pl.seconds) * 1000;
+        const bool active = on && pos >= pl.startMs && pos < pl.startMs + pl.lengthMs();
         const bool fired = m_soundsOn.contains(pl.id);
         if (active && !fired) {
             m_soundsOn.insert(pl.id);
@@ -576,16 +577,16 @@ void Playout::syncDesignAudio(){
         connect(m_lib,&Library::elementsChanged,this,&Playout::syncDesignAudio);connect(m_lib,&Library::elementLiveChanged,this,&Playout::syncDesignAudio);
     }
     QList<DesignAudioCue> cues;QSet<QString> drawn;
-    auto append=[&](const Element &element,qint64 time,double gain){
+    auto append=[&](const Element &element,qint64 time,double gain,bool controlled=false,bool advancing=true){
         if(element.type!="Custom"||drawn.contains(element.id))return;drawn.insert(element.id);
         auto found=m_audioDesigns.find(element.id);if(found==m_audioDesigns.end()||found->first!=element.design)found=m_audioDesigns.insert(element.id,{element.design,ElementDesign::fromJson(element.design)});
-        cues.append(designAudioCues(found->second,time,m_state==Playing,element.id+"/",gain));
+        cues.append(designAudioCues(found->second,time,m_state==Playing&&advancing,element.id+"/",gain,!controlled));
     };
     if(m_state!=Stopped){const double gain=m_muted?0:m_volume;
-        for(const auto &element:m_lib->elements)if(element.live)append(element,QDateTime::currentMSecsSinceEpoch(),gain);
+        for(const auto &element:m_lib->elements){const auto playback=graphicPlayback(element,timelinePosMs());if(playback.visible)append(element,playback.time,gain,playback.controlled,playback.advancing);else if(playback.controlled)drawn.insert(element.id);}
         for(const auto &placement:m_lib->placements){const auto layer=m_lib->layers.value(qBound(0,placement.layer,3));
-            if(placement.type!="Element"||!layer.visible||timelinePosMs()<placement.startMs||timelinePosMs()>=placement.startMs+qint64(placement.seconds)*1000)continue;
-            if(const auto *element=m_lib->element(placement.refId))append(*element,timelinePosMs()-placement.startMs,layer.muted?0:gain*layer.volume/100.);
+            if(placement.type!="Element"||!layer.visible||timelinePosMs()<placement.startMs||timelinePosMs()>=placement.startMs+placement.lengthMs())continue;
+            if(const auto *element=m_lib->element(placement.refId)){const auto playback=graphicPlayback(*element,timelinePosMs(),placement.startMs,placement.offsetMs);if(playback.visible)append(*element,playback.time,layer.muted?0:gain*layer.volume/100.,playback.controlled,playback.advancing);}
         }
     }
     m_designAudio->sync(cues);

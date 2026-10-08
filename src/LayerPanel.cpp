@@ -29,7 +29,7 @@ void LayerPanel::refresh(){
         QSet<QString> closed;for(QTreeWidgetItemIterator it(this);*it;++it)if((*it)->childCount()&&!(*it)->isExpanded())closed.insert((*it)->data(0,Qt::UserRole).toString());
         signature=sig;clear();QHash<QString,QTreeWidgetItem*> items;
         for(const auto &o:m->design.objects){auto *item=new QTreeWidgetItem(QStringList{o.name});item->setData(0,Qt::UserRole,o.id);items[o.id]=item;
-            item->setFlags((item->flags()|Qt::ItemIsEditable|Qt::ItemIsDragEnabled)&~Qt::ItemIsDropEnabled);
+            item->setFlags(item->flags()|Qt::ItemIsEditable|Qt::ItemIsDragEnabled|Qt::ItemIsDropEnabled);
             item->setIcon(0,uiIcon(o.type));item->setIcon(1,uiIcon(o.visible?"eye":"hidden",o.visible));item->setIcon(2,uiIcon(o.locked?"lock":"unlock",o.locked));
             item->setToolTip(0,o.type+" · F2 to rename · Ctrl+P to parent to the active layer");item->setToolTip(1,o.visible?"Hide layer":"Show layer");item->setToolTip(2,o.locked?"Unlock layer":"Lock layer");
         }
@@ -43,6 +43,11 @@ void LayerPanel::refresh(){
     syncing=false;
 }
 void LayerPanel::dropEvent(QDropEvent *event){
+    if(auto *target=itemAt(event->position().toPoint());target&&dropIndicatorPosition()==QAbstractItemView::OnItem){
+        const QString parent=target->data(0,Qt::UserRole).toString();const auto children=m->sel;const auto active=m->activeId;
+        if(children.contains(parent)){event->ignore();return;}auto selection=children;selection.insert(parent);m->setSelection(selection,parent);
+        const bool changed=m->parentSelected();m->setSelection(children,active);if(changed)event->acceptProposedAction();else event->ignore();return;
+    }
     m->pushUndo();syncing=true;QTreeWidget::dropEvent(event);QVector<DObject> objects;
     for(QTreeWidgetItemIterator it(this);*it;++it)if(auto *o=m->byId((*it)->data(0,Qt::UserRole).toString()))objects.append(*o);
     if(objects.size()==m->design.objects.size())m->design.objects=objects;else m->dropUndo();

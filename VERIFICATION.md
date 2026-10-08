@@ -1,4 +1,4 @@
-# Verification — 2026-10-06
+# Verification — 2026-10-08
 
 ## Build
 
@@ -6,12 +6,12 @@
 
 ## Tests
 
-`ctest --test-dir build-final --output-on-failure`: **2/2 suites passed**, 87.75 seconds, zero failures.
+Both CTest suites passed on the final application build. The last full run passed CuebaseStream in 34.57 seconds; after correcting the editor test to use persisted graph coordinates, CuebaseBuild passed in 46.81 seconds. Zero failures in these final suite runs.
 
 | Suite | Result | Coverage |
 |---|---|---|
-| CuebaseBuild | 16 passed, 0 failed | Base values/Auto Key; independent channels; default reset and diamond toggle; duplicated tracks; Bezier evaluation/persistence and mouse handle editing; parenting/overflow; horizontal-only inputs; color picker and animated context button; older JSON migration; camera navigation; placement cursor mouse clicks, undo/redo and white creation; mesh operations; gradients/rounding; Mirror/Bevel geometry; actual FBX/GLB fixtures; video decoding/seeking; audio timing; save/reopen and graph key dragging without playhead movement. |
-| CuebaseStream | 6 passed, 0 failed | Clean program rendering, off-air black, live Custom graphics, guide exclusion and pause behavior; endpoint validation; RTMP and SRT loopback publishing/receiving; H.264/AAC codec and resolution checks; decoded non-silent audio. |
+| CuebaseBuild | 19 passed, 0 failed | Base values/Auto Key; independent channels; default reset and diamond toggle; duplicated tracks; Bezier evaluation/persistence and mouse handle editing; parenting/overflow; horizontal-only inputs; color picker and animated context button; older JSON migration; camera navigation; placement cursor mouse clicks, undo/redo and white creation; mesh operations; gradients/rounding; Mirror/Bevel geometry; actual FBX/GLB fixtures; video decoding/seeking; audio timing; save/reopen and graph key dragging without playhead movement; persistent graph pan/zoom and multi-channel interpolation; single-transaction input undo/cancel; backdrop filtering, percentage corners, audio timing and named cue persistence. |
+| CuebaseStream | 10 passed, 0 failed | Clean program rendering, off-air black, live Custom graphics, guide exclusion and pause behavior; endpoint validation; RTMP and SRT loopback publishing/receiving; H.264/AAC codec and resolution checks; decoded non-silent audio; exact overlay clip trimming and source offsets; entrance/hold/exit scheduling, Studio cue controls and paused animation rendering. |
 
 Qt totals include setup/cleanup cases. Text and JUnit results are in `build-final` (under `verification` in the source ZIP). Local received media is in `build-final/artifacts/loopback-rtmp.flv` and `loopback-srt.ts`.
 
@@ -19,7 +19,7 @@ RTMP used MediaMTX 1.21.1 on a temporary localhost port; SRT used FFmpeg's local
 
 ## Visual review
 
-Reviewed generated screenshots of the compact split Build workspace, graph with edited Bezier handle, and custom color picker. Automated Qt mouse interaction checks ran with the offscreen platform. A separate native desktop check could not initialize the computer-use runtime (`failed to write kernel assets: The system cannot find the path specified`). Therefore native window/menu interactions are not claimed as manually verified.
+Reviewed generated screenshots of the compact split Build workspace, graph with edited Bezier handle, custom color picker, animation cue editor and Screen Elements cue controls. Automated Qt mouse interaction checks ran with the offscreen platform. A separate native desktop check could not initialize the computer-use runtime (`failed to write kernel assets: The system cannot find the path specified`). Therefore native window/menu interactions are not claimed as manually verified.
 
 ## Practical limits
 

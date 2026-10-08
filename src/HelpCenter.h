@@ -17,6 +17,7 @@ void showShortcuts(QWidget *parent, const QList<QPair<QString, QString>> &rows);
 void showLicense(QWidget *parent);
 void showPrivacy(QWidget *parent);
 void showAbout(QWidget *parent);
+void showDocumentation(QWidget *parent);
 void openPlayground(QWidget *parent);
 void openLink(QWidget *parent, const QString &what, const char *url);
 

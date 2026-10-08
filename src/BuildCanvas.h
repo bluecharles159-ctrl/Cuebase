@@ -35,6 +35,7 @@ public:
     bool modalActive() const { return m_modal.kind != Modal::None || m_loopCut; }
 
     bool showGrid = true, showAxes = true, showGizmos = true, placeCursor = false;
+    bool showOverlays=true,showCursor=true,showLights=true,showCamera=true;
     bool showTitleSafe = true, showActionSafe = true, showRulers = true, snapping = true;
 
     void startMove() { startModal(Modal::Move); }

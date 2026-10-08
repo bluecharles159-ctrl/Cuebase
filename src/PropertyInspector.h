@@ -2,6 +2,7 @@
 #include <QWidget>
 #include <functional>
 #include <QVector>
+#include <QHash>
 class BuildModel;
 class Library;
 class QVBoxLayout;
@@ -24,4 +25,5 @@ private:
     QVector<std::function<void()>> sync;
     QString signature;
     bool syncing = false;
+    QHash<QString,bool> expanded;
 };

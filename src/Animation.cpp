@@ -30,7 +30,7 @@ void PropertyTrack::setKey(int ms, double value, const QString &interpolation) {
         keys[i].value = value;
         if (!interpolation.isEmpty()) keys[i].interpolation = interpolation;
     } else {
-        keys.append({ms, value, interpolation.isEmpty() ? "Smooth" : interpolation});
+        keys.append({ms, value, interpolation.isEmpty() ? "Bezier" : interpolation});
         std::sort(keys.begin(), keys.end(), [](const auto &a, const auto &b) { return a.ms < b.ms; });
     }
 }
@@ -58,8 +58,10 @@ QPointF PropertyTrack::handle(int index, bool right) const {
     if(k.customHandles)return QPointF(k.ms,k.value)+(right?k.rightHandle:k.leftHandle);
     int a=qMax(0,index-1),b=qMin(int(keys.size())-1,index+1);
     double slope=b==a?0:(keys[b].value-keys[a].value)/qMax(1,keys[b].ms-keys[a].ms);
+    if(k.handleType=="Vector"){const int neighbor=right?qMin(int(keys.size())-1,index+1):qMax(0,index-1);if(neighbor!=index)slope=(keys[neighbor].value-k.value)/double(keys[neighbor].ms-k.ms);}
+    if(k.handleType=="Auto Clamped"&&a!=index&&b!=index&&(k.value-keys[a].value)*(keys[b].value-k.value)<=0)slope=0;
     double dt=right?(index+1<keys.size()?(keys[index+1].ms-k.ms)/3.0:100.0):(index>0?(keys[index-1].ms-k.ms)/3.0:-100.0);
-    return QPointF(k.ms+dt,k.value+slope*dt);
+    double value=k.value+slope*dt;if(k.handleType=="Auto Clamped"){const auto &neighbor=keys[right?b:a];value=qBound(qMin(k.value,neighbor.value),value,qMax(k.value,neighbor.value));}return QPointF(k.ms+dt,value);
 }
 const PropertyTrack *DObject::track(const QString &property) const {
     for (const auto &t : tracks) if (t.property == property) return &t;
@@ -103,7 +105,7 @@ void DObject::refreshLegacyKeys() {
 }
 
 double DObject::propertyBase(const QString &path) const {
-    if(path=="media.speed"||path=="media.volume"||path=="audio.volume")return style[path].toDouble(1);
+    if(path=="media.speed"||path=="media.volume"||path=="audio.volume"||path=="audio.speed")return style[path].toDouble(1);
     if (transformChannels().contains(path)) return channelValue(base, path);
     if (path == "layout.width") return w * kPxPerUnit;
     if (path == "layout.height") return h * kPxPerUnit;
@@ -119,7 +121,7 @@ double DObject::propertyBase(const QString &path) const {
     if (path == "text.weight") return style[path].toDouble(600);
     if (path == "fill.stop" || path == "image.x" || path == "image.y") return style[path].toDouble(.5);
     if (path.startsWith("corner.") && path != "corner.radius") return style[path].toDouble(style["corner.radius"].toDouble());
-    if (path == "effects.brightness" || path == "effects.contrast" || path == "effects.saturation" || path == "text.lineHeight") return style[path].toDouble(1);
+    if (path == "backdrop.brightness" || path == "effects.brightness" || path == "effects.contrast" || path == "effects.saturation" || path == "text.lineHeight") return style[path].toDouble(1);
     return style[path].toDouble();
 }
 double DObject::propertyValue(const QString &path, qint64 ms) const {

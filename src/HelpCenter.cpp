@@ -185,10 +185,10 @@ void showShortcuts(QWidget *parent, const QList<QPair<QString, QString>> &rows) 
             else if(label.startsWith("Values:")||label.startsWith("Property key:"))category=5;
             else if(label.startsWith("Build:"))category=(label.contains("key")||label.contains("frame")&&!label.contains("artboard")||label.contains("play"))?2:1;
             if(category!=group)continue;QString description=label;const int colon=description.indexOf(':');if(colon>=0)description=description.mid(colon+1).trimmed();
-            html+="<tr><td>"+description.toHtmlEscaped()+"</td><td align='right' nowrap='nowrap' style='color:#eee;background:#3b3b3b'><b>"+row.second.toHtmlEscaped()+"</b></td></tr>";
+            html+="<tr><td>"+description.toHtmlEscaped()+"</td><td align='right' nowrap='nowrap' style='color:#eee'>"+row.second.toHtmlEscaped()+"</td></tr>";
         }html+="</table>";
     }
-    htmlDialog(parent,"Keyboard Shortcuts",html,680,660);
+    htmlDialog(parent,"Keyboard Shortcuts",html,520,600);
 }
 
 void showLicense(QWidget *parent) {
@@ -213,10 +213,22 @@ void showPrivacy(QWidget *parent) {
 }
 
 void showAbout(QWidget *parent) {
-    QMessageBox::about(parent, "About Cuebase",
-        QString("<h3>Cuebase %1</h3><p>TV production manager.</p><p>Qt %2 &middot; GCC %3</p>")
-            .arg(QApplication::applicationVersion(), QString::fromLatin1(qVersion()),
-                 QString::fromLatin1(__VERSION__)));
+    htmlDialog(parent,"About Cuebase",QString("<h2>Cuebase %1</h2><p>Create television graphics, animate screen elements, assemble a rundown and send your program picture and mixed audio to an RTMP or SRT destination.</p><p><b>Build</b> is the graphics and animation workspace. <b>Studio</b> manages programs, timed graphics, audio and live output.</p><p>Projects and media references are stored locally. Network output uses the destination configured by the producer.</p><p>Qt %2 &middot; GCC %3</p>").arg(QApplication::applicationVersion(),QString::fromLatin1(qVersion()),QString::fromLatin1(__VERSION__)),480,360);
+}
+
+void showDocumentation(QWidget *parent){
+    htmlDialog(parent,"Cuebase Guide",
+        "<h2>Produce a show with Cuebase</h2><h3>Build a screen element</h3>"
+        "<p>Open Build to create a composition. Add shapes, text, media or a 3D object. Select a layer to edit its transform, background, material and effects. Save the composition to Screen Elements before scheduling it in Studio.</p>"
+        "<p>Drag a layer onto another to parent it, or select children first and the parent last, then press Ctrl+P. Overflow X/Y controls clip children. Edit Parent Only holds children in place while the parent is adjusted.</p>"
+        "<h3>Named entrance and exit animations</h3><p>In Build, open Animation Cues. Add a name and start/end frame range. Enable Hold on screen for an entrance, or disable it for an exit that hides the graphic when finished. Apply, then save the screen element.</p><p>In Studio, select the overlay to trigger its animations. Set a Program time timer, or an offset Before ad / After ad. For example, Exit with Before ad and 10 seconds begins ten seconds before each ad. A newer trigger replaces the current animation. Hide removes it immediately; a later timer may show it again.</p>"
+        "<h3>Media and audio</h3><p>Shift+A → Media imports images, videos and audio. The World Background audio icon adds multiple tracks. Select a track to adjust volume, mute, start, source offset, playback speed, play length, looping and fades. Each track mixes independently.</p>"
+        "<h3>Animate</h3><p>Click a property's diamond to insert a key at the current frame; click it again to remove that key. Auto Key records adjustments on animated channels. A changed value at a keyed frame is marked until keyed.</p>"
+        "<p>In the graph, select channels on the left. Interpolation reports the selected keys, or selected channels when no keys are selected; Mixed means they differ. Choosing Bezier applies to that selection. Select keys to edit both handles and choose their handle type.</p>"
+        "<p>Middle-drag pans. Wheel zooms time; Ctrl-drag zooms horizontally or vertically. G moves keys, S scales keys and handles, and X/Y constrains the operation. Right-click or Escape cancels. Ctrl+A selects keys, Ctrl+C/V copies and pastes at the playhead, and I inserts keys on selected channels. Alt-wheel steps frames. Home explicitly fits the view.</p>"
+        "<h3>Assemble the rundown</h3><p>Import programs and arrange them in order. Drop screen elements onto an overlay lane at the intended time. Drag a clip to reposition it and drag its left or right edge to trim its on-screen duration. Wheel zooms the timeline; middle-drag pans.</p>"
+        "<h3>Preview and broadcast</h3><p>Check the program preview, audio levels and scheduled graphics. Pausing holds the program clock and its animations. Configure RTMP or SRT output with your destination address, then start network output. Protect stream keys and test your receiver before going live.</p>"
+        "<h3>Save and recover</h3><p>The Studio library saves changes locally. Build compositions must be saved to update their Screen Element. Closing Cuebase offers Save, Don't Save and Cancel. Keep imported media at its original path or re-import it if moved.</p>",560,640);
 }
 
 void openPlayground(QWidget *parent) {

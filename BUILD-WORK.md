@@ -1,4 +1,4 @@
-# Build update — 2026-10-06
+# Build update — 2026-10-08
 
 Implemented and rebuilt in `build-final/Cuebase.exe`:
 
@@ -12,9 +12,15 @@ Implemented and rebuilt in `build-final/Cuebase.exe`:
 - Solid/gradient/media backgrounds, decoded video textures and audio playback, image adjustments, custom color picker, linked/individual corners.
 - File import/export, external-drop overlay, video placement dialog, animated Build context action, saved composition reopening, save-before-quit and save-before-replace dialogs.
 - Clean program output and local FFmpeg H.264/AAC RTMP/RTMPS/SRT publishing with bounded queues, reconnect status and mixed audio.
+- Named animation ranges with entrance replay, final-frame hold, exit/hide, manual triggers and program/ad-relative timers in Studio.
+- Multiple background audio tracks with independent volume, speed, offsets, looping and fades; media creation through Shift+A.
+- Shared graph/grid coordinates, persistent pan/zoom, Ctrl-drag axis zoom, multi-channel interpolation, handle types and key clipboard operations.
+- Backdrop filters, rounded text backgrounds, percentage corners, parent-only transforms, layer search and drag parenting.
+- Duration-accurate Studio overlay clips with trim handles and source offsets; animations pause with the program clock.
+- Screen Elements search/categories, compact cue controls, transaction-based numeric dragging, cancellation and Enter-to-commit.
 
-Validation: final build succeeded; both CTest suites passed (16 editor cases and 6 output cases, including suite setup/cleanup). Native desktop automation could not initialize its bundled runtime; visual review used the generated Qt screenshots. See `VERIFICATION.md` for coverage and limits.
+Validation: final build succeeded; both CTest suites passed (19 editor cases and 10 output cases, including suite setup/cleanup). Native desktop automation could not initialize its bundled runtime; visual review used the generated Qt screenshots. See `VERIFICATION.md` for coverage and limits.
 
-Use `Run-Cuebase.cmd` for the rebuilt application. `Cuebase-build-update-2026-10-06.zip` contains buildable source, test fixtures, test results, screenshots and the local RTMP test receiver with its license. It is not a portable runtime installer.
+Use `Run-Cuebase.cmd` for the rebuilt application. `Cuebase-build-update-2026-10-08.zip` contains buildable source, test fixtures, test results, screenshots and the local RTMP test receiver with its license. It is not a portable runtime installer.
 
 The original `Cuebase-buildstudio-updated.zip`, user library and user media are preserved.

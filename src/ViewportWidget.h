@@ -57,7 +57,7 @@ private:
     View makeView() const;
     bool barVisible() const { return m_hover || m_detached || m_scrub; }
     void drawScreen(QPainter &p, const QRect &r, const View &v, bool guides = true);
-    void drawElement(QPainter &p, const QRect &r, const Element &e, qint64 tMs);
+    void drawElement(QPainter &p, const QRect &r, const Element &e, qint64 tMs,bool controlled=false);
     const ElementDesign &designFor(const Element &e);
     struct Range { int a = -1, b = -1; };
     Range scrubRange() const;                       // the segments of the one program the scrubber covers

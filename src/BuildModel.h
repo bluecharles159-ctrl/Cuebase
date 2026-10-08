@@ -13,6 +13,7 @@
 class BuildModel : public QObject {
     Q_OBJECT
 public:
+    BuildModel();
     ElementDesign design;
     QString activeId;
     QSet<QString> sel;
@@ -20,6 +21,7 @@ public:
     bool playing = false;
     bool autoKey = false;              // OFF by default; explicit property key buttons are the normal workflow
     QString selChannel;
+    bool isolateParents=false;
     int selKey = -1;  // the selected keyframe of the active object
     int fps = 25;
     double fpsBase = 1.0;
@@ -114,6 +116,7 @@ signals:
     void modeChanged();
 
 private:
+    quint64 m_lastGesture=0;
     QVector<QString> m_undo, m_redo;
     void restore(const QString &json);
     void shiftOrigin(DObject &o, const QVector3D &cLocal);

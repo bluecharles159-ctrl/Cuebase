@@ -4,10 +4,10 @@ from zipfile import ZipFile, ZIP_DEFLATED
 import hashlib
 
 root = Path(__file__).resolve().parent
-destination = root / 'Cuebase-build-update-2026-10-06.zip'
+destination = root / 'Cuebase-build-update-2026-10-08.zip'
 files = [root / name for name in (
     'CMakeLists.txt', 'CMakePresets.json', 'Run-Cuebase.cmd', 'README-Build.md',
-    'BUILD-WORK.md', 'VERIFICATION.md', 'package-source.py')]
+    'BUILD-WORK.md', 'VERIFICATION.md', 'PRODUCTION-GUIDE.md', 'package-source.py')]
 for folder in ('src', 'tests'):
     files += sorted(p for p in (root / folder).rglob('*') if p.is_file())
 files += [root / 'tools' / 'mediamtx' / name for name in ('mediamtx.exe', 'LICENSE')]

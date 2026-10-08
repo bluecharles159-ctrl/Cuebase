@@ -10,7 +10,10 @@
 #include <QPolygon>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSettings>
 #include <QWheelEvent>
+#include <QtMath>
+#include <cmath>
 #include <algorithm>
 #include <cstdlib>
 #include <climits>
@@ -19,9 +22,9 @@
 #include "Playout.h"
 
 namespace {
-constexpr int kCapY = 14;                                   // the playhead's little flag sits above the lanes
-constexpr int kMainTop = 26;                                // top of the programs lane
-constexpr int kMainH = 52;
+constexpr int kCapY = 22;                                   // the playhead's little flag sits above the lanes
+constexpr int kMainTop = 36;                                // top of the programs lane
+constexpr int kMainH = 40;
 constexpr int kLabelTop = kMainTop + kMainH + 4;
 constexpr int kLaneTop = kLabelTop + 20;                    // first extra timeline
 constexpr int kLaneH = 26;
@@ -54,6 +57,7 @@ QColor segColor(const Segment &s) {
 
 TimelineWidget::TimelineWidget(Playout *play, Library *lib, QWidget *parent)
     : QWidget(parent), m_play(play), m_lib(lib) {
+    m_pixelsPerSecond=qBound(.5,QSettings().value("studio/timelineScale",14.).toDouble(),800.);
     connect(play, &Playout::segmentsChanged, this, [this] { relayout(); update(); });
     connect(play, &Playout::segmentChanged, this, [this] { update(); });
     connect(play, &Playout::stateChanged, this, [this] { update(); });
@@ -96,9 +100,10 @@ void TimelineWidget::relayout() {
     const auto &segs = m_play->segments();
     int x = 10;
     for (int i = 0; i < segs.size(); ++i) {
-        const int w = Playout::blockWidth(segs[i]);
+        x=msToX(m_play->segmentStartMs(i));
+        const int w = qMax(1,msToX(m_play->segmentStartMs(i)+segs[i].ms)-x);
         m_blocks.append({x, w});
-        x += w + 4;
+        x += w;
         // a "+" insert point sits on the cut after the last segment of a program that was cut: it overlaps
         // the two pieces so it takes no room of its own
         const bool last = i + 1 == segs.size() || segs[i + 1].programId != segs[i].programId;
@@ -116,43 +121,20 @@ void TimelineWidget::relayout() {
 // Everything placed on the extra timelines; each timeline has one row, later blocks overlap earlier ones.
 void TimelineWidget::layoutPlacements() {
     m_pblocks.clear();
-    if (m_blocks.isEmpty()) return;
     for (const Placement &pl : std::as_const(m_lib->placements)) {
         const int lane = qBound(1, pl.layer, 3);
         const int x0 = msToX(pl.startMs);
-        const int x1 = qMax(msToX(pl.startMs + qint64(pl.seconds) * 1000), x0 + 76);
+        const int x1 = qMax(msToX(pl.startMs + pl.lengthMs()), x0 + 1);
         m_pblocks.append({pl.id, pl.type, QRect(x0, laneY(lane) + 1, x1 - x0, kLaneH - 3), lane});
+        m_totalW=qMax(m_totalW,x1+40);setMinimumWidth(m_totalW);
     }
 }
 
 int TimelineWidget::endX() const { return m_blocks.isEmpty() ? 10 : m_blocks.last().x + m_blocks.last().w; }
 
 // timeline time <-> pixels (piecewise: every segment is drawn at its own scale)
-int TimelineWidget::msToX(qint64 ms) const {
-    const auto &segs = m_play->segments();
-    if (segs.isEmpty() || m_blocks.size() != segs.size()) return 10;
-    if (ms <= 0) return m_blocks[0].x;
-    for (int i = 0; i < segs.size(); ++i) {
-        const qint64 st = m_play->segmentStartMs(i);
-        if (ms < st + segs[i].ms)
-            return m_blocks[i].x + int(double(m_blocks[i].w) * double(ms - st) / segs[i].ms);
-    }
-    return endX();
-}
-
-qint64 TimelineWidget::xToMs(double x) const {
-    const auto &segs = m_play->segments();
-    if (segs.isEmpty() || m_blocks.size() != segs.size()) return 0;
-    if (x <= m_blocks[0].x) return 0;
-    for (int i = 0; i < segs.size(); ++i) {
-        const Block &b = m_blocks[i];
-        if (x <= b.x + b.w) {
-            if (x < b.x) return m_play->segmentStartMs(i);  // in the gap in front of this block
-            return m_play->segmentStartMs(i) + qint64(double(segs[i].ms) * (x - b.x) / b.w);
-        }
-    }
-    return m_play->totalMs();
-}
+int TimelineWidget::msToX(qint64 ms) const {return 10+qRound(ms*m_pixelsPerSecond/1000.);}
+qint64 TimelineWidget::xToMs(double x) const {return qMax<qint64>(0,qRound64((x-10)*1000./m_pixelsPerSecond));}
 
 int TimelineWidget::playheadX() const {
     if (m_drag == Drag::Playhead && m_moved) return qBound(m_blocks.isEmpty() ? 10 : m_blocks[0].x, m_dragX, endX());
@@ -269,6 +251,7 @@ bool TimelineWidget::resolveMainDrop(const DragPayload &d, const QPoint &pos) {
 }
 
 bool TimelineWidget::dragMove(const DragPayload &d, const QPoint &g) {
+    m_cand=d;
     m_ins = {};
     m_dropLane = 0;
     const QPoint pos = mapFromGlobal(g);
@@ -301,8 +284,9 @@ bool TimelineWidget::dragMove(const DragPayload &d, const QPoint &g) {
     }
     m_hover = pos;
     m_hasHover = inside;
+    if(m_dropLane>0){const double frame=1000.*m_lib->display.fpsBase/qMax(1,m_lib->display.fps);m_dropMs=qRound64(m_dropMs/frame)*frame;QVector<qint64> targets{0,m_play->playheadMs()};for(const auto &clip:m_lib->placements)if(clip.id!=d.id){targets<<clip.startMs<<clip.startMs+clip.lengthMs();}int best=7;for(auto target:targets){int distance=qAbs(msToX(target)-msToX(m_dropMs));if(distance<best){best=distance;m_dropMs=target;}}}
     update();
-    return commit;
+    return false; // Placement is committed on release, after the producer reviews the target.
 }
 
 void TimelineWidget::dragDrop(const DragPayload &d, const QPoint &g) {
@@ -330,7 +314,7 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
     p.setRenderHint(QPainter::Antialiasing);
     const auto &segs = m_play->segments();
 
-    if (segs.isEmpty() || m_blocks.size() != segs.size()) {
+    if (m_blocks.size() != segs.size()) {
         p.setPen(QColor("#64748b"));
         p.drawText(rect(), Qt::AlignCenter, "The timeline is empty. Add programs in the Programs tab.");
         return;
@@ -429,7 +413,8 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
         p.setOpacity(lifted ? 0.3 : (ls.muted && pb.type != "Element") || !ls.visible ? 0.55 : 1.0);
         p.setPen(Qt::NoPen);
         p.setBrush(c.darker(125));
-        p.drawRoundedRect(pb.rect, 6, 6);
+        p.drawRoundedRect(pb.rect, 4, 4);
+        p.setPen(QPen(QColor(235,235,245,160),2));if(pb.rect.width()>10){p.drawLine(pb.rect.left()+3,pb.rect.top()+6,pb.rect.left()+3,pb.rect.bottom()-6);p.drawLine(pb.rect.right()-3,pb.rect.top()+6,pb.rect.right()-3,pb.rect.bottom()-6);}
         QFont f = font();
         f.setPixelSize(11);
         f.setBold(true);
@@ -460,6 +445,8 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
         p.drawLine(m_ins.x, kMainTop - 5, m_ins.x, kMainTop + kMainH + 5);
     }
 
+    if(m_dropLane>0&&m_hasHover){qint64 length=1000;if(m_cand.kind=="element"){if(const auto *element=m_lib->element(m_cand.id))length=element->lengthMs();}else if(m_cand.kind=="placement"){if(const auto *clip=m_lib->placement(m_cand.id))length=clip->lengthMs();}else if(const auto *program=m_lib->program(m_cand.id))length=qint64(program->seconds)*1000;
+        QRect target(msToX(m_dropMs),laneY(m_dropLane)+1,qMax(2,msToX(m_dropMs+length)-msToX(m_dropMs)),kLaneH-3);p.setPen(QPen(QColor("#8bbcf0"),1,Qt::DashLine));p.setBrush(QColor(99,155,215,65));p.drawRoundedRect(target,3,3);p.setPen(Qt::white);p.drawText(target.adjusted(5,0,-3,0),Qt::AlignVCenter,m_cand.label);}
     // ---- the cut tool: dashed line through the program and a scissors in the middle of it
     int cutSeg, cutSec, cutX;
     if (!DragController::instance()->active() && cutTarget(&cutSeg, &cutSec, &cutX)) {
@@ -479,12 +466,16 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
                  QColor("#475569"), width());
     }
 
+    // Uniform time ruler, shared by every lane.
+    double step=std::pow(10.,std::floor(std::log10(70./m_pixelsPerSecond)));for(double multiplier:{1.,2.,5.,10.})if(step*multiplier*m_pixelsPerSecond>=65){step*=multiplier;break;}
+    p.setFont(QFont("Segoe UI",8));p.setPen(QColor("#9ca3af"));const int left=hbar()?hbar()->value():0;
+    for(double time=std::ceil(xToMs(left)/1000./step)*step;msToX(time*1000)<left+(parentWidget()?parentWidget()->width():width());time+=step){int x=msToX(time*1000);p.drawText(QRect(x,1,64,16),QString::number(time,'g',4)+"s");p.drawLine(x,18,x,21);}
     // ---- playhead (drag it to move where the broadcast plays from)
     const int px = playheadX();
     const bool grabbing = m_drag == Drag::Playhead && m_moved;
     const QColor pc = m_play->isLive() || grabbing ? QColor("#ef4444") : QColor("#64748b");
     p.setPen(QPen(pc, 2));
-    p.drawLine(px, kMainTop - 2, px, kMainTop + kMainH + 2);
+    p.drawLine(px, kMainTop - 2, px, height()-4);
     p.setPen(Qt::NoPen);
     p.setBrush(pc);
     p.drawRoundedRect(QRect(px - 6, kCapY, 12, 8), 2, 2);
@@ -502,7 +493,7 @@ void TimelineWidget::updateCursor() {
         const QPoint pos = m_hover;
         if (overScissors(pos) || hitSlot(pos)) c = Qt::PointingHandCursor;
         else if (std::abs(pos.x() - playheadX()) <= 7 && pos.y() >= kCapY && pos.y() <= kMainTop + kMainH + 2) c = Qt::SizeHorCursor;
-        else if (hitPlacement(pos)) c = Qt::OpenHandCursor;
+        else if (const auto *placement=hitPlacement(pos)) c = (qAbs(pos.x()-placement->rect.left())<6||qAbs(pos.x()-placement->rect.right())<6)?Qt::SizeHorCursor:Qt::OpenHandCursor;
         else {
             const int i = blockAt(pos);
             if (i >= 0) {
@@ -515,7 +506,8 @@ void TimelineWidget::updateCursor() {
 }
 
 void TimelineWidget::mousePressEvent(QMouseEvent *e) {
-    if (e->button() != Qt::LeftButton || m_blocks.isEmpty()) return;
+    if(e->button()==Qt::MiddleButton){m_drag=Drag::Pan;m_pressPos=e->position().toPoint();m_panScroll=hbar()?hbar()->value():0;return;}
+    if (e->button() != Qt::LeftButton) return;
     const QPoint pos = e->position().toPoint();
     m_hover = pos;
     m_hasHover = true;
@@ -546,6 +538,7 @@ void TimelineWidget::mousePressEvent(QMouseEvent *e) {
     // 4. something on an extra timeline: picks it up
     if (const PBlock *pb = hitPlacement(pos)) {
         if (const Placement *pl = m_lib->placement(pb->id)) {
+            if(qAbs(pos.x()-pb->rect.left())<6||qAbs(pos.x()-pb->rect.right())<6){m_trimId=pl->id;m_trimStart=pl->startMs;m_trimLength=pl->lengthMs();m_trimOffset=pl->offsetMs;m_drag=qAbs(pos.x()-pb->rect.left())<6?Drag::TrimLeft:Drag::TrimRight;setCursor(Qt::SizeHorCursor);return;}
             m_cand.kind = "placement";
             m_cand.id = pb->id;
             m_cand.label = pl->name;
@@ -577,8 +570,13 @@ void TimelineWidget::mousePressEvent(QMouseEvent *e) {
 
 void TimelineWidget::mouseMoveEvent(QMouseEvent *e) {
     const QPoint pos = e->position().toPoint();
-    m_hover = pos;
-    m_hasHover = true;
+    m_hover = pos;m_hasHover = true;
+    if(m_drag==Drag::Pan){if(auto *bar=hbar())bar->setValue(m_panScroll+m_pressPos.x()-pos.x());return;}
+    if(m_drag==Drag::TrimLeft||m_drag==Drag::TrimRight){if(auto *placement=m_lib->placement(m_trimId)){
+        const double frame=1000.*m_lib->display.fpsBase/qMax(1,m_lib->display.fps);qint64 at=qRound64(xToMs(pos.x())/frame)*frame;
+        if(m_drag==Drag::TrimRight)placement->durationMs=qMax<qint64>(qRound64(frame),at-m_trimStart);
+        else{const auto end=m_trimStart+m_trimLength;at=qBound<qint64>(qMax<qint64>(0,m_trimStart-m_trimOffset),at,end-qRound64(frame));placement->startMs=at;placement->durationMs=end-at;placement->offsetMs=m_trimOffset+at-m_trimStart;}
+        placement->seconds=qMax(1,int(qCeil(placement->lengthMs()/1000.)));layoutPlacements();update();autoScroll(pos.x());}return;}
     if (m_drag == Drag::Playhead) {
         if (!m_moved && (pos - m_pressPos).manhattanLength() < 4) return;
         m_moved = true;
@@ -602,7 +600,9 @@ void TimelineWidget::mouseMoveEvent(QMouseEvent *e) {
 }
 
 void TimelineWidget::mouseReleaseEvent(QMouseEvent *e) {
+    if(m_drag==Drag::Pan){m_drag=Drag::None;return;}
     if (e->button() != Qt::LeftButton) return;
+    if(m_drag==Drag::TrimLeft||m_drag==Drag::TrimRight){m_drag=Drag::None;m_lib->commitPlacements();updateCursor();return;}
     const Drag d = m_drag;
     const int x = m_dragX;
     const bool moved = m_moved;
@@ -674,6 +674,9 @@ void TimelineWidget::autoScroll(int localX) {
 // Shift + wheel (or a sideways wheel) scrolls the timeline; the plain wheel scrolls the page it sits in.
 void TimelineWidget::wheelEvent(QWheelEvent *e) {
     QScrollBar *sb = hbar();
+    if(!(e->modifiers()&Qt::ShiftModifier)&&e->angleDelta().y()){
+        const auto anchor=xToMs(e->position().x());const double viewportX=e->position().x()-(sb?sb->value():0);
+        m_pixelsPerSecond=qBound(.5,m_pixelsPerSecond*std::pow(1.2,e->angleDelta().y()/120.),800.);QSettings().setValue("studio/timelineScale",m_pixelsPerSecond);relayout();if(sb)sb->setValue(msToX(anchor)-viewportX);update();e->accept();return;}
     const bool sideways = e->angleDelta().x() != 0 || (e->modifiers() & Qt::ShiftModifier);
     if (sb && sideways && sb->maximum() > 0) {
         const int d = e->angleDelta().x() != 0 ? e->angleDelta().x() : e->angleDelta().y();

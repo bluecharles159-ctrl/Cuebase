@@ -1,6 +1,10 @@
 #include "UiControls.h"
 #include <QPainterPath>
 #include <QToolButton>
+#include <QTimer>
+#include <QPlainTextEdit>
+
+UiGesture *uiGesture(){static UiGesture instance;return &instance;}
 
 QIcon uiIcon(const QString &name,bool active){
     QPixmap image(40,40);image.fill(Qt::transparent);QPainter p(&image);p.setRenderHint(QPainter::Antialiasing);p.scale(2,2);
@@ -30,7 +34,7 @@ QIcon uiIcon(const QString &name,bool active){
     else if(n.contains("fit")||n.contains("composition")){p.drawRect(3,5,14,10);p.drawLine(1,3,5,3);p.drawLine(1,3,1,7);p.drawLine(19,17,15,17);p.drawLine(19,17,19,13);}
     else if(n=="100%"){p.drawEllipse(QRectF(2,2,11,11));p.drawLine(12,12,18,18);p.drawLine(7,5,7,10);}
     else if(n.contains("render")||n.contains("solid")){p.drawEllipse(QRectF(3,3,14,14));if(n.contains("render")){p.setBrush(QColor("#668cb6"));p.drawPie(QRectF(3,3,14,14),-90*16,180*16);}}
-    else if(n.contains("graph")){p.drawLine(3,2,3,17);p.drawLine(3,17,18,17);QPainterPath path;path.moveTo(4,15);path.cubicTo(8,15,9,4,17,4);p.drawPath(path);}
+    else if(n.contains("graph")||n.contains("animation")){p.drawLine(3,2,3,17);p.drawLine(3,17,18,17);QPainterPath path;path.moveTo(4,15);path.cubicTo(8,15,9,4,17,4);p.drawPath(path);}
     else if(n.contains("play")){p.drawPolygon(QPolygonF{{6,3},{17,10},{6,17}});}
     else if(n.contains("pause")){p.drawLine(7,4,7,16);p.drawLine(13,4,13,16);}
     else if(n.contains("key")){p.drawPolygon(QPolygonF{{10,3},{17,10},{10,17},{3,10}});}
@@ -46,6 +50,10 @@ QIcon uiIcon(const QString &name,bool active){
 class UiBehavior:public QObject{
 public:using QObject::QObject;
     bool eventFilter(QObject *object,QEvent *event) override {
+        if(event->type()==QEvent::KeyPress){auto *key=static_cast<QKeyEvent*>(event);if(key->key()==Qt::Key_Return||key->key()==Qt::Key_Enter){
+            if(auto *line=qobject_cast<QLineEdit*>(object))QTimer::singleShot(0,line,[line]{line->deselect();line->clearFocus();});
+            if(auto *text=qobject_cast<QPlainTextEdit*>(object);text&&!(key->modifiers()&Qt::ShiftModifier)){text->clearFocus();auto cursor=text->textCursor();cursor.clearSelection();text->setTextCursor(cursor);return true;}
+        }}
         if(event->type()==QEvent::Wheel){auto *wheel=static_cast<QWheelEvent*>(event);if(wheel->angleDelta().x()==0&&wheel->pixelDelta().x()==0&&(qobject_cast<QAbstractSpinBox*>(object)||qobject_cast<QComboBox*>(object))){event->ignore();return true;}}
         if(event->type()==QEvent::Polish)if(auto *b=qobject_cast<QAbstractButton*>(object)){b->setCursor(Qt::PointingHandCursor);if(b->toolTip().isEmpty()&&!b->text().isEmpty())b->setToolTip(b->text().remove('&'));}
         return false;

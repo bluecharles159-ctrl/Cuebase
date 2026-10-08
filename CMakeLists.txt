@@ -20,6 +20,7 @@ add_library(CuebaseBuildCore STATIC
     src/BuildCanvas.h src/BuildCanvas.cpp
     src/BuildWorkspace.h src/BuildWorkspace.cpp
     src/AnimationEditor.h src/AnimationEditor.cpp
+    src/AnimationCuePanel.h src/AnimationCuePanel.cpp
     src/PropertyInspector.h src/PropertyInspector.cpp
     src/LayerPanel.h src/LayerPanel.cpp)
 target_include_directories(CuebaseBuildCore PUBLIC src)
@@ -30,7 +31,7 @@ add_executable(Cuebase WIN32
     src/MainWindow.h src/MainWindow.cpp
     src/AddMenu.h src/AddMenu.cpp
     src/HelpCenter.h src/HelpCenter.cpp src/AppLinks.h
-    src/Playout.h src/Playout.cpp
+    src/Playout.h src/Playout.cpp src/AnimationPlayout.cpp
     src/ViewportWidget.h src/ViewportWidget.cpp
     src/TimelineWidget.h src/TimelineWidget.cpp
     src/QueueStrip.h src/QueueStrip.cpp
@@ -56,6 +57,9 @@ if(BUILD_TESTING)
     add_test(NAME CuebaseBuild COMMAND CuebaseBuildTests -platform offscreen
         -o test-results.txt,txt -o test-results.xml,junitxml)
     add_executable(CuebaseStreamTests tests/StreamTests.cpp
+        src/EditorPanel.h src/EditorPanel.cpp
+        src/AnimationPlayout.cpp
+        src/TimelineWidget.h src/TimelineWidget.cpp src/DragDrop.h src/DragDrop.cpp
         src/Playout.h src/Playout.cpp src/ViewportWidget.h src/ViewportWidget.cpp
         src/ColorManagement.h src/ColorManagement.cpp)
     target_link_libraries(CuebaseStreamTests PRIVATE CuebaseStreaming CuebaseBuildCore Qt6::Test Qt6::Widgets)

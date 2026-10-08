@@ -65,6 +65,7 @@ struct Ad {
 };
 
 struct Element {
+    qint64 lengthMs() const;
     QString id, name, type = "Logo", text, color = "#2563eb", position = "Top Left", image;
     int seconds = 4;    // Break elements: how long the bumper stays on screen
     bool live = false;  // Logo / Banner / Ad Element: currently shown on the viewport
@@ -86,6 +87,8 @@ struct ProgramItem {
 
 // Something laid on one of the extra timeline layers: a screen element, a sound, an ad or a clip.
 struct Placement {
+    qint64 durationMs=0;
+    qint64 lengthMs() const {return durationMs>0?durationMs:qint64(seconds)*1000;}
     QString id, type = "Element", refId, name, file;  // type: "Element", "Sound", "Ad" or "Clip"
     qint64 startMs = 0;                                // position on the timeline
     int seconds = 8;                                   // how long it stays / plays

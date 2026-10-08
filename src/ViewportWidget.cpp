@@ -455,25 +455,28 @@ void ViewportWidget::drawScreen(QPainter &p, const QRect &r, const View &v, bool
 
     // ---- on-screen elements: switched-on ones, plus ones placed on the extra timelines for this moment ----
     QSet<QString> drawn;
-    const qint64 clock = QDateTime::currentMSecsSinceEpoch();
+    const qint64 clock = v.posMs;
     for (const Element &e : m_lib->elements) {
-        if (!e.live || e.type == "Break") continue;
+        const auto playback=m_play->graphicPlayback(e,clock);
+        if(playback.controlled)drawn.insert(e.id);
+        if (!playback.visible || e.type == "Break") continue;
         if (e.type == "Ad Element" && !(seg && seg->type == Segment::Ad)) continue;
-        drawElement(p, r, e, clock);
+        drawElement(p, r, e, playback.time,playback.controlled);
         drawn.insert(e.id);
     }
     if (v.onAir || m_detached) {
         for (const Placement &pl : m_lib->placements) {
             if (pl.type != "Element") continue;
             if (!m_lib->layers.value(qBound(0, pl.layer, 3)).visible) continue;
-            if (v.posMs < pl.startMs || v.posMs >= pl.startMs + qint64(pl.seconds) * 1000) continue;
+            if (v.posMs < pl.startMs || v.posMs >= pl.startMs + pl.lengthMs()) continue;
             const Element *e = m_lib->element(pl.refId);
             if (!e || e->type == "Break" || drawn.contains(e->id)) continue;
             drawn.insert(e->id);
+            const auto playback=m_play->graphicPlayback(*e,v.posMs,pl.startMs,pl.offsetMs);if(!playback.visible)continue;
             const qint64 elapsed = v.posMs - pl.startMs;
             p.save();
-            applyFx(p, r, transitionAt(e->fx, elapsed, qint64(pl.seconds) * 1000));
-            drawElement(p, r, *e, elapsed);
+            applyFx(p, r, transitionAt(e->fx, elapsed, pl.lengthMs()));
+            drawElement(p, r, *e, playback.time,playback.controlled);
             p.restore();
         }
     }
@@ -505,7 +508,7 @@ const ElementDesign &ViewportWidget::designFor(const Element &e) {
     return it->second;
 }
 
-void ViewportWidget::drawElement(QPainter &p, const QRect &r, const Element &e, qint64 tMs) {
+void ViewportWidget::drawElement(QPainter &p, const QRect &r, const Element &e, qint64 tMs,bool controlled) {
     if (e.type == "Custom") {  // an animated design from the Build workspace
         if (!e.design.isEmpty()) {
             const DisplaySettings &ds = m_lib->display;
@@ -514,7 +517,7 @@ void ViewportWidget::drawElement(QPainter &p, const QRect &r, const Element &e, 
             rs.shutter = ds.shutter;
             rs.samples = ds.mbSamples;
             rs.frameMs = 1000.0 * ds.fpsBase / qMax(1, ds.fps);
-            designFor(e).render(p, r, tMs, true, &rs);
+            designFor(e).render(p, r, tMs, true, &rs,!controlled);
         }
         return;
     }

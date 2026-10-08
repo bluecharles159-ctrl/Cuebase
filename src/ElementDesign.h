@@ -4,6 +4,7 @@
 #include <QHash>
 #include <QImage>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QMatrix4x4>
 #include <QPainterPath>
 #include <QRectF>
@@ -43,10 +44,11 @@ struct DKey {
 struct AnimationKey {
     int ms = 0;
     double value = 0;
-    QString interpolation = "Smooth";
+    QString interpolation = "Bezier";
     // Handle offsets from this key, in milliseconds and property units.
     QPointF leftHandle{-100, 0}, rightHandle{100, 0};
     bool customHandles = false;
+    QString handleType="Auto";
 };
 
 struct PropertyTrack {
@@ -182,6 +184,7 @@ struct RenderSettings {  // how the display settings reach the 3D renderer
 };
 
 struct ElementDesign {
+    QJsonArray animationCues;
     QVector3D cursor;
     QVector<DObject> objects;
     World world;
@@ -213,7 +216,7 @@ struct ElementDesign {
     // Draws the scene seen from cam into rect.
     void paint(QPainter &p, const QRectF &rect, const ViewCam &cam, qint64 ms, const PaintOpts &opts) const;
     // Draws what the scene camera sees into target (what gets broadcast).
-    void render(QPainter &p, const QRectF &target, qint64 tMs, bool clip = true, const RenderSettings *rs = nullptr) const;
+    void render(QPainter &p, const QRectF &target, qint64 tMs, bool clip = true, const RenderSettings *rs = nullptr,bool loopPlayback=true) const;
 
     mutable QHash<QString, QPair<quint64, Mesh>> m_evalCache;
     mutable QHash<QString, QPair<QString, QImage>> m_texCache;

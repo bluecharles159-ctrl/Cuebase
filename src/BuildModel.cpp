@@ -1,4 +1,5 @@
 #include "BuildModel.h"
+#include "UiControls.h"
 
 #include <QUuid>
 #include <QtMath>
@@ -7,6 +8,8 @@
 namespace {
 QString newId() { return QUuid::createUuid().toString(QUuid::WithoutBraces).left(8); }
 } // namespace
+
+BuildModel::BuildModel(){connect(uiGesture(),&UiGesture::finished,this,[this](quint64 token,bool cancel){if(token&&token==m_lastGesture&&cancel)cancelToUndo();});}
 
 QVector<DObject *> BuildModel::selected() {
     QVector<DObject *> r;
@@ -39,6 +42,7 @@ void BuildModel::reset(const ElementDesign &d) {
 // ------------------------------------------------------------------ undo
 
 void BuildModel::pushUndo() {
+    const auto token=uiGesture()->token;if(token&&m_lastGesture==token)return;m_lastGesture=token;
     m_undo.append(design.toJson());
     if (m_undo.size() > 80) m_undo.removeFirst();
     m_redo.clear();
@@ -363,6 +367,7 @@ void BuildModel::setProps(const QString &id, const DProps &p) {
     if (DObject *o = byId(id)) {
         if (o->locked) return;
         const DProps old = o->at(t);
+        QHash<QString,QMatrix4x4> children;if(isolateParents)for(const auto &child:design.objects)if(child.parentId==id)children[child.id]=design.parentMatrix(child,t);
         for (const auto &path : transformChannels()) {
             const double v = channelValue(p, path);
             if (qAbs(v - channelValue(old, path)) < 0.000001) continue;
@@ -372,6 +377,7 @@ void BuildModel::setProps(const QString &id, const DProps &p) {
                 if (o->track(path)) o->overrides[path] = v;
             }
         }
+        const auto inverse=design.worldMatrix(*o,t).inverted();for(auto it=children.begin();it!=children.end();++it)if(auto *child=byId(it.key()))child->parentInverse=inverse*it.value();
     }
 }
 
@@ -429,6 +435,7 @@ bool BuildModel::propertyIsKeyed(const DObject &o, const QString &property, qint
 void BuildModel::editProperty(const QString &id, const QString &property, double value) {
     auto *o = byId(id);
     if (!o || o->locked) return;
+    if(transformChannels().contains(property)){auto props=o->at(t);setChannelValue(props,property,value);setProps(id,props);emit changed();return;}
     if ((property=="layout.width" || property=="layout.height") && o->style["layout.aspectLock"].toBool()) {
         const QString other=property=="layout.width"?"layout.height":"layout.width";
         double paired=o->propertyValue(other,t)*value/qMax(1.0,o->propertyValue(property,t));
@@ -583,8 +590,11 @@ bool BuildModel::setOrigin(const QString &kind) {
             QVector3D mn, mx;
             o->mesh.bounds(mn, mx);
             c = QVector3D((mn.x() + mx.x()) / 2, (mn.y() + mx.y()) / 2, mn.z());
-        } else if (kind == "World") {
-            c = design.worldMatrix(*o,t).inverted().map(QVector3D(0, 0, 0));
+        } else if (kind == "World"||kind=="Cursor") {
+            c = design.worldMatrix(*o,t).inverted().map(kind=="Cursor"?design.cursor:QVector3D());
+        } else if(kind.startsWith("Bounds:")){
+            QVector3D low,high;o->mesh.bounds(low,high);c=(low+high)/2;
+            const auto position=kind.mid(7);if(position.contains("Left"))c.setX(low.x());if(position.contains("Right"))c.setX(high.x());if(position.contains("Top"))c.setZ(high.z());if(position.contains("Bottom"))c.setZ(low.z());
         } else if (kind == "Selected") {
             if (o != a || esel.v.isEmpty()) continue;
             c = o->mesh.selCenter(esel);

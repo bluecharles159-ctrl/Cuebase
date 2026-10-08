@@ -5,6 +5,9 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+
+qint64 Element::lengthMs() const {if(type=="Custom"){auto json=QJsonDocument::fromJson(design.toUtf8()).object();const auto duration=qint64(json["duration"].toDouble());if(duration>0)return duration;}return qMax(1,seconds)*1000LL;}
+#include <QJsonObject>
 #include <QStandardPaths>
 #include <QUuid>
 #include <QtMath>
@@ -253,6 +256,7 @@ void Library::load() {
         pl.file = j["file"].toString();
         pl.startMs = qint64(j["startMs"].toDouble());
         pl.seconds = j["seconds"].toInt(8);
+        pl.durationMs=qint64(j["durationMs"].toDouble());
         pl.layer = qBound(1, j["layer"].toInt(1), 3);
         pl.offsetMs = j["offsetMs"].toInt(0);
         pl.kind = j["kind"].toString();
@@ -309,7 +313,7 @@ void Library::save() const {
                               {"fx", fxToJson(e.fx)}});
     for (const Placement &pl : placements)
         la.append(QJsonObject{{"id", pl.id}, {"type", pl.type}, {"refId", pl.refId}, {"name", pl.name},
-                              {"file", pl.file}, {"startMs", double(pl.startMs)}, {"seconds", pl.seconds},
+                              {"file", pl.file}, {"startMs", double(pl.startMs)}, {"seconds", pl.seconds}, {"durationMs",double(pl.durationMs)},
                               {"layer", pl.layer}, {"offsetMs", pl.offsetMs}, {"kind", pl.kind}});
     QJsonArray lay;
     for (const LayerState &s : layers)

@@ -56,7 +56,11 @@ private:
     struct Slot { QRect rect; QString programId; };
     struct PBlock { QString id, type; QRect rect; int lane; };
     struct Insert { bool valid = false; QString beforeId; int x = 0; int seg = -1; };
-    enum class Drag { None, Playhead, Press, Foreign };
+    enum class Drag { None, Playhead, Press, Foreign, TrimLeft, TrimRight, Pan };
+    double m_pixelsPerSecond=14;
+    QString m_trimId;
+    qint64 m_trimStart=0,m_trimLength=0;
+    int m_trimOffset=0,m_panScroll=0;
 
     void relayout();
     void layoutPlacements();

@@ -1,5 +1,6 @@
 #pragma once
 #include <QWidget>
+#include <QHash>
 class BuildModel;
 class QTreeWidget;
 class CurveView;
@@ -12,4 +13,5 @@ private:
     QTreeWidget *m_channels;
     CurveView *m_curve;
     QString m_signature;
+    QHash<QString,bool> m_expanded;
 };

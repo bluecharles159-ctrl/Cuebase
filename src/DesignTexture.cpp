@@ -1,5 +1,6 @@
 #include "ElementDesign.h"
 #include "MediaFrames.h"
+#include "SurfaceEffects.h"
 #include <QPainter>
 #include <QPainterPath>
 #include <QTextDocument>
@@ -60,7 +61,7 @@ QImage ElementDesign::textureFor(const DObject &o) const {
     p.translate(padding,padding);
     const double sw=o.propertyBase("stroke.width");
     const QRectF bounds=QRectF(0,0,w,h).adjusted(sw/2,sw/2,-sw/2,-sw/2);
-    const auto outline=roundedPath(bounds,o);
+    const auto outline=surfaceOutline(bounds,o);
     const QString background=o.style["background.type"].toString(o.type=="Image"?"Media":o.style["fill.kind"].toString("Solid")=="Solid"?"Solid":"Gradient");
     QString fill=background=="Solid"?"Solid":o.style["fill.kind"].toString("Linear");
     if(background=="Gradient"&&fill=="Solid")fill="Linear";
@@ -92,6 +93,7 @@ QImage ElementDesign::textureFor(const DObject &o) const {
         }
     }
     if(o.type=="Text") {
+        if(o.style["text.background"].toBool())p.fillPath(outline,QColor(o.style["text.backgroundColor"].toString("#cc202020")));
         QFont font(o.style["text.family"].toString("Segoe UI"));font.setPixelSize(qBound(1,o.fontPx,1000));
         font.setWeight(QFont::Weight(o.style["text.weight"].toInt(600)));font.setItalic(o.style["text.italic"].toBool());
         font.setUnderline(o.style["text.decoration"].toString()=="Underline");font.setStrikeOut(o.style["text.decoration"].toString()=="Line Through");
@@ -109,7 +111,7 @@ QImage ElementDesign::textureFor(const DObject &o) const {
         QString vertical=o.style["text.vertical"].toString("Center");double y=vertical=="Top"?0:vertical=="Bottom"?h-doc.size().height():(h-doc.size().height())/2;
         p.save();p.setClipRect(image.rect());p.translate(0,y);doc.drawContents(&p);p.restore();
     }
-    if(sw>0 && o.type!="Text") {
+    if(sw>0 && (o.type!="Text"||o.style["text.background"].toBool())) {
         QPen pen(QColor(o.style["stroke.color"].toString("#ffffff")),sw);
         const QString style=o.style["stroke.style"].toString();
         pen.setStyle(style=="Dashed"?Qt::DashLine:style=="Dotted"?Qt::DotLine:Qt::SolidLine);

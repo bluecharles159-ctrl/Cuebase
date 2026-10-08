@@ -31,13 +31,15 @@ On this machine, open `Run-Cuebase.cmd` to launch the verified `build-final` exe
 
 ## Animation
 
+For named entrance/hold/exit cues, Studio timers, background audio and the updated graph controls, see [PRODUCTION-GUIDE.md](PRODUCTION-GUIDE.md).
+
 Auto Key starts **off**. Ordinary edits change base values without creating animation keys. For an already animated property, an unkeyed edit is shown until the playhead moves; use Auto Key or Key Transform to update existing keys; an unfilled diamond creates a key for its property.
 
 - Gray fields: no animation; green: keyed elsewhere; yellow: keyed at the current frame; orange: the current value differs from its key. The property diamond and an orange ring on timeline/graph keys also mark unrecorded changes.
 - A property diamond inserts a key when unfilled and removes the key when filled at the current playhead. Auto Key records only changed channels. Key Transform is an explicit grouped command.
 - Every key can be deleted, including time zero. Empty tracks are removed.
-- Timeline Summary shows all animated objects. Selected Objects collects the selected layers; expand layers and collapsed property groups to reach individual channels. Summary and group keys support movement, scaling, interpolation changes and deletion. Timeline and Graph Editor share the same `PropertyTrack` data.
-- Shift-click or box-select keys; drag to move without moving the playhead. Scale Keys scales selected times and Bezier handles around their earliest key. Delete removes selected keys. View All, Frame Selected, wheel zoom, middle/right pan, frame snapping, normalization, and the interpolation menu are available.
+- Timeline Summary shows animated objects; the eye menu switches between all and selected objects. Expand layers and collapsed property groups to reach individual channels. Summary and group keys support movement, scaling, interpolation changes and deletion. Timeline and Graph Editor share the same `PropertyTrack` data.
+- Shift-click or box-select keys; drag to move without moving the playhead. Scale Keys scales selected times, values and Bezier handles around the selection center. Delete removes selected keys. View All, Frame Selected, wheel zoom, middle/right pan, frame snapping, normalization, and the interpolation menu are available.
 - Constant, Linear, Bezier, Smooth, Ease In, Ease Out, Back, and Bounce curves use the same evaluator as rendering. Select a Bezier key to expose its handles; drag a handle to shape the curve, or Shift-drag to align the opposite handle. Handle coordinates persist in saved elements and undo history.
 - Space plays/pauses, K inserts transform keys, Alt+K deletes the current key, arrows navigate keys, and Ctrl+arrows step frames. Undo/redo includes property changes, animation edits, canvas transforms, mesh operations, and layer edits.
 

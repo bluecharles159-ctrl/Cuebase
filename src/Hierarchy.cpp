@@ -1,4 +1,5 @@
 #include "ElementDesign.h"
+#include "SurfaceEffects.h"
 #include <QPolygonF>
 #include <algorithm>
 
@@ -28,14 +29,7 @@ QPainterPath ElementDesign::overflowClip(const DObject &o,qint64 ms,const ViewCa
             if(x&&y){
                 QPolygonF local{QPointF(0,0),QPointF(p.w*kPxPerUnit,0),QPointF(p.w*kPxPerUnit,p.h*kPxPerUnit),QPointF(0,p.h*kPxPerUnit)};
                 QTransform transform;if(!QTransform::quadToQuad(local,quad,transform))return {};
-                QPainterPath shape;const double w=p.w*kPxPerUnit,h=p.h*kPxPerUnit;
-                if(p.style["shape"].toString()=="Ellipse")shape.addEllipse(QRectF(0,0,w,h));
-                else {
-                    const double limit=qMin(w,h)/2;auto radius=[&](const char *key){return qBound(0.,p.propertyValue(key,ms),limit);};
-                    const double a=radius("corner.tl"),b=radius("corner.tr"),c=radius("corner.br"),d=radius("corner.bl");
-                    shape.moveTo(a,0);shape.lineTo(w-b,0);shape.quadTo(w,0,w,b);shape.lineTo(w,h-c);shape.quadTo(w,h,w-c,h);
-                    shape.lineTo(d,h);shape.quadTo(0,h,0,h-d);shape.lineTo(0,a);shape.quadTo(0,0,a,0);shape.closeSubpath();
-                }
+                QPainterPath shape=surfaceOutline(QRectF(0,0,p.w*kPxPerUnit,p.h*kPxPerUnit),p);
                 clip=transform.map(shape);
             }else{
                 // Clip the output rectangle against just the requested pair of projected edges.
