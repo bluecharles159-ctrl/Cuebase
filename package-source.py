@@ -4,7 +4,7 @@ from zipfile import ZipFile, ZIP_DEFLATED
 import hashlib
 
 root = Path(__file__).resolve().parent
-destination = root / 'Cuebase-build-update-2026-10-08.zip'
+destination = root / 'Cuebase-studio-update-2026-10-08.zip'
 files = [root / name for name in (
     'CMakeLists.txt', 'CMakePresets.json', 'Run-Cuebase.cmd', 'README-Build.md',
     'BUILD-WORK.md', 'VERIFICATION.md', 'PRODUCTION-GUIDE.md', 'package-source.py')]
@@ -14,6 +14,7 @@ files += [root / 'tools' / 'mediamtx' / name for name in ('mediamtx.exe', 'LICEN
 for name in ('test-results.txt', 'test-results.xml', 'stream-results.txt', 'stream-results.xml'):
     files.append(root / 'build-final' / name)
 files += sorted((root / 'build-final' / 'artifacts').glob('*.png'))
+files.append(root / 'build-final' / 'artifacts' / 'local-receiver-check.txt')
 with ZipFile(destination, 'w', ZIP_DEFLATED, compresslevel=6) as archive:
     for path in files:
         relative = path.relative_to(root)

@@ -2,6 +2,7 @@
 #include <QToolButton>
 #include <QMenu>
 #include <QSettings>
+#include "ElementLibrary.h"
 #include "AssetImport.h"
 #include "DesignAudio.h"
 #include "MediaFrames.h"
@@ -262,6 +263,22 @@ private slots:
         auto moved=model.design.toJson();QTest::keyClick(curve,Qt::Key_Escape);QCOMPARE(model.design.toJson(),moved);
         QVERIFY(model.undo());QCOMPARE(model.design.toJson(),saved);
         AnimationEditor reopened(&model,true);auto *restored=reopened.findChild<QWidget*>("animationCurve");QCOMPARE(restored->property("viewRange").toList(),zoomed);
+    }
+    void buildLibrarySwitchAndNew(){
+        Library library;Element a;a.id="scene-a";a.type="Custom";a.name="First";a.design=elementPreset("Sponsor spotlight").toJson();Element b=a;b.id="scene-b";b.name="Second";library.elements={a,b};BuildWorkspace workspace(&library);workspace.editElement(a.id);auto *model=workspace.findChild<BuildModel*>();QVERIFY(model);DObject *text=nullptr;for(auto &o:model->design.objects)if(o.type=="Text")text=&o;QVERIFY(text);const auto textId=text->id;text->text="Changed in Build";model->notify();auto *picker=workspace.findChild<QComboBox*>("buildElementPicker");QVERIFY(picker);int index=picker->findData(b.id);QVERIFY(index>=0);picker->setCurrentIndex(index);QMetaObject::invokeMethod(picker,"activated",Q_ARG(int,index));QCOMPARE(ElementDesign::fromJson(library.element(a.id)->design).find(textId)->text,QString("Changed in Build"));QCOMPARE(picker->currentText(),QString("Second"));
+        auto *fresh=workspace.findChild<QPushButton*>("newBuildScene");QVERIFY(fresh);fresh->click();QCOMPARE(picker->currentText(),QString("New element"));QVERIFY(model->design.find(textId)==nullptr);QCOMPARE(library.elements.size(),2);
+    }
+    void reusableStudioFields(){
+        auto design=elementPreset("Sponsor spotlight");DObject *text=nullptr;for(auto &o:design.objects)if(o.type=="Text")text=&o;QVERIFY(text);
+        const auto id=text->id;const auto tracks=text->tracks;const auto base=text->base.loc;
+        QVERIFY(parseStudioText(*text,"{{studio:Sponsor}}Sponsored by NVIDIA"));QCOMPARE(text->text,QString("Sponsored by NVIDIA"));QCOMPARE(text->style["studio.label"].toString(),QString("Sponsor"));
+        QString error;QVERIFY(setStudioField(design,id,"Sponsored by Microsoft and our community partners",&error));QCOMPARE(design.find(id)->base.loc,base);QCOMPARE(design.find(id)->tracks.size(),tracks.size());for(int i=0;i<tracks.size();++i){QCOMPARE(design.find(id)->tracks[i].keys.size(),tracks[i].keys.size());for(int j=0;j<tracks[i].keys.size();++j){QCOMPARE(design.find(id)->tracks[i].keys[j].ms,tracks[i].keys[j].ms);QCOMPARE(design.find(id)->tracks[i].keys[j].value,tracks[i].keys[j].value);}}
+        QVERIFY(!setStudioField(design,design.objects.first().id,"Forbidden",&error));QVERIFY(!setStudioField(design,id,QString(10001,'x'),&error));
+        Element e;e.id="template";e.name="Sponsor";e.type="Custom";e.design=design.toJson();e.previewMs=1000;e.previewX=.1;e.previewY=.2;e.previewW=.7;e.previewH=.5;e.description="Sponsor template";e.playlist="Sponsors";refreshElementThumbnail(e);QVERIFY(!elementThumbnail(e).isNull());
+        Library lib;lib.elements={e};lib.elementPlaylists.append("Sponsors");lib.save();Library restored;restored.load();auto *saved=restored.element(e.id);QVERIFY(saved);QCOMPARE(saved->description,e.description);QCOMPARE(saved->thumbnail,e.thumbnail);QCOMPARE(saved->previewW,e.previewW);QVERIFY(restored.elementPlaylists.contains("Sponsors"));
+        QTemporaryDir mediaDirectory;QVERIFY(mediaDirectory.isValid());QImage replacement(16,16,QImage::Format_ARGB32);replacement.fill(Qt::cyan);const auto imagePath=mediaDirectory.filePath("replacement.png");QVERIFY(replacement.save(imagePath));
+        DObject media;media.id="exposed-media";media.type="Image";media.style["studio.editable"]=true;media.keyChannel("opacity",0,0);media.keyChannel("opacity",1000,1);design.objects.append(media);QVERIFY(setStudioField(design,media.id,imagePath,&error));QCOMPARE(design.find(media.id)->image,imagePath);QCOMPARE(design.find(media.id)->tracks.first().keys.size(),2);QVERIFY(!setStudioField(design,media.id,mediaDirectory.filePath("missing.png"),&error));QCOMPARE(design.find(media.id)->image,imagePath);
+        QTimer::singleShot(80,[]{auto *dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());if(dialog){dialog->grab().save("artifacts/element-preview-dialog.png");dialog->accept();}});QVERIFY(editElementPresentation(e));
     }
     void cleanupTestCase(){QFile::remove(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)+"/cuebase.json");}
 };

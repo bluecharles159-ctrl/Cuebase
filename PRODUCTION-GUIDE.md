@@ -1,12 +1,45 @@
 # Graphics, animation cues and Studio
 
+## Reusable sponsor text and media
+
+In Build, select a text object and enable **Studio Field → Editable in Studio**. Give the field a useful name such as Sponsor. You can also type `{{studio:Sponsor}}Sponsored by NVIDIA` into Typography. The prefix is removed from the visible text and creates the Sponsor field. Ordinary text stays fixed in Studio.
+
+After saving, select the element in Studio → Screen Elements. Change Sponsor to “Sponsored by Microsoft,” inspect the private preview, then choose **Apply content**. The saved object's animation, position and styling remain intact. Apply also updates any current on-air use of that element. **Reset draft** discards unapplied content edits. Multiple fields are identified independently, including when their labels match.
+
+**Fit long text inside its box** wraps and reduces the rendered font size when needed. Enlarge the text box in Build if the result becomes too small. Image/video objects can expose a Studio field too; replacing their source preserves their animation and fit settings.
+
+## Build library, previews and presets
+
+The editable name dropdown in Build opens existing elements. Switching saves changes to the current scene. **New scene**, at the bottom, saves the current scene and opens a fresh one. Cancelling a first-save preview leaves the current scene open.
+
+The first save opens a thumbnail dialog. Scrub to a recognizable frame, keep Full screen or drag a crop rectangle, and optionally add a description and choose a playlist. **Preview** in Build and **Thumbnail** in Studio reopen those settings. Cropping affects the library image only, never broadcast output.
+
+Studio presents thumbnail cards with search and playlists. **Playlist** creates a group; change an element's group through its thumbnail dialog. Starter presets in Build include Sponsor spotlight, News lower third, Be right back and Channel ident. Each has editable text, an animated entrance, a held pose and an exit.
+
+**Show / replay** plays the first entrance and holds its final pose. **Play exit** plays the first exit and then hides the element; without an exit cue it hides immediately. **Animation schedules** exposes advanced cue timers and an immediate Hide button.
+
+The placement time follows the playhead until manually adjusted. Arrows step a frame; horizontal dragging adjusts the seconds field. Turn Follow playhead back on to resume tracking. While on air, placement behind the playhead is rejected. Off air, earlier placement is allowed. Cuebase chooses a free overlay lane and reports when all three lanes overlap at the chosen time.
+
+## Local streaming tests and monitoring
+
+Open Studio → Monitor and click **Start local test receiver**. Start the rundown, then configure Network Output with one of:
+
+- RTMP: `rtmp://127.0.0.1:1935/cuebase`
+- SRT: `srt://127.0.0.1:8890?streamid=publish:cuebase`
+
+Leave the separate stream-key field empty for these complete URLs. Watch locally at `http://127.0.0.1:8888/cuebase`. The receiver binds to this computer only and runs until stopped or Cuebase exits. A public channel requires a reachable streaming server/CDN; this local receiver does not distribute to cable or satellite systems.
+
+Connect Monitor to `http://127.0.0.1:9998/metrics`, path `cuebase`, for receiver counts. The dashboard sums direct protocol readers and HLS sessions, excluding the HLS muxer to avoid double counting. These are connections, not unique people. Today, This week, Last month and Custom range show recorded UTC history; data is collected while Cuebase runs and retained for 63 days. Failed requests show unavailable data instead of zero viewers. No audience history is fabricated before collection starts. History is separated by metrics URL and stream path; switching either shows only that source.
+
+The server integration follows the official [MediaMTX metrics](https://mediamtx.org/docs/features/metrics), [RTMP publishing](https://mediamtx.org/docs/publish/rtmp-clients), and [SRT publishing](https://mediamtx.org/docs/publish/srt-clients) documentation.
+
 ## Entrance, hold and exit
 
 1. In Build, animate an entrance and an exit on the composition timeline.
-2. Open **Animation Cues** in the inspector rail. Add a cue, name it **Entrance**, and enter its start and end frames. Enable **Hold on screen after animation**, then Apply.
-3. Add **Exit**, enter its frame range, disable Hold, and Apply.
+2. Open **Animation Cues** in the inspector rail. Add a cue, name it **Entrance**, and enter its start and end frames. Enable **Keep visible after this animation**, then Apply.
+3. Add **Exit**, enter its frame range, disable Keep visible, and Apply.
 4. Save the composition. The message is **Saved to screen elements**.
-5. In Studio → Screen Elements, select the saved overlay. Trigger Entrance to play it once and hold its exact final frame. Trigger Exit to replace the entrance and hide the overlay when the exit ends. Triggering either again restarts that animation.
+5. In Studio → Screen Elements, select the saved overlay. Choose Show / replay to play the entrance once and hold its exact final frame. Choose Play exit to replace the entrance and hide the overlay when the exit ends. Triggering either again restarts that animation.
 
 Each cue has a timer. **Program time** is an absolute number of seconds from the start of the rundown. **Before ad** and **After ad** are offsets relative to each ad in the rundown. For the requested example, set Exit to Before ad, 10 seconds, then Set timer. A separate Entrance cue may be scheduled After ad or at a later program time. Manual disables that cue's timer.
 

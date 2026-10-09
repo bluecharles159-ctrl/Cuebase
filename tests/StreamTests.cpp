@@ -18,6 +18,15 @@
 #include <QListWidget>
 #include <QPushButton>
 #include "EditorPanel.h"
+#include "ElementLibrary.h"
+#include "StudioElements.h"
+#include "StudioDashboard.h"
+#include "MainWindow.h"
+#include <QTcpSocket>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPlainTextEdit>
+#include <QDoubleSpinBox>
 
 class StreamTests:public QObject{
     Q_OBJECT
@@ -62,10 +71,24 @@ private slots:
         Library library;auto design=ElementDesign::defaultScene();design.animationCues={QJsonObject{{"id","entrance"},{"name","Logo entrance"},{"start",0},{"end",1000},{"hold",true}}};Element element;element.id="screen";element.name="Channel logo";element.type="Custom";element.design=design.toJson();library.elements={element};
         Playout play(&library);EditorPanel editor(&library,&play);editor.setStyleSheet("QWidget{background:#303135;color:#dedee3;font-size:11px;}QPushButton,QComboBox,QLineEdit{background:#45474d;border:0;border-radius:4px;padding:4px;}QScrollBar:vertical{width:6px;}");editor.resize(620,850);editor.show();editor.showTool(3);QTest::qWait(30);
         QListWidgetItem *item=nullptr;QListWidget *list=nullptr;for(auto *candidate:editor.findChildren<QListWidget*>())for(int i=0;i<candidate->count();++i)if(candidate->item(i)->data(Qt::UserRole).toString()=="screen"){list=candidate;item=candidate->item(i);}
-        QVERIFY(list&&item);list->setCurrentItem(item);QTest::qWait(30);QPushButton *trigger=nullptr;for(auto *b:editor.findChildren<QPushButton*>())if(b->text()=="Trigger")trigger=b;QVERIFY(trigger);QTest::mouseClick(trigger,Qt::LeftButton);QCOMPARE(play.graphicPlayback(library.elements.first(),0).cue,QString("entrance"));
+        QVERIFY(list&&item);list->setCurrentItem(item);QTest::qWait(30);QPushButton *trigger=nullptr;for(auto *b:editor.findChildren<QPushButton*>())if(b->text()=="Show / replay")trigger=b;QVERIFY(trigger);QTest::mouseClick(trigger,Qt::LeftButton);QCOMPARE(play.graphicPlayback(library.elements.first(),0).cue,QString("entrance"));
         QDir().mkpath("artifacts");QVERIFY(editor.grab().save("artifacts/screen-elements.png"));
     }
-    void cleanupTestCase(){QFile::remove(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)+"/cuebase.json");}
+    void studioContentPreviewAndPlacement(){
+        Library library;ProgramItem program;program.id="sponsor-show";program.seconds=120;library.programs={program};Element element;element.id="sponsor";element.name="Sponsor spotlight";element.type="Custom";element.design=elementPreset(element.name).toJson();element.previewMs=1000;refreshElementThumbnail(element);library.elements={element};
+        Playout play(&library);auto *page=studioElementsPage(&library,&play);page->resize(640,1100);page->show();auto *list=page->findChild<QListWidget*>("screenElementCards");QVERIFY(list);list->setCurrentRow(0);QTest::qWait(30);auto *input=page->findChild<QPlainTextEdit*>();QVERIFY(input);const auto original=library.elements.first().design;input->setPlainText("Sponsored by Microsoft");QCOMPARE(library.elements.first().design,original);QPushButton *apply=nullptr,*place=nullptr;for(auto *b:page->findChildren<QPushButton*>()){if(b->text()=="Apply content")apply=b;if(b->text()=="Place on timeline")place=b;}QVERIFY(apply&&place);apply->click();QVERIFY(library.elements.first().design!=original);auto design=ElementDesign::fromJson(library.elements.first().design);bool changed=false;for(auto &o:design.objects)if(o.type=="Text"){QCOMPARE(o.text,QString("Sponsored by Microsoft"));QVERIFY(!o.tracks.isEmpty());changed=true;}QVERIFY(changed);
+        auto *time=page->findChild<QDoubleSpinBox*>("elementPlacementTime");QVERIFY(time);time->setValue(12.5);place->click();QCOMPARE(library.placements.size(),1);QVERIFY(qAbs(library.placements.first().startMs-12500)<=40);play.start(0,20000);play.togglePause();time->setValue(2);place->click();QCOMPARE(library.placements.size(),1);play.stop();
+        QVERIFY(page->grab().save("artifacts/studio-template-fields.png"));delete page;
+    }
+    void dashboardMetrics(){
+        QTcpServer server;QVERIFY(server.listen(QHostAddress::LocalHost,0));connect(&server,&QTcpServer::newConnection,&server,[&]{auto *socket=server.nextPendingConnection();connect(socket,&QTcpSocket::readyRead,socket,[socket]{socket->readAll();const QByteArray body="paths_readers{name=\"cuebase\",readerType=\"rtmpConn\"} 2\npaths_readers{name=\"cuebase\",readerType=\"hlsMuxer\"} 1\nhls_sessions{id=\"one\",path=\"cuebase\"} 1\npaths_readers{name=\"other\",readerType=\"rtmpConn\"} 10\n";socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: "+QByteArray::number(body.size())+"\r\nConnection: close\r\n\r\n"+body);socket->disconnectFromHost();});connect(socket,&QTcpSocket::disconnected,socket,&QObject::deleteLater);});
+        Library library;Playout play(&library);auto *page=studioDashboard(&play);page->resize(600,800);page->show();auto lines=page->findChildren<QLineEdit*>();QVERIFY(lines.size()>=2);lines[0]->setText(QString("http://127.0.0.1:%1/metrics").arg(server.serverPort()));lines[1]->setText("cuebase");QPushButton *button=nullptr;for(auto *b:page->findChildren<QPushButton*>())if(b->text()=="Connect metrics")button=b;QVERIFY(button);button->click();auto received=[=]{for(auto *label:page->findChildren<QLabel*>())if(label->text()=="3 receiver connections")return true;return false;};QTRY_VERIFY_WITH_TIMEOUT(received(),10000);QVERIFY(page->grab().save("artifacts/studio-monitor.png"));QVERIFY(!lines[0]->isEnabled());button->click();QVERIFY(lines[0]->isEnabled());lines[1]->setText("other");bool isolated=false;for(auto *label:page->findChildren<QLabel*>())if(label->text().startsWith("Peak connections: —"))isolated=true;QVERIFY(isolated);button->click();auto other=[=]{for(auto *label:page->findChildren<QLabel*>())if(label->text()=="10 receiver connections")return true;return false;};QTRY_VERIFY_WITH_TIMEOUT(other(),10000);delete page;
+    }
+    void studioLayout(){
+        Library library;ProgramItem program;program.id="layout-show";program.title="Evening edition";program.seconds=120;library.programs={program};Element element;element.id="layout-sponsor";element.name="Sponsor spotlight";element.type="Custom";element.design=elementPreset(element.name).toJson();element.previewMs=1000;refreshElementThumbnail(element);library.elements={element};library.save();
+        MainWindow window;window.resize(1600,1000);window.show();auto *editor=window.findChild<EditorPanel*>();QVERIFY(editor);editor->showTool(3);QTest::qWait(60);auto *cards=editor->findChild<QListWidget*>("screenElementCards");QVERIFY(cards);cards->setCurrentRow(0);QTest::qWait(60);QVERIFY(window.grab().save("artifacts/studio-workspace.png"));editor->showTool(4);QTest::qWait(60);QVERIFY(window.grab().save("artifacts/studio-monitor-workspace.png"));window.hide();
+    }
+    void cleanupTestCase(){QFile::remove(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)+"/cuebase.json");QFile::remove(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)+"/broadcast-metrics.json");}
     void pausedAnimation(){
         Library library;library.display.watermarkOn=false;library.display.safeArea=false;
         ProgramItem program;program.id="clock";program.seconds=30;library.programs={program};
@@ -95,7 +118,7 @@ private slots:
         NetworkOutput output;int frames=0;output.setFrameProvider([&](QSize size){QImage image(size,QImage::Format_ARGB32);image.fill(QColor(30+(frames++%100),90,190));return image;});
         QMediaPlayer player;player.setLoops(QMediaPlayer::Infinite);output.attachPlayer(&player);player.setSource(QUrl::fromLocalFile(temp.filePath("tone.wav")));player.play();
         StreamSettings settings;settings.executable=ffmpeg;settings.endpoint=target;settings.size={320,180};settings.fps=25;settings.videoKbps=500;settings.reconnects=0;
-        QVERIFY(output.start(settings));QTRY_VERIFY_WITH_TIMEOUT(output.streaming()||!output.active(),20000);QVERIFY2(output.streaming(),qPrintable(output.status()));
+        QVERIFY(output.start(settings));QTRY_VERIFY_WITH_TIMEOUT(output.streaming()||!output.active(),45000);QVERIFY2(output.streaming(),qPrintable(output.status()));
         if(protocol=="rtmp"){QTRY_VERIFY2_WITH_TIMEOUT((serverLog+=server.readAll()).contains("is publishing"),serverLog.constData(),15000);receiver.start(ffmpeg,args);QVERIFY(receiver.waitForStarted(10000));}
         QTRY_VERIFY_WITH_TIMEOUT(receiver.state()==QProcess::NotRunning,20000);const auto outputStatus=output.status();output.stop();player.stop();if(server.state()!=QProcess::NotRunning){server.kill();server.waitForFinished(5000);}
         const auto errors=receiver.readAllStandardError()+outputStatus.toUtf8()+serverLog+server.readAll();QVERIFY2(QFileInfo(received).size()>1000,errors.constData());

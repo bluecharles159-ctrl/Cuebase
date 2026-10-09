@@ -1,3 +1,5 @@
+#include "StudioElements.h"
+#include "StudioDashboard.h"
 #include "UiControls.h"
 #include "AnimationCuePanel.h"
 #include <QJsonDocument>
@@ -41,7 +43,7 @@ namespace {
 const char *kMediaFilter = "Media (*.mp4 *.mkv *.mov *.avi *.webm *.mp3 *.wav);;All files (*)";
 
 QLabel *heading(const QString &title, const QString &sub) {
-    auto *l = new QLabel(QString("<div style='font-size:16px; font-weight:700;'>%1</div>"
+    auto *l = new QLabel(QString("<div style='font-size:12px; font-weight:700;'>%1</div>"
                                  "<div style='color:#94a3b8;'>%2</div>").arg(title, sub));
     l->setWordWrap(true);
     return l;
@@ -991,306 +993,7 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
 
 // ---------------------------------------------------------- Screen elements
 
-QWidget *makeElementsPage(Library *lib, Playout *play) {
-    auto *page = new QWidget;
-    auto *l = new QVBoxLayout(page);
-    auto *topRow = new QHBoxLayout;
-    topRow->addWidget(heading("Screen Elements", "Create logos, banners, ad elements and breaks (BR) to use on screen, "
-                                                 "or design animated ones in Build."), 1);
-    auto *createNew = smallButton("＋  Create new");
-    createNew->setObjectName("save");
-    createNew->setToolTip("Open the Build workspace and design a new animated element");
-    topRow->addWidget(createNew, 0, Qt::AlignTop);
-    l->addLayout(topRow);
-    QObject::connect(createNew, &QPushButton::clicked, page, [lib] { lib->requestBuild(); });
-    l->addWidget(pendingBanner(lib, "Element", "Pick an element and press Place on timeline to show it"));
-    l->addWidget(pendingBanner(lib, "Layer Element", "Pick an element and press Place on timeline to put it on its own timeline"));
-
-    auto *list = new QListWidget;
-    list->setMinimumHeight(120);
-    auto *filters=new QHBoxLayout;auto *search=new QLineEdit;search->setPlaceholderText("Search screen elements");auto *category=new QComboBox;category->addItems({"All elements","Overlays","Breaks"});filters->addWidget(search,1);filters->addWidget(category);l->addLayout(filters);
-    list->setSpacing(4);list->setStyleSheet("QListWidget::item{padding:8px;border:1px solid #45474d;border-radius:6px;}QListWidget::item:selected{background:#3c5878;border-color:#7393ba;}");
-    auto filterElements=[=]{for(int i=0;i<list->count();++i){auto *item=list->item(i);const auto *e=lib->element(item->data(Qt::UserRole).toString());const bool matches=e&&e->name.contains(search->text(),Qt::CaseInsensitive)&&(category->currentIndex()==0||(category->currentIndex()==2)==(e->type=="Break"));item->setHidden(!matches);}};
-    QObject::connect(search,&QLineEdit::textChanged,page,filterElements);QObject::connect(category,&QComboBox::currentIndexChanged,page,filterElements);
-    auto *cueHost=new QWidget;auto *cueLayout=new QVBoxLayout(cueHost);cueLayout->setContentsMargins(0,0,0,0);
-    QObject::connect(play,&Playout::ticked,page,[=]{for(int i=0;i<list->count();++i){auto *item=list->item(i);if(const auto *e=lib->element(item->data(Qt::UserRole).toString())){const auto playback=play->graphicPlayback(*e,play->timelinePosMs());item->setIcon(uiIcon(playback.visible?"eye":"composition"));item->setForeground(playback.visible?QColor("#a6c9ee"):QColor("#c2c4cb"));item->setToolTip(playback.visible?(playback.advancing?"On screen · animation playing":"On screen · holding final frame"):"Off screen");}}});
-    auto *name = new QLineEdit;
-    name->setPlaceholderText("Element name");
-    auto *type = new QComboBox;
-    type->addItems(elementTypes());
-    auto *text = new QLineEdit;
-    auto *position = new QComboBox;
-    position->addItems(screenPositions());
-    auto *colorBtn = smallButton("Choose colour");
-    colorBtn->setProperty("color", "#2563eb");
-    auto *image = new QLineEdit;
-    image->setPlaceholderText("Logo image (optional)");
-    auto *browse = smallButton("Browse...");
-    auto *imgRow = new QHBoxLayout;
-    imgRow->addWidget(image, 1);
-    imgRow->addWidget(browse);
-    auto *seconds = new FrameInput;
-    seconds->setRange(1, 60);
-    seconds->setValue(4);
-    seconds->setSuffix(" sec");
-    auto *live = new QCheckBox("Show on screen now");
-    auto *hint = new QLabel;
-    hint->setWordWrap(true);
-    hint->setStyleSheet("color:#94a3b8;");
-
-    auto *form = new QFormLayout;
-    form->addRow("Name", name);
-    form->addRow("Type", type);
-    form->addRow("Text", text);
-    form->addRow("Position", position);
-    form->addRow("Colour", colorBtn);
-    form->addRow("Image", imgRow);
-    form->addRow("Shown for", seconds);
-    form->addRow(live);
-    auto *save = smallButton("Add Element");
-    save->setObjectName("save");
-    auto *fresh = smallButton("New");
-    auto *remove = smallButton("Remove");
-    auto *buttons = new QHBoxLayout;
-    buttons->addWidget(save);
-    buttons->addWidget(fresh);
-    buttons->addStretch();
-    buttons->addWidget(remove);
-    auto *msg = messageLabel();
-    auto *fx = new FxBox;
-    auto *editBuild = smallButton("Edit in Build");
-    editBuild->hide();
-    l->addWidget(list);
-    l->addWidget(cueHost);
-    auto *detailsButton=new QToolButton;detailsButton->setText("Element details");detailsButton->setIcon(uiIcon("right"));detailsButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);detailsButton->setCheckable(true);l->addWidget(detailsButton);
-    auto *details=new QWidget;details->setLayout(form);details->hide();l->addWidget(details);QObject::connect(detailsButton,&QToolButton::toggled,page,[=](bool on){details->setVisible(on);fx->setVisible(on);detailsButton->setIcon(uiIcon(on?"down":"right"));});
-    l->addWidget(hint);
-    l->addWidget(fx);
-    fx->hide();
-    l->addWidget(editBuild);
-    l->addLayout(buttons);
-    l->addWidget(msg);
-    l->addStretch();
-
-    auto loading = std::make_shared<bool>(false);
-    auto selId = [=] { auto *it = list->currentItem(); return it ? it->data(Qt::UserRole).toString() : QString(); };
-    auto setColor = [=](const QString &c) {
-        colorBtn->setProperty("color", c);
-        const QColor col(c);
-        colorBtn->setStyleSheet(QString("background:%1; color:%2;").arg(c, col.lightness() > 140 ? "#000" : "#fff"));
-        colorBtn->setText(c);
-    };
-    auto adaptToType = [=] {
-        const QString t = type->currentText();
-        const bool isBreak = t == "Break", custom = t == "Custom";
-        position->setEnabled(!isBreak && !custom);
-        text->setEnabled(!custom);
-        colorBtn->setEnabled(!custom);
-        image->setEnabled(t == "Logo");
-        browse->setEnabled(t == "Logo");
-        seconds->setEnabled(isBreak);
-        live->setEnabled(!isBreak);
-        fx->setVisible(!isBreak&&detailsButton->isChecked());
-        if (isBreak) live->setChecked(false);
-        text->setPlaceholderText(isBreak ? "e.g. Now showing: {title}" : "Text shown on screen");
-        hint->setText(isBreak ? "A break (BR) plays before and after an ad. Use {title} for the program, {next} for "
-                                "the next program and {ad} for the ad name."
-                              : custom ? "A custom element is designed in the Build workspace. Press Edit in Build to change its shapes and animation."
-                              : t == "Ad Element" ? "Ad elements only appear on screen while an ad is playing."
-                                                  : "Logos and banners appear on the viewport while switched on.");
-    };
-    auto refresh = [=] {
-        const QString keep = selId();
-        QSignalBlocker b(list);
-        list->clear();
-        for (const Element &e : lib->elements) {
-            const auto cues=QJsonDocument::fromJson(e.design.toUtf8()).object()["animationCues"].toArray();
-            auto *it = new QListWidgetItem(uiIcon(e.type=="Break"?"play":"composition"),QString("%1\n%2 · %3%4").arg(e.name,e.type=="Break"?"Break":("Overlay / "+e.type),cues.isEmpty()?formatDuration(e.lengthMs()/1000):QString("%1 animations").arg(cues.size()),e.live?" · On screen":""));
-            it->setData(Qt::UserRole, e.id);
-            list->addItem(it);
-            if (e.id == keep) {
-                list->setCurrentItem(it);
-                *loading = true;
-                live->setChecked(e.live);
-                *loading = false;
-            }
-        }
-        filterElements();
-    };
-    auto clearForm = [=] {
-        *loading = true;
-        list->clearSelection();
-        list->setCurrentItem(nullptr);
-        name->clear();
-        text->clear();
-        image->clear();
-        type->setCurrentIndex(0);
-        position->setCurrentIndex(0);
-        seconds->setValue(4);
-        live->setChecked(false);
-        setColor("#2563eb");
-        fx->set(Transition());
-        editBuild->hide();
-        save->setText("Add Element");
-        while(auto *item=cueLayout->takeAt(0)){if(item->widget())item->widget()->deleteLater();delete item;}
-        *loading = false;
-        adaptToType();
-    };
-
-    QObject::connect(type, &QComboBox::currentTextChanged, page, adaptToType);
-    QObject::connect(colorBtn, &QPushButton::clicked, page, [=] {
-        const QColor c = QColorDialog::getColor(QColor(colorBtn->property("color").toString()), page, "Element colour");
-        if (c.isValid()) setColor(c.name());
-    });
-    QObject::connect(browse, &QPushButton::clicked, page, [=] {
-        const QString path = QFileDialog::getOpenFileName(page, "Choose logo image", QString(),
-                                                          "Images (*.png *.jpg *.jpeg *.bmp *.svg);;All files (*)");
-        if (!path.isEmpty()) image->setText(path);
-    });
-    QObject::connect(list, &QListWidget::currentItemChanged, page, [=](QListWidgetItem *it) {
-        if (!it) return;
-        const Element *e = lib->element(it->data(Qt::UserRole).toString());
-        if (!e) return;
-        *loading = true;
-        name->setText(e->name);
-        type->setCurrentText(e->type);
-        text->setText(e->text);
-        position->setCurrentText(e->position);
-        setColor(e->color);
-        image->setText(e->image);
-        seconds->setValue(e->seconds);
-        live->setChecked(e->live);
-        fx->set(e->fx);
-        editBuild->setVisible(e->type == "Custom");
-        while(auto *item=cueLayout->takeAt(0)){if(item->widget())item->widget()->deleteLater();delete item;}
-        const auto elementId=e->id;if(e->type=="Custom")cueLayout->addWidget(animationCueControls(lib,elementId,[=](QString cue){play->triggerElementAnimation(elementId,cue);}));
-        save->setText("Update Element");
-        *loading = false;
-        adaptToType();
-        msg->clear();
-    });
-    QObject::connect(live, &QCheckBox::toggled, page, [=](bool on) {
-        if (*loading) return;
-        for (Element &e : lib->elements)
-            if (e.id == selId()) {
-                e.live = on;
-                const auto cues=QJsonDocument::fromJson(e.design.toUtf8()).object()["animationCues"].toArray();if(!cues.isEmpty())play->triggerElementAnimation(e.id,on?cues.first().toObject()["id"].toString():QString());
-                lib->commitElementLive();
-            }
-    });
-    QObject::connect(fresh, &QPushButton::clicked, page, clearForm);
-    QObject::connect(save, &QPushButton::clicked, page, [=] {
-        const QString n = name->text().trimmed();
-        if (n.isEmpty()) {
-            say(msg, "Enter a name for the element.");
-            name->setFocus();
-            return;
-        }
-        Element el;
-        el.name = n;
-        el.type = type->currentText();
-        el.text = text->text();
-        el.position = position->currentText();
-        el.color = colorBtn->property("color").toString();
-        el.image = image->text().trimmed();
-        el.seconds = seconds->value();
-        el.live = live->isChecked();
-        el.fx = fx->get();
-        if (el.type == "Custom" && selId().isEmpty()) {
-            say(msg, "Use \u201cCreate new\u201d to design a custom element.");
-            return;
-        }
-        bool updated = false;
-        for (Element &e : lib->elements)
-            if (e.id == selId()) {
-                el.id = e.id;
-                el.design = e.design;  // the shapes made in Build stay with the element
-                e = el;
-                updated = true;
-            }
-        if (!updated) {
-            el.id = Library::newId();
-            lib->elements.append(el);
-        }
-        lib->commitElements();
-        if (!updated) clearForm();
-        say(msg, "Saved to screen elements", true);
-    });
-    QObject::connect(remove, &QPushButton::clicked, page, [=] {
-        const QString id = selId();
-        if (id.isEmpty()) {
-            say(msg, "Select an element to remove.");
-            return;
-        }
-        bool touched = false;
-        for (ProgramItem &p : lib->programs) {
-            if (p.breakIn == id) { p.breakIn.clear(); touched = true; }
-            if (p.breakOut == id) { p.breakOut.clear(); touched = true; }
-        }
-        for (int i = 0; i < lib->elements.size(); ++i)
-            if (lib->elements[i].id == id) lib->elements.removeAt(i);
-        bool placedGone = false;
-        for (int i = lib->placements.size() - 1; i >= 0; --i)
-            if (lib->placements[i].refId == id) {
-                lib->placements.removeAt(i);
-                placedGone = true;
-            }
-        if (placedGone) lib->commitPlacements();
-        if (touched) lib->commitPrograms();
-        lib->commitElements();
-        clearForm();
-        say(msg, "Element removed.", true);
-    });
-    QObject::connect(lib, &Library::elementsChanged, page, refresh);
-    QObject::connect(lib, &Library::elementLiveChanged, page, refresh);
-    QObject::connect(editBuild, &QPushButton::clicked, page, [=] { lib->requestBuild(selId()); });
-    list->setContextMenuPolicy(Qt::CustomContextMenu);
-    QObject::connect(list,&QListWidget::customContextMenuRequested,page,[=](QPoint position){
-        auto *item=list->itemAt(position);if(!item)return;list->setCurrentItem(item);const QString id=item->data(Qt::UserRole).toString();
-        QMenu menu(page);menu.setStyleSheet("QMenu{background:#363636;border:1px solid #555;border-radius:7px;padding:4px;}");
-        auto *action=new QWidgetAction(&menu);auto *button=new BuildContextButton;action->setDefaultWidget(button);menu.addAction(action);
-        QObject::connect(button,&QPushButton::clicked,&menu,[&menu,lib,id]{menu.close();lib->requestBuild(id);});menu.exec(list->viewport()->mapToGlobal(position));
-    });
-    makeListDraggable(list, [=](QListWidgetItem *it, DragPayload &d) {
-        const Element *e = lib->element(it->data(Qt::UserRole).toString());
-        if (!e || e->type == "Break") return false;  // breaks play by themselves around an ad
-        d.kind = "element";
-        d.id = e->id;
-        d.label = e->name;
-        d.color = e->type == "Custom" ? QColor("#6366f1") : QColor(e->color);
-        d.widthPx = 120;
-        d.grabDx = 40;
-        return true;
-    });
-
-    auto *place = smallButton("Place on timeline");
-    place->setToolTip("Shows the selected element on screen at a moment on the timeline. Drag it there to move it.");
-    l->insertWidget(l->count() - 1, place);  // just above the closing stretch
-    QObject::connect(place, &QPushButton::clicked, page, [=] {
-        const QString id = selId();
-        const Element *e = lib->element(id);
-        if (!e) {
-            say(msg, "Select an element in the list first.");
-            return;
-        }
-        if (e->type == "Break") {
-            say(msg, "Breaks play automatically around an ad. Choose a logo, banner or ad element to place.");
-            return;
-        }
-        say(msg, placeElement(lib, play, id), true);
-    });
-    auto placeLabel = [=] {
-        const ProgramItem *p = slotPending(lib, "Element") ? lib->program(lib->pendingAfter) : nullptr;
-        place->setText(p ? QString("Place at the cut after \u201c%1\u201d").arg(p->title) : "Place on timeline");
-    };
-    QObject::connect(lib, &Library::pendingChanged, page, placeLabel);
-    placeLabel();
-
-    setColor("#2563eb");
-    adaptToType();
-    refresh();
-    return page;
-}
+QWidget *makeElementsPage(Library *lib,Playout *play){return studioElementsPage(lib,play);}
 
 } // namespace
 
@@ -1304,11 +1007,11 @@ EditorPanel::EditorPanel(Library *lib, Playout *play, QWidget *parent) : QFrame(
 
     // thin icon rail on the flat background
     auto *rail = new QWidget;
-    rail->setMinimumWidth(50);
-    rail->setMaximumWidth(72);
+    rail->setMinimumWidth(34);
+    rail->setMaximumWidth(38);
     auto *rl = new QVBoxLayout(rail);
-    rl->setContentsMargins(6, 8, 6, 0);
-    rl->setSpacing(8);
+    rl->setContentsMargins(3, 5, 3, 0);
+    rl->setSpacing(5);
     rl->setAlignment(Qt::AlignTop | Qt::AlignHCenter);
 
     auto *fg = new QFrame;
@@ -1320,19 +1023,20 @@ EditorPanel::EditorPanel(Library *lib, Playout *play, QWidget *parent) : QFrame(
 
     struct Tool { const char *icon, *tip; QWidget *page; };
     const QList<Tool> tools = {
-        {"🖥", "Display", makeDisplayPage(lib, play)},
-        {"📣", "Ads", makeAdsPage(lib, play)},
-        {"🗓", "Programs", makePlannerPage(lib, play)},
-        {"🧩", "Screen Elements", makeElementsPage(lib, play)},
+        {"composition", "Display", makeDisplayPage(lib, play)},
+        {"audio", "Ads", makeAdsPage(lib, play)},
+        {"play", "Programs", makePlannerPage(lib, play)},
+        {"image", "Screen Elements", makeElementsPage(lib, play)},
+        {"graph", "Monitor", studioDashboard(play)},
     };
     for (int i = 0; i < tools.size(); ++i) {
         auto *b = new QToolButton;
         b->setObjectName("rail");
-        b->setText(tools[i].icon);
+        b->setIcon(uiIcon(tools[i].icon));b->setIconSize({16,16});
         b->setToolTip(tools[i].tip);
         b->setCheckable(true);
         b->setAutoExclusive(true);
-        b->setFixedSize(40, 40);
+        b->setFixedSize(28, 28);
         b->setCursor(Qt::PointingHandCursor);
         connect(b, &QToolButton::clicked, this, [this, i] { showTool(i); });
         rl->addWidget(b);

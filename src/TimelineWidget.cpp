@@ -12,6 +12,7 @@
 #include <QScrollBar>
 #include <QSettings>
 #include <QWheelEvent>
+#include <QKeyEvent>
 #include <QtMath>
 #include <cmath>
 #include <algorithm>
@@ -66,6 +67,7 @@ TimelineWidget::TimelineWidget(Playout *play, Library *lib, QWidget *parent)
     connect(lib, &Library::elementsChanged, this, [this] { update(); });
     connect(lib, &Library::layersChanged, this, [this] { update(); });
     setMouseTracking(true);
+    setFocusPolicy(Qt::StrongFocus);setToolTip("Wheel: zoom · middle-drag / Shift-wheel: pan · Alt-wheel: step playhead · Home: fit · F: reveal playhead");
     DragController::instance()->setTarget(this);
     relayout();
 }
@@ -673,6 +675,7 @@ void TimelineWidget::autoScroll(int localX) {
 
 // Shift + wheel (or a sideways wheel) scrolls the timeline; the plain wheel scrolls the page it sits in.
 void TimelineWidget::wheelEvent(QWheelEvent *e) {
+    if(e->modifiers()&Qt::AltModifier){m_play->seekTo(qMax<qint64>(0,m_play->playheadMs()+(e->angleDelta().y()>0?1:-1)*qMax(1,1000/qMax(1,m_lib->display.fps))));e->accept();return;}
     QScrollBar *sb = hbar();
     if(!(e->modifiers()&Qt::ShiftModifier)&&e->angleDelta().y()){
         const auto anchor=xToMs(e->position().x());const double viewportX=e->position().x()-(sb?sb->value():0);
@@ -686,3 +689,8 @@ void TimelineWidget::wheelEvent(QWheelEvent *e) {
     }
     e->ignore();
 }
+
+void TimelineWidget::zoomView(double factor){auto *bar=hbar();int center=(bar?bar->value():0)+(parentWidget()?parentWidget()->width()/2:width()/2);auto time=xToMs(center);m_pixelsPerSecond=qBound(.1,m_pixelsPerSecond*factor,800.);QSettings().setValue("studio/timelineScale",m_pixelsPerSecond);relayout();if(bar)bar->setValue(msToX(time)-(parentWidget()?parentWidget()->width()/2:width()/2));update();}
+void TimelineWidget::fitView(){qint64 end=m_play->totalMs();for(const auto &p:m_lib->placements)end=qMax(end,p.startMs+p.lengthMs());m_pixelsPerSecond=qBound(.1,(parentWidget()?parentWidget()->width()-30:width()-30)/qMax(1.,end/1000.),800.);QSettings().setValue("studio/timelineScale",m_pixelsPerSecond);relayout();if(auto *bar=hbar())bar->setValue(0);update();}
+void TimelineWidget::revealPlayhead(){if(auto *bar=hbar())bar->setValue(qMax(0,playheadX()-(parentWidget()?parentWidget()->width()/2:width()/2)));update();}
+void TimelineWidget::keyPressEvent(QKeyEvent *e){if(e->key()==Qt::Key_Home){fitView();e->accept();}else if(e->key()==Qt::Key_F){revealPlayhead();e->accept();}else QWidget::keyPressEvent(e);}

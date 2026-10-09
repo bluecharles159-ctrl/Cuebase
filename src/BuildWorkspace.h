@@ -6,6 +6,7 @@
 class Library;
 class QLabel;
 class QLineEdit;
+class QComboBox;
 class BuildModel;
 class BuildCanvas;
 
@@ -39,7 +40,10 @@ private:
     BuildModel *m_model;
     BuildCanvas *m_canvas;
     QLineEdit *m_name;
+    QComboBox *m_elementPicker;
+    void refreshElements();
+    void capturePreview();
     QLabel *m_msg;
     QString m_editingId;
-    QString m_savedJson, m_savedName;
+    QString m_savedJson, m_savedName, m_draftName;
 };

@@ -11,6 +11,7 @@ pkg_check_modules(AV REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil l
 # The application and regression suite share the editor and renderer objects.
 add_library(CuebaseBuildCore STATIC
     src/Data.h src/Data.cpp
+    src/ElementLibrary.h src/ElementLibrary.cpp
     src/UiControls.h src/UiControls.cpp
     src/AssetImport.h src/AssetImport.cpp
     src/MediaFrames.h src/MediaFrames.cpp
@@ -36,6 +37,7 @@ add_executable(Cuebase WIN32
     src/TimelineWidget.h src/TimelineWidget.cpp
     src/QueueStrip.h src/QueueStrip.cpp
     src/EditorPanel.h src/EditorPanel.cpp
+    src/StudioElements.h src/StudioElements.cpp src/StudioDashboard.h src/StudioDashboard.cpp
     src/ControlPanel.h src/ControlPanel.cpp
     src/NetworkOutputPanel.h src/NetworkOutputPanel.cpp
     src/ColorManagement.h src/ColorManagement.cpp
@@ -57,13 +59,20 @@ if(BUILD_TESTING)
     add_test(NAME CuebaseBuild COMMAND CuebaseBuildTests -platform offscreen
         -o test-results.txt,txt -o test-results.xml,junitxml)
     add_executable(CuebaseStreamTests tests/StreamTests.cpp
+        src/MainWindow.h src/MainWindow.cpp src/HelpCenter.h src/HelpCenter.cpp
+        src/AddMenu.h src/AddMenu.cpp src/QueueStrip.h src/QueueStrip.cpp
+        src/ControlPanel.h src/ControlPanel.cpp src/NetworkOutputPanel.h src/NetworkOutputPanel.cpp
         src/EditorPanel.h src/EditorPanel.cpp
+    src/StudioElements.h src/StudioElements.cpp src/StudioDashboard.h src/StudioDashboard.cpp
         src/AnimationPlayout.cpp
         src/TimelineWidget.h src/TimelineWidget.cpp src/DragDrop.h src/DragDrop.cpp
         src/Playout.h src/Playout.cpp src/ViewportWidget.h src/ViewportWidget.cpp
         src/ColorManagement.h src/ColorManagement.cpp)
     target_link_libraries(CuebaseStreamTests PRIVATE CuebaseStreaming CuebaseBuildCore Qt6::Test Qt6::Widgets)
+    if(WIN32)
+        target_link_libraries(CuebaseStreamTests PRIVATE psapi)
+    endif()
     add_test(NAME CuebaseStream COMMAND CuebaseStreamTests -platform offscreen
         -o stream-results.txt,txt -o stream-results.xml,junitxml)
-    set_tests_properties(CuebaseStream PROPERTIES TIMEOUT 180)
+    set_tests_properties(CuebaseStream PROPERTIES TIMEOUT 300)
 endif()

@@ -413,7 +413,7 @@ void ViewportWidget::drawScreen(QPainter &p, const QRect &r, const View &v, bool
         p.setFont(uiFont(H * 9 / 100, true));
         p.drawText(r.adjusted(0, 0, 0, -H / 8), Qt::AlignCenter, "OFF AIR");
         p.setFont(uiFont(H * 4 / 100));
-        p.drawText(r.adjusted(0, H / 6, 0, 0), Qt::AlignCenter, "Press Start Broadcast to go live");
+        p.drawText(r.adjusted(0, H / 6, 0, 0), Qt::AlignCenter, "Press Start playout to begin");
     } else if (!seg->file.isEmpty() && v.frame && !v.frame->isNull() && seg->type != Segment::Break) {
         p.fillRect(r, Qt::black);
         const QImage scaled = v.frame->scaled(r.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
@@ -686,9 +686,9 @@ void ViewportWidget::drawChrome(QPainter &p, const QRect &r, const View &v) {
     if (m_detached) {
         right = m_play->isLive() ? "Broadcast is on air" : "Broadcast is off air";
     } else if (v.onAir && seg) {
-        const qint64 next = m_play->nextProgramCountdownMs();
+        const qint64 next = seg->type==Segment::Program ? seg->ms-m_play->segmentElapsed() : m_play->nextProgramCountdownMs();
         const qint64 end = m_play->programEndCountdownMs();
-        const bool show = seg->type != Segment::Program ? true : (end >= 0 && end <= 30000);
+        const bool show = next >= 0 && next <= 30000;
         if (next >= 0 && show) {
             const int secs = int(std::ceil(next / 1000.0));
             right = "Next program in " + (secs < 60 ? QString("%1s").arg(secs) : formatDuration(secs));

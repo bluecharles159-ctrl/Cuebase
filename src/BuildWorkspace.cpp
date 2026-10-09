@@ -1,6 +1,7 @@
 #include <QSignalBlocker>
 #include "UiControls.h"
 #include "BuildWorkspace.h"
+#include "ElementLibrary.h"
 
 #include <QCheckBox>
 #include "ColorPicker.h"
@@ -166,7 +167,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     auto *back = new QPushButton("←  Studio");
     auto *title = new QLabel("BUILD");
     title->setStyleSheet("font-weight:800; font-size:14px; color:#60a5fa; letter-spacing:2px;");
-    m_name = new QLineEdit;
+    m_elementPicker=new QComboBox;m_elementPicker->setObjectName("buildElementPicker");m_elementPicker->setEditable(true);m_name=m_elementPicker->lineEdit();connect(m_name,&QLineEdit::textEdited,this,[this](const QString &value){m_draftName=value;});
     m_name->setPlaceholderText("Element name");
     m_name->setMinimumWidth(220);
     m_msg = new QLabel;
@@ -183,7 +184,10 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     bar->addSpacing(6);
     bar->addWidget(title);
     bar->addSpacing(10);
-    bar->addWidget(m_name);
+    bar->addWidget(m_elementPicker);
+    auto *previewButton=new QPushButton(uiIcon("image"),"Preview");previewButton->setToolTip("Capture or edit the library thumbnail");bar->addWidget(previewButton);connect(previewButton,&QPushButton::clicked,this,&BuildWorkspace::capturePreview);
+    connect(m_elementPicker,qOverload<int>(&QComboBox::activated),this,[this](int index){const QString id=m_elementPicker->itemData(index).toString();if(id.isEmpty()||id==m_editingId)return;m_name->setText(m_draftName);if(hasUnsavedChanges()){save();if(hasUnsavedChanges())return;}editElement(id);});
+    connect(m_lib,&Library::elementsChanged,this,&BuildWorkspace::refreshElements);
     bar->addWidget(m_msg, 1);
     bar->addWidget(undoBtn);
     bar->addWidget(redoBtn);
@@ -387,6 +391,10 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     panels->addWidget(leftCol);panels->addWidget(side);panels->setSizes({1060,300});
     body->addWidget(panels,1);
     root->addLayout(body, 1);
+    auto *sceneBar=new QHBoxLayout;auto *newScene=new QPushButton(uiIcon("add"),"New scene");newScene->setObjectName("newBuildScene");newScene->setToolTip("Save this scene and start a new one");sceneBar->addWidget(newScene);
+    connect(newScene,&QPushButton::clicked,this,[this]{if(hasUnsavedChanges()||m_editingId.isEmpty()){save();if(hasUnsavedChanges()||m_editingId.isEmpty())return;}newElement();});
+    auto *presets=new QToolButton;presets->setText("Presets");presets->setIcon(uiIcon("composition"));presets->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);presets->setPopupMode(QToolButton::InstantPopup);auto *presetMenu=new QMenu(presets);
+    for(const auto &name:elementPresetNames()){auto *action=presetMenu->addAction(name);connect(action,&QAction::triggered,this,[this,name]{if(hasUnsavedChanges()){save();if(hasUnsavedChanges())return;}newElement();m_name->setText(name);m_draftName=name;m_model->reset(elementPreset(name));m_canvas->frameAll();});}presets->setMenu(presetMenu);sceneBar->addWidget(presets);sceneBar->addStretch();root->addLayout(sceneBar);
     auto *hints=new QLabel;hints->setStyleSheet("color:#a8a8a8;font-size:10px;padding:2px;");root->addWidget(hints);
     connect(canvas,&BuildCanvas::shortcutHint,hints,&QLabel::setText);
 
@@ -1336,7 +1344,7 @@ void BuildWorkspace::say(const QString &text, bool error) {
 void BuildWorkspace::undoEdit() { m_model->undo(); }
 void BuildWorkspace::redoEdit() { m_model->redo(); }
 bool BuildWorkspace::hasUnsavedChanges() const {return m_savedJson!=m_model->design.toJson()||m_savedName!=m_name->text();}
-bool BuildWorkspace::saveForClose(){save();return !hasUnsavedChanges();}
+bool BuildWorkspace::saveForClose(){save();return !m_editingId.isEmpty()&&!hasUnsavedChanges();}
 bool BuildWorkspace::importFile(const QString &path){
     const auto suffix=QFileInfo(path).suffix().toLower();
     if(QStringList{"wav","mp3","flac","ogg","aac","m4a","opus","aiff"}.contains(suffix)){
@@ -1370,7 +1378,7 @@ void BuildWorkspace::exportFile(){
 
 void BuildWorkspace::newElement() {
     m_editingId.clear();
-    m_name->setText("New element");
+    refreshElements();m_name->setText("New element");
     m_msg->clear();
     m_model->reset(ElementDesign::defaultScene());
     if(auto *camera=m_model->design.camera()) {
@@ -1380,7 +1388,7 @@ void BuildWorkspace::newElement() {
     DObject rectangle;rectangle.id=Library::newId();rectangle.name="Rectangle";rectangle.type="Shape";
     rectangle.w=4;rectangle.h=2;rectangle.base.rot={90,0,0};rectangle.mat.color=Qt::white;rectangle.mat.shadeless=true;
     rectangle.style["shape"]="Rectangle";rectangle.captureDefaults();m_model->design.objects.append(rectangle);m_model->select(rectangle.id);m_model->notify();
-    m_savedJson=m_model->design.toJson();m_savedName=m_name->text();
+    m_savedJson=m_model->design.toJson();m_savedName=m_name->text();m_draftName=m_name->text();
     m_canvas->frameAll();
 }
 
@@ -1391,7 +1399,7 @@ void BuildWorkspace::editElement(const QString &id) {
         return;
     }
     m_editingId = id;
-    m_name->setText(e->name);
+    refreshElements();m_name->setText(e->name);
     m_msg->clear();
     m_model->reset(ElementDesign::fromJson(e->design));
     if(e->design.isEmpty()){
@@ -1407,7 +1415,7 @@ void BuildWorkspace::editElement(const QString &id) {
         }
         m_model->reset(design);m_model->select(design.objects.last().id);
     }
-    m_savedJson=m_model->design.toJson();m_savedName=m_name->text();
+    m_savedJson=m_model->design.toJson();m_savedName=m_name->text();m_draftName=m_name->text();
     m_canvas->frameAll();
 }
 
@@ -1424,6 +1432,12 @@ void BuildWorkspace::save() {
     }
     if (m_model->editMode) m_model->exitEdit();
     if(const auto *existing=m_lib->element(m_editingId)){const auto saved=ElementDesign::fromJson(existing->design).animationCues;for(int i=0;i<m_model->design.animationCues.size();++i){auto cue=m_model->design.animationCues[i].toObject();for(auto value:saved){const auto prior=value.toObject();if(prior["id"]==cue["id"])for(const auto *key:{"trigger","triggerMs"})if(prior.contains(key))cue[key]=prior[key];}m_model->design.animationCues[i]=cue;}}
+    if(const auto *existing=m_lib->element(m_editingId)){
+        const auto saved=ElementDesign::fromJson(m_savedJson),latest=ElementDesign::fromJson(existing->design);
+        for(auto &object:m_model->design.objects)if(object.style["studio.editable"].toBool())if(const auto *prior=saved.find(object.id))if(const auto *current=latest.find(object.id)){
+            if(object.text==prior->text)object.text=current->text;if(object.image==prior->image)object.image=current->image;
+        }
+    }
     const QString json = m_model->design.toJson();
     const int secs = qMax(1, int(qCeil(m_model->design.durationMs / 1000.0)));
     QString color = "#6366f1";
@@ -1435,7 +1449,7 @@ void BuildWorkspace::save() {
             e.name = n;
             e.design = json;
             e.type = "Custom";
-            e.seconds = secs;
+            e.seconds = secs;refreshElementThumbnail(e);
             updated = true;
         }
     if (!updated) {
@@ -1446,10 +1460,16 @@ void BuildWorkspace::save() {
         e.design = json;
         e.seconds = secs;
         e.color = color;
-        m_lib->elements.append(e);
+        e.previewMs=m_model->t;if(e.previewMs==0&&!m_model->design.animationCues.isEmpty())e.previewMs=m_model->design.animationCues.first().toObject()["end"].toDouble();refreshElementThumbnail(e);
+        if(!editElementPresentation(e,this))return;
+        if(!m_lib->elementPlaylists.contains(e.playlist))m_lib->elementPlaylists.append(e.playlist);
+        m_lib->elements.append(e);m_name->setText(e.name);
         m_editingId = e.id;
     }
     m_lib->commitElements();
-    m_savedJson=m_model->design.toJson();m_savedName=m_name->text();
+    m_savedJson=m_model->design.toJson();m_savedName=m_name->text();m_draftName=m_name->text();
     say("Saved to screen elements");
 }
+
+void BuildWorkspace::refreshElements(){QSignalBlocker block(m_elementPicker);const auto name=m_name->text();m_elementPicker->clear();for(const auto &e:m_lib->elements)m_elementPicker->addItem(e.name,e.id);m_elementPicker->setCurrentIndex(m_elementPicker->findData(m_editingId));m_name->setText(name);}
+void BuildWorkspace::capturePreview(){const bool fresh=m_editingId.isEmpty();if(fresh||hasUnsavedChanges()){save();if(fresh||m_editingId.isEmpty()||hasUnsavedChanges())return;}for(auto &e:m_lib->elements)if(e.id==m_editingId){Element draft=e;draft.previewMs=m_model->t;if(editElementPresentation(draft,this)){e=draft;m_name->setText(e.name);m_savedName=e.name;if(!m_lib->elementPlaylists.contains(e.playlist))m_lib->elementPlaylists.append(e.playlist);m_lib->commitElements();}break;}}

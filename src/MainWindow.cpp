@@ -110,9 +110,9 @@ QPushButton:hover { background:#2b3a55; }
 QPushButton:disabled { color:#64748b; background:#141d2e; }
 QPushButton#save { background:#454545; border:none; }
 QPushButton#save:hover { background:#565656; }
-QPushButton#broadcast { background:#16a34a; border:none; font-size:15px; padding:12px; }
+QPushButton#broadcast { background:#426387; border:none; font-size:11px; padding:5px; }
 QPushButton#broadcast[live="true"] { background:#dc2626; }
-QPushButton#broadcast:disabled { background:#14532d; color:#86efac; }
+QPushButton#broadcast:disabled { background:#393c42; color:#777d87; }
 QToolButton { background:transparent; border:none; color:#94a3b8; }
 QToolButton#rail { font-size:20px; border-radius:10px; }
 QToolButton#rail:hover { background:#16213a; }
@@ -205,7 +205,7 @@ QFrame#editorBg,QFrame#tlBox { background:#28292c; border:1px solid #414247; bor
 QLineEdit,QComboBox,QDoubleSpinBox,QSpinBox,QPlainTextEdit { background:#45464b; border:1px solid #515359; border-radius:3px; padding:2px 5px; }
 QPushButton { background:#424449; border:1px solid #53555b; border-radius:4px; padding:4px 8px; font-weight:400; }
 QPushButton:hover { background:#51545b; }
-QToolButton#rail { font-size:15px; border-radius:5px; }
+QToolButton#rail { font-size:10px; border-radius:4px; padding:2px; }
 QToolButton#addBtn { background:#494b50; font-size:12px; }
 QListWidget { background:#2c2d31; border:1px solid #414247; padding:2px; }
 QListWidget::item { padding:3px; }
@@ -321,7 +321,7 @@ void MainWindow::buildMenus() {
     add(help, "About", QKeySequence(), [this] { HelpCenter::showAbout(this); });
 
     // Window
-    auto *window = newMenu("Window");
+    auto *window = newMenu("Window");bar->removeAction(help->menuAction());bar->addAction(help->menuAction());
     add(window, "Full Screen", QKeySequence(Qt::Key_F11), [this] {
         const bool on = !isFullScreen();
         if (on) showFullScreen(); else showNormal();
@@ -358,6 +358,8 @@ QList<QPair<QString, QString>> MainWindow::shortcutRows() const {
         if (!a->shortcut().isEmpty())
             rows.append({a->text(), a->shortcut().toString(QKeySequence::NativeText)});
     rows.append(QPair<QString,QString>{"Build: add object", "Shift+A"});
+    rows.append(QPair<QString,QString>{"Studio timeline: fit / reveal playhead", "Home / F"});
+    rows.append(QPair<QString,QString>{"Studio timeline: zoom / pan / step", "Wheel / Middle-drag / Alt+wheel"});
     rows.append(QPair<QString,QString>{"Build: set placement cursor", "Shift+right-click"});
     rows.append(QPair<QString,QString>{"Build: move / rotate / scale", "G / R / S"});
     rows.append(QPair<QString,QString>{"Build: constrain transform", "X / Y / Z"});
@@ -446,28 +448,16 @@ void MainWindow::buildUi() {
     connect(m_play,&Playout::audioSourceCreated,m_network,&NetworkOutput::attachPlayer);
     m_top->addWidget(m_editor);
     m_top->setChildrenCollapsible(false);
-    m_top->setHandleWidth(8);
+    m_top->setHandleWidth(4);
 
-    // (viewport | editor) over preview
-    m_preview = buildPreview();
-    m_left = new QSplitter(Qt::Vertical);
-    m_left->addWidget(m_top);
-    m_left->addWidget(m_preview);
-    m_left->setChildrenCollapsible(false);
-    m_left->setHandleWidth(8);
-
-    // everything | control panel (vertical, on the right)
-    m_control = new ControlPanel(m_lib, m_play, nullptr, m_network);
-    m_root = new QSplitter(Qt::Horizontal);
-    m_root->addWidget(m_left);
-    m_root->addWidget(m_control);
-    m_root->setChildrenCollapsible(false);
-    m_root->setHandleWidth(8);
-    m_root->setStretchFactor(0, 1);
+    // Program monitor and asset editor share the top row; the timeline spans the full width below.
+    m_preview=buildPreview();m_control=new ControlPanel(m_lib,m_play,nullptr,m_network);
+    m_left=new QSplitter(Qt::Horizontal);m_left->addWidget(m_top);m_left->addWidget(m_control);m_left->setChildrenCollapsible(false);m_left->setHandleWidth(4);m_left->setStretchFactor(0,1);
+    m_root=new QSplitter(Qt::Vertical);m_root->addWidget(m_left);m_root->addWidget(m_preview);m_root->setChildrenCollapsible(false);m_root->setHandleWidth(4);m_root->setStretchFactor(0,1);
 
     auto *wrap = new QWidget;
     auto *wl = new QVBoxLayout(wrap);
-    wl->setContentsMargins(10, 10, 10, 10);
+    wl->setContentsMargins(6, 6, 6, 6);
     wl->addWidget(m_root);
     m_studio = wrap;
 
@@ -481,9 +471,9 @@ void MainWindow::buildUi() {
 
     resetLayout();
     QSettings s;
-    m_top->restoreState(s.value("layout/top").toByteArray());
-    m_left->restoreState(s.value("layout/left").toByteArray());
-    m_root->restoreState(s.value("layout/root").toByteArray());
+    m_top->restoreState(s.value("layout/studio3/top").toByteArray());
+    m_left->restoreState(s.value("layout/studio3/left").toByteArray());
+    m_root->restoreState(s.value("layout/studio3/root").toByteArray());
 
     // activity log + window title follow the playout
     connect(m_play, &Playout::segmentChanged, this, [this] {
@@ -520,7 +510,7 @@ QWidget *MainWindow::buildPreview() {
     auto *content = new QWidget;
     page->setWidget(content);
     auto *l = new QVBoxLayout(content);
-    l->setContentsMargins(12, 10, 12, 12);
+    l->setContentsMargins(7, 6, 7, 6);
     l->setSpacing(8);
 
     // the timeline sits in a darker rounded container, like the tracks of a video editor
@@ -561,12 +551,14 @@ QWidget *MainWindow::buildPreview() {
     auto *row = new QHBoxLayout;
     row->setContentsMargins(4, 0, 0, 0);
     row->addWidget(addBtn);
-    row->addStretch();
+    auto tool=[&](QString label,QString icon,auto fn){auto *b=new QToolButton;b->setIcon(uiIcon(icon));b->setToolTip(label);b->setFixedSize(24,22);connect(b,&QToolButton::clicked,this,fn);row->addWidget(b);};
+    tool("Fit timeline · Home","fit",[=]{tl->fitView();});tool("Zoom out","remove",[=]{tl->zoomView(1/1.25);});tool("Zoom in","add",[=]{tl->zoomView(1.25);});tool("Reveal playhead · F","cursor",[=]{tl->revealPlayhead();});
+    auto *timeLabel=new QLabel;auto showTime=[=,this]{timeLabel->setText(QString("%1 s").arg(m_play->playheadMs()/1000.,0,'f',2));};connect(m_play,&Playout::ticked,timeLabel,showTime);showTime();row->addWidget(timeLabel);row->addStretch();auto *navHint=new QLabel("Wheel zoom · Middle drag pan · Alt wheel step");navHint->setStyleSheet("color:#969ca5;font-size:10px;");row->addWidget(navHint);
 
     l->addWidget(caption("TIMELINE"));
     l->addWidget(box);
     l->addLayout(row);
-    l->addWidget(new QueueStrip(m_lib, m_play));
+    auto *rundown=new QueueStrip(m_lib,m_play);rundown->hide();auto *toggle=new QToolButton;toggle->setIcon(uiIcon("down"));toggle->setText("Rundown cards");toggle->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);toggle->setCheckable(true);connect(toggle,&QToolButton::toggled,rundown,&QWidget::setVisible);l->addWidget(toggle);l->addWidget(rundown);
     l->addStretch();
     return f;
 }
@@ -672,8 +664,8 @@ void MainWindow::showStudio() {
 
 void MainWindow::resetLayout() {
     m_top->setSizes({640, 520});
-    m_left->setSizes({430, 360});
-    m_root->setSizes({1080, 260});
+    m_left->setSizes({1100, 250});
+    m_root->setSizes({560, 240});
     m_control->show();
     m_preview->show();
 }
@@ -687,9 +679,9 @@ void MainWindow::closeEvent(QCloseEvent *event) {
     if(choice==QMessageBox::Save&&m_build&&m_build->hasUnsavedChanges()&&!m_build->saveForClose()){event->ignore();return;}
     if(m_network)m_network->stop();
     QSettings s;
-    s.setValue("layout/top", m_top->saveState());
-    s.setValue("layout/left", m_left->saveState());
-    s.setValue("layout/root", m_root->saveState());
+    s.setValue("layout/studio3/top", m_top->saveState());
+    s.setValue("layout/studio3/left", m_left->saveState());
+    s.setValue("layout/studio3/root", m_root->saveState());
     QMainWindow::closeEvent(event);
 }
 

@@ -243,9 +243,13 @@ void Library::load() {
         e.seconds = j["seconds"].toInt(4);
         e.live = j["live"].toBool();
         e.design = j["design"].toString();
+        e.description=j["description"].toString();e.playlist=j["playlist"].toString(e.type=="Break"?"Break screens":e.type=="Logo"?"Logos":"Overlays");e.thumbnail=j["thumbnail"].toString();e.previewMs=j["previewMs"].toDouble();
+        e.previewX=j["previewX"].toDouble();e.previewY=j["previewY"].toDouble();e.previewW=j["previewW"].toDouble(1);e.previewH=j["previewH"].toDouble(1);
         e.fx = fxFromJson(j["fx"].toObject());
         elements.append(e);
     }
+    for(auto v:o["elementPlaylists"].toArray())if(!v.toString().trimmed().isEmpty()&&!elementPlaylists.contains(v.toString()))elementPlaylists.append(v.toString());
+    for(const auto &e:elements)if(!elementPlaylists.contains(e.playlist))elementPlaylists.append(e.playlist);
     for (const QJsonValue &v : o["placements"].toArray()) {
         const QJsonObject j = v.toObject();
         Placement pl;
@@ -310,6 +314,8 @@ void Library::save() const {
         ea.append(QJsonObject{{"id", e.id}, {"name", e.name}, {"type", e.type}, {"text", e.text},
                               {"color", e.color}, {"position", e.position}, {"image", e.image},
                               {"seconds", e.seconds}, {"live", e.live}, {"design", e.design},
+                              {"description",e.description},{"playlist",e.playlist},{"thumbnail",e.thumbnail},{"previewMs",double(e.previewMs)},
+                              {"previewX",e.previewX},{"previewY",e.previewY},{"previewW",e.previewW},{"previewH",e.previewH},
                               {"fx", fxToJson(e.fx)}});
     for (const Placement &pl : placements)
         la.append(QJsonObject{{"id", pl.id}, {"type", pl.type}, {"refId", pl.refId}, {"name", pl.name},
@@ -327,7 +333,7 @@ void Library::save() const {
                         {"colorLook", display.colorLook}, {"exposure", display.exposure}, {"gamma", display.gamma},
                         {"regionOn", display.regionOn}, {"rx0", display.rx0}, {"ry0", display.ry0}, {"rx1", display.rx1},
                         {"ry1", display.ry1}};
-    const QJsonObject o{{"programs", pa}, {"ads", aa}, {"elements", ea}, {"placements", la}, {"layers", lay}, {"display", d}};
+    const QJsonObject o{{"programs", pa}, {"ads", aa}, {"elements", ea}, {"elementPlaylists",QJsonArray::fromStringList(elementPlaylists)}, {"placements", la}, {"layers", lay}, {"display", d}};
     QFile f(filePath());
     if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) f.write(QJsonDocument(o).toJson());
 }

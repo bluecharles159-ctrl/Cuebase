@@ -23,8 +23,8 @@ QString NetworkOutput::validate(const StreamSettings &s){
 }
 NetworkOutput::NetworkOutput(QObject *parent):QObject(parent){
     m_tick.setTimerType(Qt::PreciseTimer);m_tick.setInterval(5);connect(&m_tick,&QTimer::timeout,this,&NetworkOutput::pump);
-    connect(&m_videoServer,&QTcpServer::newConnection,this,[this]{if(m_video){m_videoServer.nextPendingConnection()->deleteLater();return;}m_video=m_videoServer.nextPendingConnection();m_video->setSocketOption(QAbstractSocket::LowDelayOption,1);sendFrame();});
-    connect(&m_audioServer,&QTcpServer::newConnection,this,[this]{m_audio=m_audioServer.nextPendingConnection();m_audio->setSocketOption(QAbstractSocket::LowDelayOption,1);if(m_video){m_clock.start();m_clockStarted=true;m_frames=1;m_samples=qRound64(48000.0/m_settings.fps);m_audio->write(mix(int(m_samples)));}});
+    connect(&m_videoServer,&QTcpServer::newConnection,this,[this]{if(m_video){m_videoServer.nextPendingConnection()->deleteLater();return;}m_video=m_videoServer.nextPendingConnection();m_video->setSocketOption(QAbstractSocket::LowDelayOption,1);if(sendFrame())m_frames=1;});
+    connect(&m_audioServer,&QTcpServer::newConnection,this,[this]{m_audio=m_audioServer.nextPendingConnection();m_audio->setSocketOption(QAbstractSocket::LowDelayOption,1);if(m_video){m_clock.start();m_progressClock.restart();m_clockStarted=true;m_epochFrames=m_frames;m_samples=qRound64(m_frames*48000.0/m_settings.fps);m_audio->write(mix(int(m_samples)));}});
     connect(&m_process,&QProcess::readyReadStandardError,this,[this]{QString message=QString::fromUtf8(m_process.readAllStandardError());message.replace(m_settings.endpoint,"[destination]");message.replace(QRegularExpression("(?:rtmps?|srt)://[^\\s]+"),"[destination]");m_errors=(m_errors+message).right(6000);});
     connect(&m_process,&QProcess::readyReadStandardOutput,this,[this]{m_progress+=m_process.readAllStandardOutput();int newline;
         while((newline=m_progress.indexOf('\n'))>=0){auto line=m_progress.left(newline).trimmed();m_progress.remove(0,newline+1);if(line.startsWith("frame=")&&line.mid(6).toLongLong()>0){m_progressClock.restart();if(!m_streaming){m_epochFrames=m_frames;m_clock.restart();state("Streaming · H.264 + AAC",true);}}}
@@ -98,7 +98,11 @@ bool NetworkOutput::sendFrame(){
     if(m_video->write(reinterpret_cast<const char*>(frame.constBits()),bytes)<0){fail("The encoder video connection closed. "+m_errors.right(1600));return false;}return true;
 }
 void NetworkOutput::pump(){
-    if(!m_active)return;if(!m_clockStarted){if(m_connectClock.elapsed()>15000)fail("Connection timed out. Check the destination, stream key and encoder protocols. "+m_errors.right(800));return;}
+    if(!m_active)return;if(!m_clockStarted){
+        // FFmpeg can probe several raw frames before opening its second input.
+        // Keep that handshake supplied, with a bounded number of queued frames.
+        if(m_video&&!m_audio&&m_frames<8&&m_connectClock.elapsed()>=m_frames*100){if(sendFrame())++m_frames;}
+        if(m_connectClock.elapsed()>30000)fail(QString("Encoder input initialization timed out (video %1, audio %2). ").arg(m_video?"connected":"not connected",m_audio?"connected":"not connected")+m_errors.right(800));return;}
     if(m_progressClock.elapsed()>20000){fail("Encoder stopped reporting output progress. "+m_errors.right(800));return;}
     qint64 due=qint64(m_clock.elapsed()*m_settings.fps/1000.0)+m_epochFrames;
     if(m_streaming&&due-m_frames>qMax(5.0,m_settings.fps)){fail("The program renderer cannot maintain the configured frame rate. Reduce the stream resolution or frame rate.");return;}

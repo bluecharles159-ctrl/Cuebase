@@ -17,6 +17,12 @@ Set `-DBUILD_TESTING=OFF` when configuring an application-only build. Test resul
 
 On this machine, open `Run-Cuebase.cmd` to launch the verified `build-final` executable with the installed Qt runtime on PATH. After rebuilding from the source archive, the same launcher also supports the preset's `build` directory. The source archive is a complete buildable project; it is not a portable runtime installer.
 
+## Studio library and broadcast monitoring
+
+Screen Elements now has playlist cards, private animation previews, thumbnail cropping, editable text/media fields and validated playhead-following placement. Build has a saved-element dropdown, autosaving New scene action and four animated starter presets. Use `{{studio:Sponsor}}Sponsored by NVIDIA` or the Studio Field checkbox to expose reusable content without changing its animation.
+
+Studio Monitor can start the included localhost MediaMTX receiver and record real receiver connections by server/path over time. Public distribution needs a reachable server or CDN. See [PRODUCTION-GUIDE.md](PRODUCTION-GUIDE.md) for local RTMP/SRT URLs, audience-count limits and the full workflow.
+
 ## Composition editing
 
 - New elements open with a white rectangle, a locked orthographic camera and a key light. The clean composition preview and editing viewport sit side by side, with Layers and Animation below. Drag splitter boundaries to resize panels.
@@ -79,7 +85,7 @@ For parenting, select children first, then Shift-select the intended parent last
 Cuebase contains a local encoder/output engine; it does not require a Cuebase cloud backend. It sends the clean program picture and mixed playout audio to the RTMP/RTMPS or SRT endpoint provided by your broadcaster or streaming service. That receiving endpoint is external to Cuebase.
 
 1. Set output resolution and frame rate in Display Settings.
-2. Load the show and use Start Broadcast.
+2. Load the show and use Start playout.
 3. Under Control → Network Output, choose Configure / start stream.
 4. Enter the destination and optional RTMP stream key, confirm the FFmpeg executable and bitrates, then start.
 5. The status reports Connecting, Streaming, reconnect attempts, or the actual encoder/connection error. Stop network stream stops transmission; Stop Broadcast also stops network output.

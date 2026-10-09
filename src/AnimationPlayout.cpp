@@ -29,5 +29,5 @@ Playout::GraphicPlayback Playout::graphicPlayback(const Element &element,qint64 
 void Playout::triggerElementAnimation(const QString &elementId,const QString &cueId){
     const auto *element=m_lib->element(elementId);if(!element)return;
     if(!cueId.isEmpty()){const auto cues=QJsonDocument::fromJson(element->design.toUtf8()).object()["animationCues"].toArray();bool found=false;for(auto value:cues)found|=value.toObject()["id"].toString()==cueId;if(!found)return;}
-    m_manualCues[elementId]={cueId,timelinePosMs()};syncDesignAudio();emit ticked();
+    m_manualCues[elementId]={cueId,playheadMs()};syncDesignAudio();emit ticked();
 }

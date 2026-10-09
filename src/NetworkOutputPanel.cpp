@@ -33,7 +33,7 @@ NetworkOutputPanel::NetworkOutputPanel(NetworkOutput *output,Library *library,Pl
         auto *error=new QLabel;error->setWordWrap(true);error->setStyleSheet("color:#f4b184;");box->addWidget(error);auto *buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);buttons->button(QDialogButtonBox::Ok)->setText("Start stream");box->addWidget(buttons);
         connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::reject);
         connect(buttons,&QDialogButtonBox::accepted,dialog,[=]{
-            if(!playout->isLive()){error->setText("Start Broadcast first so there is a program on air.");return;}
+            if(!playout->isLive()){error->setText("Start playout first so there is a program on air.");return;}
             StreamSettings next=*settings;next.executable=encoder->text().trimmed();next.endpoint=endpoint->text().trimmed();if(!key->text().isEmpty()&&QUrl(next.endpoint).scheme().startsWith("rtmp")){while(next.endpoint.endsWith('/'))next.endpoint.chop(1);next.endpoint+="/"+key->text();}
             next.size={library->display.resX(),library->display.resY()};next.fps=library->display.fps/library->display.fpsBase;next.videoKbps=video->value();next.audioKbps=audio->value();
             auto invalid=NetworkOutput::validate(next);if(!invalid.isEmpty()){error->setText(invalid);return;}

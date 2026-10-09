@@ -70,6 +70,9 @@ struct Element {
     int seconds = 4;    // Break elements: how long the bumper stays on screen
     bool live = false;  // Logo / Banner / Ad Element: currently shown on the viewport
     QString design;     // "Custom" elements: the animated design made in the Build workspace (JSON)
+    QString description, playlist = "Overlays", thumbnail;
+    double previewX=0, previewY=0, previewW=1, previewH=1;
+    qint64 previewMs=0;
     Transition fx;
 };
 
@@ -138,6 +141,7 @@ public:
     QList<ProgramItem> programs;
     QList<Ad> ads;
     QList<Element> elements;
+    QStringList elementPlaylists{"Overlays", "Break screens", "Logos"};
     QList<Placement> placements;
     QVector<LayerState> layers = QVector<LayerState>(4);  // 0 = main, 1..3 = extra timelines
     DisplaySettings display;

@@ -23,6 +23,9 @@ public:
     QSize sizeHint() const override { return {m_totalW, wantedHeight()}; }
     QSize minimumSizeHint() const override { return {m_totalW, wantedHeight()}; }
     int wantedHeight() const;
+    void fitView();
+    void zoomView(double factor);
+    void revealPlayhead();
     int blockX(int index) const { return index >= 0 && index < m_blocks.size() ? m_blocks[index].x : 0; }
     int blockW(int index) const { return index >= 0 && index < m_blocks.size() ? m_blocks[index].w : 0; }
 
@@ -50,6 +53,7 @@ protected:
     void leaveEvent(QEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
 
 private:
     struct Block { int x, w; };

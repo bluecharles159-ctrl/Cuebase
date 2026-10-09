@@ -1,4 +1,5 @@
 #include "AddMenu.h"
+#include "UiControls.h"
 
 #include <QGuiApplication>
 #include <QPushButton>
@@ -16,8 +17,8 @@ AddMenu::AddMenu(QWidget *parent) : QFrame(parent) {
     card->setObjectName("addCard");
     card->setStyleSheet(
         "QFrame#addCard { background:rgba(44,44,48,245); border:1px solid rgba(255,255,255,40); border-radius:14px; }"
-        "QPushButton { background:transparent; border:none; border-radius:8px; padding:8px 30px;"
-        "              font-size:12px; font-weight:600; color:#e5e7eb; }"
+        "QPushButton { background:transparent; border:none; border-radius:5px; padding:5px 12px;"
+        "              font-size:11px; font-weight:400; color:#e5e7eb; }"
         "QPushButton:hover { background:rgba(255,255,255,30); }");
     outer->addWidget(card);
 
@@ -27,6 +28,7 @@ AddMenu::AddMenu(QWidget *parent) : QFrame(parent) {
     for (const QString &name : {QStringLiteral("Clip"), QStringLiteral("Sound"), QStringLiteral("Ad Center"),
                                 QStringLiteral("Element")}) {
         auto *b = new QPushButton(name);
+        b->setIcon(uiIcon(name=="Sound"?"audio":name=="Element"?"image":name=="Clip"?"play":"composition"));b->setIconSize({15,15});
         b->setCursor(Qt::PointingHandCursor);
         b->setMinimumWidth(150);
         l->addWidget(b);

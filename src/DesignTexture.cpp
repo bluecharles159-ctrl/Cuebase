@@ -108,6 +108,9 @@ QImage ElementDesign::textureFor(const DObject &o) const {
         QString align=o.style["text.align"].toString("Center");
         block.setAlignment(align=="Left"?Qt::AlignLeft:align=="Right"?Qt::AlignRight:align=="Justify"?Qt::AlignJustify:Qt::AlignHCenter);
         block.setLineHeight(o.propertyBase("text.lineHeight")*100,QTextBlockFormat::ProportionalHeight);cursor.mergeBlockFormat(block);
+        if(o.style["studio.editable"].toBool()&&o.style["studio.fit"].toBool(true)){
+            int px=font.pixelSize();while(doc.size().height()>h&&px>6){font.setPixelSize(--px);doc.setDefaultFont(font);doc.setTextWidth(w);}
+        }
         QString vertical=o.style["text.vertical"].toString("Center");double y=vertical=="Top"?0:vertical=="Bottom"?h-doc.size().height():(h-doc.size().height())/2;
         p.save();p.setClipRect(image.rect());p.translate(0,y);doc.drawContents(&p);p.restore();
     }

@@ -10,6 +10,7 @@ QIcon uiIcon(const QString &name,bool active){
     QPixmap image(40,40);image.fill(Qt::transparent);QPainter p(&image);p.setRenderHint(QPainter::Antialiasing);p.scale(2,2);
     p.setPen(QPen(active?QColor("#c7d6e8"):QColor("#526174"),1.35,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin));p.setBrush(Qt::NoBrush);
     const QString n=name.toLower();
+    if(n=="stop"){p.drawRoundedRect(QRectF(4,4,12,12),1,1);p.end();return QIcon(image);}
     if(n=="scale"){p.drawRect(3,11,6,6);p.drawLine(8,12,17,3);p.drawPolyline(QPolygonF{{11,3},{17,3},{17,9}});p.end();return QIcon(image);}
     if(n=="step"){p.drawPolyline(QPolygonF{{2,16},{9,16},{9,5},{18,5}});p.end();return QIcon(image);}
     if(n=="linear"){p.drawLine(3,17,17,3);p.drawEllipse(QPointF(3,17),1.5,1.5);p.drawEllipse(QPointF(17,3),1.5,1.5);p.end();return QIcon(image);}

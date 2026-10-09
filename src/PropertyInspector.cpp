@@ -1,5 +1,6 @@
 #include "UiControls.h"
 #include "PropertyInspector.h"
+#include "ElementLibrary.h"
 #include "BuildModel.h"
 #include "Data.h"
 #include "MediaFrames.h"
@@ -191,10 +192,20 @@ void PropertyInspector::rebuild(){
         for(const auto &path:QStringList{"grayscale","invert","sepia"})number(effects,path,"effects."+path,0,1,.05);
         number(effects,"Hue","effects.hue",-360,360,1,"°");
     }
+    if(!multi&&(o->type=="Text"||o->type=="Image")){
+        auto *studio=section("STUDIO FIELD",false);auto *enabled=new QCheckBox("Editable in Studio");enabled->setChecked(o->style["studio.editable"].toBool());studio->addRow(enabled);
+        enabled->setToolTip("Expose this object's content in Screen Elements without changing its animation. Text shorthand: {{studio:Sponsor}}Your text");
+        auto *label=new QLineEdit(o->style["studio.label"].toString(o->name));studio->addRow("Field name",label);
+        sync.append([=,this]{if(auto *x=m->active()){QSignalBlocker block(enabled);enabled->setChecked(x->style["studio.editable"].toBool());if(!label->hasFocus()){QSignalBlocker labelBlock(label);label->setText(x->style["studio.label"].toString(x->name));}}});
+        auto *fit=new QCheckBox("Fit long text inside its box");fit->setChecked(o->style["studio.fit"].toBool(true));if(o->type=="Text")studio->addRow(fit);else fit->deleteLater();
+        connect(enabled,&QCheckBox::toggled,this,[=,this](bool on){apply([&]{if(auto *x=m->active()){x->style["studio.editable"]=on;x->style["studio.label"]=label->text();}});});
+        connect(label,&QLineEdit::editingFinished,this,[=,this]{apply([&]{if(auto *x=m->active())x->style["studio.label"]=label->text().trimmed();});});
+        if(o->type=="Text")connect(fit,&QCheckBox::toggled,this,[=,this](bool on){apply([&]{if(auto *x=m->active())x->style["studio.fit"]=on;});});
+    }
     if(!multi && o->type=="Text"){
         auto *text=section("TYPOGRAPHY");auto *content=new QPlainTextEdit(o->text);content->setMaximumHeight(70);text->addRow(content);
         sync.append([=,this]{if(auto *object=m->active();object&&!content->hasFocus()&&content->toPlainText()!=object->text){QSignalBlocker blocker(content);content->setPlainText(object->text);}});
-        connect(content,&QPlainTextEdit::textChanged,this,[=, this]{apply([&]{if(auto *x=m->active())x->text=content->toPlainText();});});
+        connect(content,&QPlainTextEdit::textChanged,this,[=, this]{apply([&]{if(auto *x=m->active()){if(parseStudioText(*x,content->toPlainText())){QSignalBlocker block(content);content->setPlainText(x->text);}}});});
         auto *family=new QFontComboBox;family->setCurrentFont(QFont(o->style["text.family"].toString("Segoe UI")));text->addRow("Font",family);
         connect(family,&QFontComboBox::currentFontChanged,this,[=, this](const QFont &font){apply([&]{if(auto *x=m->active())x->style["text.family"]=font.family();});});
         number(text,"Size","text.size",1,1000,1," px");
