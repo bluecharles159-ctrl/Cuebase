@@ -1,4 +1,4 @@
-# Verification — 2026-10-08
+# Verification — 2026-10-09
 
 ## Build
 
@@ -6,12 +6,14 @@
 
 ## Tests
 
-The verification covers 21 editor cases and 13 Studio/output cases. Earlier runs exposed intermittent encoder initialization timeouts. Startup now supplies a bounded set of raw video frames while FFmpeg opens its audio input, reports which input failed to initialize, and allows 30 seconds for initialization. The latest run still failed RTMP output progress after input initialization; SRT passed. An isolated follow-up run was declined at the permission prompt and remains pending. Results and timings are recorded in the test reports.
+The final editor suite passed all 21 cases (58.64 seconds in CTest). After correcting encoder startup, the full Studio/output suite passed all 13 cases in 40.98 seconds. A separate fresh-process RTMP/SRT loopback recheck also passed (4 Qt cases including setup/cleanup, 54.31 seconds). The text and JUnit reports record the final assertions and timings.
+
+Earlier RTMP runs exposed an initialization stall: audio delivery was coupled to successful video writes, so video backpressure could starve FFmpeg's separate audio input. The feeds now advance independently with bounded queues. Startup also supplies bounded probe frames, tolerates first-use Qt event-loop pauses before streaming, and reports input initialization failures distinctly. Local receiver startup reads/writes allow 30 seconds; established output still detects stalls. The loopback fixture waits for its test tone to begin before publishing.
 
 | Suite | Result | Coverage |
 |---|---|---|
 | CuebaseBuild | 21 passed, 0 failed | Base values/Auto Key; independent channels; default reset and diamond toggle; duplicated tracks; Bezier evaluation/persistence and mouse handle editing; parenting/overflow; horizontal-only inputs; color picker and animated context button; older JSON migration; camera navigation; placement cursor mouse clicks, undo/redo and white creation; mesh operations; gradients/rounding; Mirror/Bevel geometry; actual FBX/GLB fixtures; video decoding/seeking; audio timing; save/reopen and graph key dragging without playhead movement; persistent graph pan/zoom and multi-channel interpolation; single-transaction input undo/cancel; backdrop filtering, percentage corners, audio timing and named cue persistence; Build library autosave/switching; reusable fields, media validation and unchanged animation tracks; thumbnail and playlist persistence. |
-| CuebaseStream | 12 passed, 1 failed (RTMP startup) | Clean program rendering, off-air black, live Custom graphics, guide exclusion and pause behavior; endpoint validation; RTMP and SRT loopback publishing/receiving; H.264/AAC codec and resolution checks; decoded non-silent audio; exact overlay clip trimming and source offsets; entrance/hold/exit scheduling, Studio cue controls and paused animation rendering; private Studio drafts and Apply; live placement validation; metrics parsing and per-source history isolation; actual Studio layout construction. |
+| CuebaseStream | 13 passed, 0 failed | Clean program rendering, off-air black, live Custom graphics, guide exclusion and pause behavior; endpoint validation; RTMP and SRT loopback publishing/receiving; H.264/AAC codec and resolution checks; decoded non-silent audio; exact overlay clip trimming and source offsets; entrance/hold/exit scheduling, Studio cue controls and paused animation rendering; private Studio drafts and Apply; live placement validation; metrics parsing and per-source history isolation; actual Studio layout construction. |
 
 Qt totals include setup/cleanup cases. Text and JUnit results are in `build-final` (under `verification` in the source ZIP). Local received media is in `build-final/artifacts/loopback-rtmp.flv` and `loopback-srt.ts`.
 

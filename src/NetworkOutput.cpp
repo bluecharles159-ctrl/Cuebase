@@ -64,7 +64,7 @@ void NetworkOutput::launch(){
     else args<<"-mpegts_flags"<<"resend_headers"<<"-f"<<"mpegts";
     args<<m_settings.endpoint;m_errors.clear();m_progress.clear();m_frames=0;m_samples=0;m_epochFrames=1;m_backpressureClock.invalidate();m_clockStarted=false;
     for(auto &source:m_sources)source.data.clear();
-    state(m_attempt?QString("Reconnecting · attempt %1").arg(m_attempt):"Connecting to destination…");m_connectClock.start();m_progressClock.start();m_process.start(m_settings.executable,args);m_tick.start();
+    state(m_attempt?QString("Reconnecting · attempt %1").arg(m_attempt):"Connecting to destination…");m_connectClock.start();m_progressClock.start();m_serviceClock.start();m_process.start(m_settings.executable,args);m_tick.start();
 }
 void NetworkOutput::release(){
     m_stopping=true;m_tick.stop();if(m_video){m_video->abort();m_video->deleteLater();m_video=nullptr;}if(m_audio){m_audio->abort();m_audio->deleteLater();m_audio=nullptr;}
@@ -98,13 +98,27 @@ bool NetworkOutput::sendFrame(){
     if(m_video->write(reinterpret_cast<const char*>(frame.constBits()),bytes)<0){fail("The encoder video connection closed. "+m_errors.right(1600));return false;}return true;
 }
 void NetworkOutput::pump(){
-    if(!m_active)return;if(!m_clockStarted){
+    if(!m_active)return;
+    const auto serviceGap=m_serviceClock.restart();
+    // First-use codec discovery can block Qt's event loop. Allow socket callbacks
+    // to run after that pause instead of declaring a connection failure immediately.
+    if(!m_streaming&&serviceGap>2000){m_connectClock.restart();m_progressClock.restart();if(m_clockStarted){m_clock.restart();m_epochFrames=m_frames;}}
+    if(!m_clockStarted){
         // FFmpeg can probe several raw frames before opening its second input.
         // Keep that handshake supplied, with a bounded number of queued frames.
         if(m_video&&!m_audio&&m_frames<8&&m_connectClock.elapsed()>=m_frames*100){if(sendFrame())++m_frames;}
         if(m_connectClock.elapsed()>30000)fail(QString("Encoder input initialization timed out (video %1, audio %2). ").arg(m_video?"connected":"not connected",m_audio?"connected":"not connected")+m_errors.right(800));return;}
-    if(m_progressClock.elapsed()>20000){fail("Encoder stopped reporting output progress. "+m_errors.right(800));return;}
+    if(m_progressClock.elapsed()>(m_streaming?20000:30000)){fail("Encoder stopped reporting output progress. "+m_errors.right(800));return;}
     qint64 due=qint64(m_clock.elapsed()*m_settings.fps/1000.0)+m_epochFrames;
     if(m_streaming&&due-m_frames>qMax(5.0,m_settings.fps)){fail("The program renderer cannot maintain the configured frame rate. Reduce the stream resolution or frame rate.");return;}
-    for(int n=0;n<3&&m_frames<due;++n){if(!sendFrame())return;++m_frames;qint64 samples=qRound64(m_frames*48000.0/m_settings.fps);if(m_audio){if(m_audio->bytesToWrite()>384000){fail("Encoder audio transport stalled.");return;}m_audio->write(mix(int(samples-m_samples)));}m_samples=samples;}
+    // Audio and video are separate FFmpeg inputs. Probing one must not wait for
+    // the other socket to drain, or startup can deadlock under backpressure.
+    const qint64 targetSamples=qRound64(due*48000.0/m_settings.fps);
+    if(m_audio&&targetSamples>m_samples){
+        if(m_audio->bytesToWrite()>384000){fail("Encoder audio transport stalled.");return;}
+        const int count=int(qMin<qint64>(targetSamples-m_samples,4800));
+        if(m_audio->write(mix(count))<0){fail("The encoder audio connection closed.");return;}
+        m_samples+=count;
+    }
+    for(int n=0;n<3&&m_frames<due;++n){if(!sendFrame())return;++m_frames;}
 }

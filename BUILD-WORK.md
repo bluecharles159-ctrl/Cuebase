@@ -1,4 +1,4 @@
-# Build update — 2026-10-08
+# Build update — 2026-10-09
 
 Implemented and rebuilt in `build-final/Cuebase.exe`:
 
@@ -24,8 +24,8 @@ Implemented and rebuilt in `build-final/Cuebase.exe`:
 - Resizable Studio monitor/editor/control row above the full-width navigable timeline; compact line icons and corrected countdown.
 - Local MediaMTX receiver, live metrics, per-source history and date-range chart; no fabricated audience figures.
 
-Validation: final build succeeded; 21 editor cases passed. The latest Studio/output run passed 12 cases and failed RTMP startup; SRT passed. Further local RTMP diagnosis is pending permission. Native desktop automation could not initialize its bundled runtime; visual review used the generated Qt screenshots. See `VERIFICATION.md` for coverage and limits.
+Validation: final build succeeded; all 21 editor cases and all 13 Studio/output cases passed, including RTMP/SRT with decoded non-silent audio. The encoder feeds audio independently of video backpressure to avoid initialization starvation. Native desktop automation could not initialize its bundled runtime; visual review used generated Qt screenshots. See `VERIFICATION.md` for coverage and limits.
 
-Use `Run-Cuebase.cmd` for the rebuilt application. `Cuebase-studio-update-2026-10-08.zip` contains buildable source, test fixtures, test results, screenshots and the local RTMP test receiver with its license. It is not a portable runtime installer.
+Use `Run-Cuebase.cmd` for the rebuilt application. `Cuebase-studio-update-2026-10-09.zip` contains buildable source, test fixtures, test results, screenshots and the local RTMP test receiver with its license. It is not a portable runtime installer.
 
 The original `Cuebase-buildstudio-updated.zip`, user library and user media are preserved.

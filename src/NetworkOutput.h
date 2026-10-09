@@ -42,7 +42,7 @@ private:
     QTcpServer m_videoServer,m_audioServer;
     QPointer<QTcpSocket> m_video,m_audio;
     QTimer m_tick;
-    QElapsedTimer m_clock,m_connectClock,m_progressClock,m_backpressureClock;
+    QElapsedTimer m_clock,m_connectClock,m_progressClock,m_backpressureClock,m_serviceClock;
     qint64 m_frames=0,m_samples=0,m_epochFrames=1;
     bool m_active=false,m_streaming=false,m_clockStarted=false,m_stopping=false;
     int m_attempt=0,m_session=0;
