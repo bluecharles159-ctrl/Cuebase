@@ -7,6 +7,7 @@
 #include <QStringList>
 #include <QVector>
 #include <QJsonObject>
+#include <QJsonArray>
 
 // ---- shared vocabulary ------------------------------------------------------
 
@@ -75,6 +76,7 @@ struct Element {
     double previewX=0, previewY=0, previewW=1, previewH=1;
     qint64 previewMs=0;
     Transition fx;
+    QJsonArray cueBoard;
 };
 
 struct ProgramItem {
@@ -210,6 +212,7 @@ signals:
     void layersChanged();
     void productionChanged();
     void buildRequested(const QString &elementId);
+    void cueBuildRequested(const QString &elementId,const QString &entryId,int iteration);
     void effectRequested();
     void openProgramRequested(const QString &programId);
 

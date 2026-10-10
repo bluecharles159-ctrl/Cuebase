@@ -1,4 +1,5 @@
 #include "Data.h"
+#include "CueSequence.h"
 
 #include <QDir>
 #include <QFile>
@@ -7,7 +8,18 @@
 #include <QSaveFile>
 #include <QJsonObject>
 
-qint64 Element::lengthMs() const {if(type=="Custom"){auto json=QJsonDocument::fromJson(design.toUtf8()).object();const auto duration=qint64(json["duration"].toDouble());if(duration>0)return duration;}return qMax(1,seconds)*1000LL;}
+qint64 Element::lengthMs() const {
+    if(!cueBoard.isEmpty()){
+        struct CachedLength{QString design;QJsonArray board;qint64 duration;};
+        static thread_local QHash<QString,CachedLength> cache;
+        if(cache.size()>1024)cache.clear();auto found=cache.constFind(id);
+        if(found==cache.cend()||found->design!=design||found->board!=cueBoard){
+            const auto duration=compileCueBoard(ElementDesign::fromJson(design),cueBoard).duration();cache[id]={design,cueBoard,duration};if(duration>0)return duration;
+        }else if(found->duration>0)return found->duration;
+    }
+    if(type=="Custom"){auto json=QJsonDocument::fromJson(design.toUtf8()).object();const auto duration=qint64(json["duration"].toDouble());if(duration>0)return duration;}
+    return qMax(1,seconds)*1000LL;
+}
 #include <QJsonObject>
 #include <QStandardPaths>
 #include <QUuid>
@@ -246,7 +258,7 @@ void Library::load() {
         e.seconds = j["seconds"].toInt(4);
         e.live = j["live"].toBool();
         e.design = j["design"].toString();
-        e.description=j["description"].toString();e.playlist=j["playlist"].toString(e.type=="Break"?"Break screens":e.type=="Logo"?"Logos":"Overlays");e.thumbnail=j["thumbnail"].toString();e.previewMs=j["previewMs"].toDouble();
+        e.description=j["description"].toString();e.playlist=j["playlist"].toString(e.type=="Break"?"Break screens":e.type=="Logo"?"Logos":"Overlays");e.thumbnail=j["thumbnail"].toString();e.previewMs=j["previewMs"].toDouble();e.cueBoard=j["cueBoard"].toArray();
         e.previewX=j["previewX"].toDouble();e.previewY=j["previewY"].toDouble();e.previewW=j["previewW"].toDouble(1);e.previewH=j["previewH"].toDouble(1);
         e.fx = fxFromJson(j["fx"].toObject());
         elements.append(e);
@@ -321,7 +333,7 @@ bool Library::saveChecked(QString *error) const {
         ea.append(QJsonObject{{"id", e.id}, {"name", e.name}, {"type", e.type}, {"text", e.text},
                               {"color", e.color}, {"position", e.position}, {"image", e.image},
                               {"seconds", e.seconds}, {"live", e.live}, {"design", e.design},
-                              {"description",e.description},{"playlist",e.playlist},{"thumbnail",e.thumbnail},{"previewMs",double(e.previewMs)},
+                              {"description",e.description},{"playlist",e.playlist},{"thumbnail",e.thumbnail},{"previewMs",double(e.previewMs)},{"cueBoard",e.cueBoard},
                               {"previewX",e.previewX},{"previewY",e.previewY},{"previewW",e.previewW},{"previewH",e.previewH},
                               {"fx", fxToJson(e.fx)}});
     for (const Placement &pl : placements)

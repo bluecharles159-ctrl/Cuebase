@@ -110,6 +110,8 @@ public:
     void notify() { emit changed(); }
 
 signals:
+    void cueFramesRequested(qint64 start,qint64 end);
+    void cueEditorRequested(const QString &cueId);
     void changed();
     void timeChanged();
     void selectionChanged();

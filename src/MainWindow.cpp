@@ -470,6 +470,7 @@ void MainWindow::buildUi() {
     setCentralWidget(m_stack);
     connect(m_build, &BuildWorkspace::closeRequested, this, [this] { showStudio(); });
     connect(m_lib, &Library::buildRequested, this, [this](const QString &id) { showBuild(id, true); });
+    connect(m_lib,&Library::cueBuildRequested,this,[this](const QString &id,const QString &entry,int iteration){if(m_build->hasUnsavedChanges()&&!m_build->saveForClose())return;m_build->editCueSection(id,entry,iteration);showBuild({},false);});
     connect(m_lib,&Library::effectRequested,this,[this]{
         if(m_build->hasUnsavedChanges()&&!m_build->saveForClose())return;
         m_build->newEffect();showBuild({},false);
@@ -685,6 +686,7 @@ void MainWindow::closeEvent(QCloseEvent *event) {
     confirmation.setInformativeText(m_build&&m_build->hasUnsavedChanges()?"The current Build composition has unsaved changes.":"Your library is saved automatically. Close Cuebase?");
     const int choice=confirmation.exec();
     if(choice==QMessageBox::Cancel){event->ignore();return;}
+    if(choice==QMessageBox::Save)for(auto *board:findChildren<QWidget*>("studioCueBoard"))if(board->property("dirty").toBool()){if(auto *save=board->findChild<QPushButton*>("saveCueBoard"))save->click();if(board->property("dirty").toBool()){event->ignore();return;}}
     if(choice==QMessageBox::Save&&m_build&&m_build->hasUnsavedChanges()&&!m_build->saveForClose()){event->ignore();return;}
     if(m_network)m_network->stop();
     QSettings s;

@@ -23,10 +23,13 @@
 #include <QStandardPaths>
 #include <QUuid>
 #include <QListWidget>
+#include <QTreeWidget>
 #include <QPushButton>
+#include <QToolButton>
 #include "EditorPanel.h"
 #include "ElementLibrary.h"
 #include "StudioElements.h"
+#include "StudioCueBoard.h"
 #include "StudioDashboard.h"
 #include "MainWindow.h"
 #include "UiControls.h"
@@ -90,6 +93,11 @@ private slots:
         QTest::mousePress(&timeline,Qt::LeftButton,Qt::NoModifier,QPoint(24,113));QTest::mouseMove(&timeline,QPoint(38,113));QTest::mouseRelease(&timeline,Qt::LeftButton,Qt::NoModifier,QPoint(38,113));
         QVERIFY(qAbs(library.placement("overlay")->startMs-2000)<45);QVERIFY(qAbs(library.placement("overlay")->offsetMs-1000)<45);QVERIFY(qAbs(library.placement("overlay")->lengthMs()-6000)<45);
     }
+    void cueBoardLiveAndDrafts(){
+        Library lib;Element e;e.id="board-element";e.name="Evening headlines";e.type="Custom";auto design=elementPreset("News lower third");QString fieldId;for(const auto &o:design.objects)if(o.type=="Text"&&o.style["studio.editable"].toBool()){fieldId=o.id;break;}QVERIFY(!fieldId.isEmpty());QJsonObject cue{{"id","headline"},{"name","Headline"},{"start",0},{"end",1000},{"repeat",2},{"hold",true},{"holdManual",false},{"holdMs",500}};design.animationCues={cue};e.design=design.toJson();auto entry=newCueBoardEntry(cue);entry["sections"]=QJsonArray{QJsonObject{{"fields",QJsonObject{{fieldId,"Hello"}}}},QJsonObject{{"fields",QJsonObject{{fieldId,"Welcome"}}}}};e.cueBoard={entry};lib.elements={e};ProgramItem p;p.id="show";p.kind="News";p.seconds=30;lib.programs={p};Playout play(&lib);play.start(0,5000);play.togglePause();
+        QVERIFY(!play.graphicPlayback(e,5000).visible);play.triggerElementAnimation(e.id,"@board:0");auto first=play.graphicPlayback(e,5000);QCOMPARE(ElementDesign::fromJson(first.design).find(fieldId)->text,QString("Hello"));QVERIFY(!play.graphicPlayback(e,6200).advancing);auto second=play.graphicPlayback(e,6500);QCOMPARE(ElementDesign::fromJson(second.design).find(fieldId)->text,QString("Welcome"));QVERIFY(!play.graphicPlayback(e,8000).visible);play.advanceElementCue(e.id);QCOMPARE(play.graphicPlayback(e,5000).boardStep,1);play.triggerElementAnimation(e.id,{});QVERIFY(!play.graphicPlayback(e,5000).visible);
+        auto *page=studioCueBoard(&lib,&play,e.id);page->resize(560,1050);page->show();auto *tree=page->findChild<QTreeWidget*>("cueBoardTree");QVERIFY(tree);QCOMPARE(tree->topLevelItemCount(),1);tree->setCurrentItem(tree->topLevelItem(0)->child(0));auto *text=page->findChild<QPlainTextEdit*>("cueFieldValue");QVERIFY(text);QCOMPARE(text->toPlainText(),QString("Hello"));text->setPlainText("First repetition edited privately");QCOMPARE(lib.element(e.id)->cueBoard,e.cueBoard);QVERIFY(!play.graphicPlayback(*lib.element(e.id),5000).visible);page->findChild<QPushButton*>("saveCueBoard")->click();QVERIFY(!page->property("dirty").toBool());QCOMPARE(lib.element(e.id)->design,e.design);auto saved=compileCueBoard(design,lib.element(e.id)->cueBoard);QCOMPARE(ElementDesign::fromJson(saved.steps[0].design).find(fieldId)->text,QString("First repetition edited privately"));QCOMPARE(ElementDesign::fromJson(saved.steps[1].design).find(fieldId)->text,QString("Welcome"));QTest::qWait(600);QVERIFY(page->grab().save("artifacts/studio-cue-board.png"));delete page;play.stop();
+    }
     void animationCuesHoldExitAndSchedule(){
         Library library;ProgramItem program;program.id="show";program.seconds=20;ProgramItem spot;spot.id="spot";spot.kind="Ad";spot.adId="advert";spot.seconds=5;library.programs={program,spot};Ad ad;ad.id="advert";ad.seconds=5;library.ads={ad};
         auto design=ElementDesign::defaultScene();design.durationMs=2000;design.animationCues={QJsonObject{{"id","in"},{"name","Entrance"},{"start",0},{"end",1000},{"hold",true},{"trigger","Manual"}},QJsonObject{{"id","out"},{"name","Exit"},{"start",1000},{"end",2000},{"hold",false},{"trigger","Before ad"},{"triggerMs",10000}}};
@@ -99,17 +107,17 @@ private slots:
         auto exit=play.graphicPlayback(element,10500);QCOMPARE(exit.cue,QString("out"));QVERIFY(exit.visible);QCOMPARE(exit.time,qint64(1500));QVERIFY(!play.graphicPlayback(element,11000).visible);
         play.start(0,12000);play.togglePause();play.triggerElementAnimation("logo","in");QCOMPARE(play.graphicPlayback(element,play.timelinePosMs()).cue,QString("in"));
         play.triggerElementAnimation("logo",{});QVERIFY(!play.graphicPlayback(element,play.timelinePosMs()).visible);play.stop();
-        QCOMPARE(ElementDesign::fromJson(element.design).animationCues,design.animationCues);
+        QCOMPARE(ElementDesign::fromJson(element.design).animationCues,design.animationCues);element.cueBoard={newCueBoardEntry(design.animationCues.first().toObject())};library.elements={element};play.triggerElementAnimation(element.id,"@board:0");QCOMPARE(play.graphicPlayback(element,500).boardStep,0);QCOMPARE(play.graphicPlayback(element,10500).cue,QString("out"));play.triggerElementAnimation(element.id,{});QVERIFY(!play.graphicPlayback(element,500).visible);QCOMPARE(play.graphicPlayback(element,10500).cue,QString("out"));
     }
     void screenElementControls(){
         Library library;auto design=ElementDesign::defaultScene();design.animationCues={QJsonObject{{"id","entrance"},{"name","Logo entrance"},{"start",0},{"end",1000},{"hold",true}}};Element element;element.id="screen";element.name="Channel logo";element.type="Custom";element.design=design.toJson();library.elements={element};
         Playout play(&library);EditorPanel editor(&library,&play);editor.setStyleSheet("QWidget{background:#303135;color:#dedee3;font-size:11px;}QPushButton,QComboBox,QLineEdit{background:#45474d;border:0;border-radius:4px;padding:4px;}QScrollBar:vertical{width:6px;}");editor.resize(620,850);editor.show();editor.showTool(3);QTest::qWait(30);
         QListWidgetItem *item=nullptr;QListWidget *list=nullptr;for(auto *candidate:editor.findChildren<QListWidget*>())for(int i=0;i<candidate->count();++i)if(candidate->item(i)->data(Qt::UserRole).toString()=="screen"){list=candidate;item=candidate->item(i);}
-        QVERIFY(list&&item);list->setCurrentItem(item);QTest::qWait(30);QPushButton *trigger=nullptr;for(auto *b:editor.findChildren<QPushButton*>())if(b->text()=="Show / replay")trigger=b;QVERIFY(trigger);QTest::mouseClick(trigger,Qt::LeftButton);QCOMPARE(play.graphicPlayback(library.elements.first(),0).cue,QString("entrance"));
+        QVERIFY(list&&item);list->setCurrentItem(item);QTest::qWait(30);QPushButton *trigger=nullptr;for(auto *b:editor.findChildren<QPushButton*>())if(b->text()=="Replay cue")trigger=b;QVERIFY(trigger);for(auto *toggle:editor.findChildren<QToolButton*>())if(toggle->text()=="Animation schedules")toggle->setChecked(true);QVERIFY(trigger->isVisible());QTest::mouseClick(trigger,Qt::LeftButton);QCOMPARE(play.graphicPlayback(library.elements.first(),0).cue,QString("entrance"));
         QDir().mkpath("artifacts");QVERIFY(editor.grab().save("artifacts/screen-elements.png"));
     }
     void studioContentPreviewAndPlacement(){
-        Library library;ProgramItem program;program.id="sponsor-show";program.seconds=120;library.programs={program};Element element;element.id="sponsor";element.name="Sponsor spotlight";element.type="Custom";element.design=elementPreset(element.name).toJson();element.previewMs=1000;refreshElementThumbnail(element);library.elements={element};
+        Library library;ProgramItem program;program.id="sponsor-show";program.seconds=120;library.programs={program};Element element;element.id="sponsor";element.name="Sponsor spotlight";element.type="Custom";auto source=elementPreset(element.name);source.animationCues={};element.design=source.toJson();element.previewMs=1000;refreshElementThumbnail(element);library.elements={element};
         Playout play(&library);auto *page=studioElementsPage(&library,&play);page->resize(640,1100);page->show();auto *list=page->findChild<QListWidget*>("screenElementCards");QVERIFY(list);list->setCurrentRow(0);QTest::qWait(30);auto *input=page->findChild<QPlainTextEdit*>();QVERIFY(input);const auto original=library.elements.first().design;input->setPlainText("Sponsored by Microsoft");QCOMPARE(library.elements.first().design,original);QPushButton *apply=nullptr,*place=nullptr;for(auto *b:page->findChildren<QPushButton*>()){if(b->text()=="Apply content")apply=b;if(b->text()=="Place on timeline")place=b;}QVERIFY(apply&&place);apply->click();QVERIFY(library.elements.first().design!=original);auto design=ElementDesign::fromJson(library.elements.first().design);bool changed=false;for(auto &o:design.objects)if(o.type=="Text"){QCOMPARE(o.text,QString("Sponsored by Microsoft"));QVERIFY(!o.tracks.isEmpty());changed=true;}QVERIFY(changed);
         auto *time=page->findChild<QDoubleSpinBox*>("elementPlacementTime");QVERIFY(time);time->setValue(12.5);place->click();QCOMPARE(library.placements.size(),1);QVERIFY(qAbs(library.placements.first().startMs-12500)<=40);play.start(0,20000);play.togglePause();time->setValue(2);place->click();QCOMPARE(library.placements.size(),1);play.stop();
         QVERIFY(page->grab().save("artifacts/studio-template-fields.png"));delete page;

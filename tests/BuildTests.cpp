@@ -4,6 +4,7 @@
 #include <QSettings>
 #include "ElementLibrary.h"
 #include "SceneEffects.h"
+#include "CueSequence.h"
 #include "AssetImport.h"
 #include "DesignAudio.h"
 #include "MediaFrames.h"
@@ -77,6 +78,21 @@ private slots:
         PropertyTrack track{"x",{{0,0,"Constant"},{1000,10,"Linear"}}};
         QCOMPARE(track.evaluate(999,0),0.0);QCOMPARE(track.evaluate(1000,0),10.0);
         for(const auto &kind:interpolationKinds()){track.keys[0].interpolation=kind;QVERIFY(qIsFinite(track.evaluate(400,0)));}
+    }
+    void cueBoardTimingAndIsolation(){
+        auto source=elementPreset("News lower third");QString textId;for(const auto &o:source.objects)if(o.type=="Text"&&o.style["studio.editable"].toBool()){textId=o.id;break;}QVERIFY(!textId.isEmpty());
+        QJsonObject cue{{"id","bounce"},{"name","Bounce"},{"start",0},{"end",1000},{"repeat",4},{"hold",true},{"holdManual",false},{"holdMs",3000}};source.animationCues={cue};
+        auto entry=newCueBoardEntry(cue);entry["sections"]=QJsonArray{QJsonObject{{"fields",QJsonObject{{textId,"Hello"}}}},QJsonObject{{"fields",QJsonObject{{textId,"Welcome"}}}}};
+        auto plan=compileCueBoard(source,{entry});QVERIFY2(plan.error.isEmpty(),qPrintable(plan.error));QCOMPARE(plan.steps.size(),4);QCOMPARE(plan.duration(),qint64(16000));QCOMPARE(plan.sample(999).frame,qint64(999));QVERIFY(plan.sample(999).advancing);QCOMPARE(plan.sample(1000).frame,qint64(1000));QVERIFY(!plan.sample(1000).advancing);QCOMPARE(plan.sample(3999).step,0);QCOMPARE(plan.sample(4000).step,1);QVERIFY(!plan.sample(16000).visible);
+        QCOMPARE(ElementDesign::fromJson(plan.steps[0].design).find(textId)->text,QString("Hello"));QCOMPARE(ElementDesign::fromJson(plan.steps[1].design).find(textId)->text,QString("Welcome"));QVERIFY(source.find(textId)->text!="Hello");
+        auto variant=source;variant.find(textId)->base.loc.setX(25);variant.animationCues={QJsonObject{{"id","rotate"},{"name","Rotate"},{"start",0},{"end",400},{"hold",false}},QJsonObject{{"id","reverse"},{"name","Reverse"},{"start",400},{"end",1000},{"hold",false}}};auto sections=entry["sections"].toArray();auto first=sections[0].toObject();first["design"]=variant.toJson();sections[0]=first;entry["sections"]=sections;plan=compileCueBoard(source,{entry});QCOMPARE(plan.steps.size(),5);QCOMPARE(plan.duration(),qint64(16000));QCOMPARE(plan.sample(400).step,1);QCOMPARE(plan.steps[1].cueId,QString("reverse"));QCOMPARE(ElementDesign::fromJson(plan.steps[0].design).find(textId)->base.loc.x(),25.f);QVERIFY(ElementDesign::fromJson(plan.steps[2].design).find(textId)->base.loc.x()!=25.f);
+        entry["loop"]=true;plan=compileCueBoard(source,{entry});QCOMPARE(plan.duration(),qint64(-1));QCOMPARE(plan.sample(16000).step,0);QCOMPARE(plan.sample(160000000).step,0);
+        entry["holdManual"]=true;plan=compileCueBoard(source,{entry});QCOMPARE(plan.sample(500000).step,1);QVERIFY(!plan.sample(500000).advancing);QCOMPARE(plan.next(1),2);
+        auto child=variant.animationCues[0].toObject();child["disabled"]=true;variant.animationCues[0]=child;first["design"]=variant.toJson();sections[0]=first;entry["sections"]=sections;plan=compileCueBoard(source,{entry});QCOMPARE(plan.steps.first().cueId,QString("reverse"));
+    }
+    void cueVariantBuildSave(){
+        Library lib;Element e;e.id="cue-source";e.name="Cue source";e.type="Custom";auto design=elementPreset("News lower third");QJsonObject cue{{"id","bounce"},{"name","Bounce"},{"start",0},{"end",1000},{"hold",false},{"repeat",2}};design.animationCues={cue};e.design=design.toJson();auto entry=newCueBoardEntry(cue);e.cueBoard={entry};lib.elements={e};BuildWorkspace workspace(&lib);workspace.editCueSection(e.id,entry["id"].toString(),1);auto *model=workspace.findChild<BuildModel*>();QVERIFY(model);QVERIFY(model->design.animationCues.isEmpty());const auto text=model->addText();model->active()->text="Only this repetition";model->notify();emit model->cueFramesRequested(0,400);QCOMPARE(model->design.animationCues.size(),1);QVERIFY(workspace.findChild<QPushButton*>("buildTab_Animation Cues")->isChecked());workspace.findChild<QPushButton*>("buildSave")->click();
+        QCOMPARE(lib.element(e.id)->design,e.design);const auto sections=lib.element(e.id)->cueBoard[0].toObject()["sections"].toArray();QCOMPARE(sections.size(),2);QVERIFY(sections[0].toObject()["design"].toString().isEmpty());const auto variant=ElementDesign::fromJson(sections[1].toObject()["design"].toString());QVERIFY(variant.find(text));QCOMPARE(variant.animationCues.size(),1);QVERIFY(!workspace.hasUnsavedChanges());Library reopened;reopened.load();QCOMPARE(reopened.element(e.id)->cueBoard,lib.element(e.id)->cueBoard);
     }
     void defaultsToggleAndDuplicates(){
         BuildModel m;m.reset(ElementDesign::defaultScene());auto id=m.addText();const auto original=m.active()->fontPx;

@@ -1,4 +1,5 @@
 #include "ElementLibrary.h"
+#include <QPainterPath>
 #include "SceneEffects.h"
 #include "UiControls.h"
 #include <QBuffer>
@@ -55,10 +56,10 @@ void refreshElementThumbnail(Element &element){
     QByteArray bytes;QBuffer buffer(&bytes);buffer.open(QIODevice::WriteOnly);image.save(&buffer,"PNG");element.thumbnail=QString::fromLatin1(bytes.toBase64());
 }
 ElementPreview::ElementPreview(QWidget *parent):QWidget(parent){setMinimumSize(240,135);setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Expanding);}
-void ElementPreview::setElement(const Element &value){element=value;design=ElementDesign::fromJson(value.design);update();}
+void ElementPreview::setElement(const Element &value){if(element.design!=value.design)design=ElementDesign::fromJson(value.design);element=value;update();}
 void ElementPreview::setTime(qint64 value){time=value;update();}
 QRectF ElementPreview::frame()const{QSizeF size(16,9);size.scale(width(),height(),Qt::KeepAspectRatio);return QRectF(QPointF((width()-size.width())/2,(height()-size.height())/2),size);}
-void ElementPreview::paintEvent(QPaintEvent*){QPainter p(this);p.fillRect(rect(),QColor("#242527"));auto r=frame();p.save();p.setClipRect(r);for(int y=r.top();y<r.bottom();y+=12)for(int x=r.left();x<r.right();x+=12)p.fillRect(QRect(x,y,12,12),((x-int(r.left()))/12+(y-int(r.top()))/12)%2?QColor("#35363a"):QColor("#3a3b3f"));
+void ElementPreview::paintEvent(QPaintEvent*){QPainter p(this);p.setRenderHint(QPainter::Antialiasing);QPainterPath rounded;rounded.addRoundedRect(rect(),8,8);p.setClipPath(rounded);p.fillRect(rect(),QColor("#242527"));auto r=frame();p.save();p.setClipRect(r,Qt::IntersectClip);for(int y=r.top();y<r.bottom();y+=12)for(int x=r.left();x<r.right();x+=12)p.fillRect(QRect(x,y,12,12),((x-int(r.left()))/12+(y-int(r.top()))/12)%2?QColor("#35363a"):QColor("#3a3b3f"));
     if(sceneEffect(design))p.drawImage(r,sceneEffectPreview(design,r.size().toSize(),time));
     else if(!element.design.isEmpty())design.render(p,r,time,true,nullptr,false);else p.drawImage(r,renderElement(element,time,{480,270}));p.restore();
     if(cropping){QRectF selected(r.x()+crop.x()*r.width(),r.y()+crop.y()*r.height(),crop.width()*r.width(),crop.height()*r.height());p.setPen(QPen(QColor("#86b9ef"),2));p.setBrush(QColor(70,130,200,25));p.drawRect(selected);}

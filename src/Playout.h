@@ -10,6 +10,7 @@
 
 #include "Data.h"
 #include "ElementDesign.h"
+#include "CueSequence.h"
 class DesignAudio;
 class Replay;
 
@@ -79,9 +80,12 @@ public:
     Replay *replay();
     void setReplayMix(double value){m_replayMix=qBound(0.,value,1.);applyAudio();}
     void finishReplay(){if(m_finishAfterReplay){m_finishAfterReplay=false;finishAll();}}
-    struct GraphicPlayback {bool visible=false,controlled=false; qint64 time=0;QString cue;bool advancing=true;};
+    struct GraphicPlayback {bool visible=false,controlled=false; qint64 time=0;QString cue;bool advancing=true;QString design;int boardStep=-1;
+        Element resolved(const Element &source)const{Element e=source;if(!design.isEmpty())e.design=design;return e;}
+    };
     GraphicPlayback graphicPlayback(const Element &element,qint64 timelineTime,qint64 placementStart=-1,qint64 offset=0) const;
     void triggerElementAnimation(const QString &elementId,const QString &cueId);
+    void advanceElementCue(const QString &elementId);
 
 public slots:
     void start(int segment = 0, qint64 inSegmentMs = 0);
@@ -125,6 +129,7 @@ private:
     QHash<QString,QPair<QString,ElementDesign>> m_audioDesigns;
     QHash<QString,QPair<QString,qint64>> m_manualCues;
     mutable QHash<QString,QPair<QString,QJsonArray>> m_cueCache;
+    mutable QHash<QString,QPair<QString,CuePlan>> m_boardCache;
     void resetSounds();
     void playSound(const Placement &pl, qint64 inMs);
     void layerAudio(const Placement &pl, Sfx &s) const;

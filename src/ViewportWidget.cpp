@@ -470,7 +470,7 @@ void ViewportWidget::drawScreen(QPainter &p, const QRect &r, const View &v, bool
         if(playback.controlled)drawn.insert(e.id);
         if (!playback.visible || e.type == "Break") continue;
         if (e.type == "Ad Element" && !(seg && seg->type == Segment::Ad)) continue;
-        drawElement(p, r, e, playback.time,playback.controlled);
+        drawElement(p, r, playback.resolved(e), playback.time,playback.controlled);
         drawn.insert(e.id);
     }
     if (v.onAir || m_detached) {
@@ -485,7 +485,7 @@ void ViewportWidget::drawScreen(QPainter &p, const QRect &r, const View &v, bool
             const qint64 elapsed = v.posMs - pl.startMs;
             p.save();
             applyFx(p, r, transitionAt(e->fx, elapsed, pl.lengthMs()));
-            drawElement(p, r, *e, playback.time,playback.controlled);
+            drawElement(p, r, playback.resolved(*e), playback.time,playback.controlled);
             p.restore();
         }
     }

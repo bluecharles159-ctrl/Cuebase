@@ -23,6 +23,7 @@ add_library(CuebaseBuildCore STATIC
     src/BuildWorkspace.h src/BuildWorkspace.cpp
     src/AnimationEditor.h src/AnimationEditor.cpp
     src/AnimationCuePanel.h src/AnimationCuePanel.cpp
+    src/CueSequence.h src/CueSequence.cpp
     src/PropertyInspector.h src/PropertyInspector.cpp
     src/LayerPanel.h src/LayerPanel.cpp)
 target_include_directories(CuebaseBuildCore PUBLIC src)
@@ -40,7 +41,7 @@ add_executable(Cuebase WIN32
     src/TimelineWidget.h src/TimelineWidget.cpp
     src/QueueStrip.h src/QueueStrip.cpp
     src/EditorPanel.h src/EditorPanel.cpp
-    src/StudioElements.h src/StudioElements.cpp src/StudioDashboard.h src/StudioDashboard.cpp
+    src/StudioElements.h src/StudioElements.cpp src/StudioCueBoard.h src/StudioCueBoard.cpp src/StudioDashboard.h src/StudioDashboard.cpp
     src/ControlPanel.h src/ControlPanel.cpp
     src/NetworkOutputPanel.h src/NetworkOutputPanel.cpp
     src/ColorManagement.h src/ColorManagement.cpp
@@ -66,7 +67,7 @@ if(BUILD_TESTING)
         src/AddMenu.h src/AddMenu.cpp src/QueueStrip.h src/QueueStrip.cpp
         src/ControlPanel.h src/ControlPanel.cpp src/NetworkOutputPanel.h src/NetworkOutputPanel.cpp
         src/EditorPanel.h src/EditorPanel.cpp
-    src/StudioElements.h src/StudioElements.cpp src/StudioDashboard.h src/StudioDashboard.cpp
+    src/StudioElements.h src/StudioElements.cpp src/StudioCueBoard.h src/StudioCueBoard.cpp src/StudioDashboard.h src/StudioDashboard.cpp
         src/AnimationPlayout.cpp
         src/Replay.h src/Replay.cpp
         src/CrewWorkspace.h src/CrewWorkspace.cpp src/CrewPortal.h

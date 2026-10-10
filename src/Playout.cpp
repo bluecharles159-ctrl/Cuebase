@@ -588,10 +588,10 @@ void Playout::syncDesignAudio(){
         cues.append(designAudioCues(found->second,time,m_state==Playing&&advancing,element.id+"/",gain,!controlled));
     };
     if(m_state!=Stopped){const double gain=m_muted?0:m_volume*(1-m_replayMix);
-        for(const auto &element:m_lib->elements){const auto playback=graphicPlayback(element,timelinePosMs());if(playback.visible)append(element,playback.time,gain,playback.controlled,playback.advancing);else if(playback.controlled)drawn.insert(element.id);}
+        for(const auto &element:m_lib->elements){const auto playback=graphicPlayback(element,timelinePosMs());if(playback.visible)append(playback.resolved(element),playback.time,gain,playback.controlled,playback.advancing);else if(playback.controlled)drawn.insert(element.id);}
         for(const auto &placement:m_lib->placements){const auto layer=m_lib->layers.value(qBound(0,placement.layer,3));
             if(placement.type!="Element"||!layer.visible||timelinePosMs()<placement.startMs||timelinePosMs()>=placement.startMs+placement.lengthMs())continue;
-            if(const auto *element=m_lib->element(placement.refId)){const auto playback=graphicPlayback(*element,timelinePosMs(),placement.startMs,placement.offsetMs);if(playback.visible)append(*element,playback.time,layer.muted?0:gain*layer.volume/100.,playback.controlled,playback.advancing);}
+            if(const auto *element=m_lib->element(placement.refId)){const auto playback=graphicPlayback(*element,timelinePosMs(),placement.startMs,placement.offsetMs);if(playback.visible)append(playback.resolved(*element),playback.time,layer.muted?0:gain*layer.volume/100.,playback.controlled,playback.advancing);}
         }
     }
     m_designAudio->sync(cues);

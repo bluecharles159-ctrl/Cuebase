@@ -39,6 +39,10 @@ QIcon uiIcon(const QString &name,bool active){
     QPixmap image(40,40);image.fill(Qt::transparent);QPainter p(&image);p.setRenderHint(QPainter::Antialiasing);p.scale(2,2);
     p.setPen(QPen(active?QColor("#c7d6e8"):QColor("#526174"),1.35,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin));p.setBrush(Qt::NoBrush);
     const QString n=name.toLower();
+    if(n=="next"){p.drawPolygon(QPolygonF{{4,3},{13,10},{4,17}});p.drawLine(16,3,16,17);p.end();return QIcon(image);}
+    if(n=="cue"){p.drawRoundedRect(QRectF(2,3,16,14),2,2);p.drawPolygon(QPolygonF{{8,6},{14,10},{8,14}});p.end();return QIcon(image);}
+    if(n=="clock"){p.drawEllipse(QRectF(2,2,16,16));p.drawPolyline(QPolygonF{{10,5},{10,10},{14,12}});p.end();return QIcon(image);}
+    if(n=="up"){p.drawPolyline(QPolygonF{{5,12},{10,7},{15,12}});p.end();return QIcon(image);}
     if(n=="effects"){p.setPen(QPen(QColor("#b79bdb"),1.3));p.drawPolygon(QPolygonF{{10,2},{12,8},{18,10},{12,12},{10,18},{8,12},{2,10},{8,8}});p.end();return QIcon(image);}
     if(n=="crew"){p.drawEllipse(QPointF(7,6),3,3);p.drawArc(QRectF(1,10,12,10),0,180*16);p.drawEllipse(QPointF(15,7),2,2);p.drawArc(QRectF(12,11,7,7),0,150*16);p.end();return QIcon(image);}
     if(n=="stop"){p.drawRoundedRect(QRectF(4,4,12,12),1,1);p.end();return QIcon(image);}

@@ -1,12 +1,14 @@
 # Graphics, animation cues and Studio
 
-## Reusable sponsor text and media
+## Reusable text and media
 
 In Build, select a text object and enable **Studio Field → Editable in Studio**. Give the field a useful name such as Sponsor. You can also type `{{studio:Sponsor}}Sponsored by NVIDIA` into Typography. The prefix is removed from the visible text and creates the Sponsor field. Ordinary text stays fixed in Studio.
 
 After saving, select the element in Studio → Screen Elements. Change Sponsor to “Sponsored by Microsoft,” inspect the private preview, then choose **Apply content**. The saved object's animation, position and styling remain intact. Apply also updates any current on-air use of that element. **Reset draft** discards unapplied content edits. Multiple fields are identified independently, including when their labels match.
 
 **Fit long text inside its box** wraps and reduces the rendered font size when needed. Enlarge the text box in Build if the result becomes too small. Image/video objects can expose a Studio field too; replacing their source preserves their animation and fit settings.
+
+For elements with named animation cues, use the new cue board for per-repetition text, private previews and live playback. See [Animation cue boards](CUE-BOARD-GUIDE.md). The original content controls remain available for elements without cues and under Source content and thumbnail for cue-based elements. Existing scheduled cues continue to run and can be edited under Animation schedules.
 
 ## Build library, previews and presets
 
@@ -16,7 +18,7 @@ The first save opens a thumbnail dialog. Scrub to a recognizable frame, keep Ful
 
 Studio presents thumbnail cards with search and playlists. **Playlist** creates a group; change an element's group through its thumbnail dialog. Starter presets in Build include Sponsor spotlight, News lower third, Be right back and Channel ident. Each has editable text, an animated entrance, a held pose and an exit.
 
-**Show / replay** plays the first entrance and holds its final pose. **Play exit** plays the first exit and then hides the element; without an exit cue it hides immediately. **Animation schedules** exposes advanced cue timers and an immediate Hide button.
+Add entrance and exit cues to the Studio cue board. **Render board** begins playback; **Continue section** advances from a manual hold to the exit. **Hide** removes the graphic. **Animation schedules** retains cue timers and direct triggers.
 
 The placement time follows the playhead until manually adjusted. Arrows step a frame; horizontal dragging adjusts the seconds field. Turn Follow playhead back on to resume tracking. While on air, placement behind the playhead is rejected. Off air, earlier placement is allowed. Cuebase chooses a free overlay lane and reports when all three lanes overlap at the chosen time.
 
@@ -39,7 +41,7 @@ The server integration follows the official [MediaMTX metrics](https://mediamtx.
 2. Open **Animation Cues** in the inspector rail. Add a cue, name it **Entrance**, and enter its start and end frames. Enable **Keep visible after this animation**, then Apply.
 3. Add **Exit**, enter its frame range, disable Keep visible, and Apply.
 4. Save the composition. The message is **Saved to screen elements**.
-5. In Studio → Screen Elements, select the saved overlay. Choose Show / replay to play the entrance once and hold its exact final frame. Choose Play exit to replace the entrance and hide the overlay when the exit ends. Triggering either again restarts that animation.
+5. In Studio → Screen Elements, select the saved overlay. Add Entrance and Exit to the board. Render the board, then Continue section when ready to leave the held entrance pose. The exit hides the overlay when it ends. Rendering again restarts the board.
 
 Each cue has a timer. **Program time** is an absolute number of seconds from the start of the rundown. **Before ad** and **After ad** are offsets relative to each ad in the rundown. For the requested example, set Exit to Before ad, 10 seconds, then Set timer. A separate Entrance cue may be scheduled After ad or at a later program time. Manual disables that cue's timer.
 

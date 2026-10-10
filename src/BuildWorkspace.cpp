@@ -1,6 +1,7 @@
 #include <QSignalBlocker>
 #include "UiControls.h"
 #include "BuildWorkspace.h"
+#include <QJsonDocument>
 #include "ElementLibrary.h"
 
 #include <QCheckBox>
@@ -189,7 +190,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     bar->addSpacing(10);
     bar->addWidget(m_elementPicker);
     auto *previewButton=new QPushButton(uiIcon("image"),"Preview");previewButton->setToolTip("Capture or edit the library thumbnail");bar->addWidget(previewButton);connect(previewButton,&QPushButton::clicked,this,&BuildWorkspace::capturePreview);
-    connect(m_elementPicker,qOverload<int>(&QComboBox::activated),this,[this](int index){const QString id=m_elementPicker->itemData(index).toString();if(id.isEmpty()||id==m_editingId)return;m_name->setText(m_draftName);if(hasUnsavedChanges()){save();if(hasUnsavedChanges())return;}editElement(id);});
+    connect(m_elementPicker,qOverload<int>(&QComboBox::activated),this,[this](int index){const QString id=m_elementPicker->itemData(index).toString();if(id.isEmpty()||(id==m_editingId&&m_cueIteration<0))return;m_name->setText(m_draftName);if(hasUnsavedChanges()){save();if(hasUnsavedChanges())return;}editElement(id);});
     connect(m_lib,&Library::elementsChanged,this,&BuildWorkspace::refreshElements);
     bar->addWidget(m_msg, 1);
     bar->addWidget(undoBtn);
@@ -390,6 +391,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     stack->setObjectName("buildPropertyPages");
     sideL->addWidget(stack, 1);
     for (int i = 0; i < tabBtns.size(); ++i) connect(tabBtns[i], &QPushButton::clicked, stack, [stack, i] { stack->setCurrentIndex(i); });
+    connect(m,&BuildModel::cueEditorRequested,this,[=]{tabBtns[4]->click();});
 
     auto *body = new QHBoxLayout;
     auto *panels=new QSplitter(Qt::Horizontal);panels->setHandleWidth(4);panels->setChildrenCollapsible(false);
@@ -1383,6 +1385,7 @@ void BuildWorkspace::exportFile(){
 }
 
 void BuildWorkspace::newElement() {
+    m_cueEntry.clear();m_cueIteration=-1;
     m_editingId.clear();
     refreshElements();m_name->setText("New element");
     m_msg->clear();
@@ -1399,6 +1402,7 @@ void BuildWorkspace::newElement() {
 }
 
 void BuildWorkspace::editElement(const QString &id) {
+    m_cueEntry.clear();m_cueIteration=-1;
     const Element *e = m_lib->element(id);
     if (!e) {
         newElement();
@@ -1429,7 +1433,20 @@ void BuildWorkspace::editElement(const QString &id) {
     m_canvas->frameAll();
 }
 
+void BuildWorkspace::editCueSection(const QString &elementId,const QString &entryId,int iteration){
+    const auto *element=m_lib->element(elementId);if(!element||iteration<0||iteration>=100)return;
+    for(const auto &value:element->cueBoard){const auto entry=value.toObject();if(entry["id"].toString()!=entryId)continue;
+        const auto source=ElementDesign::fromJson(element->design);QJsonObject cue;for(const auto &c:source.animationCues)if(c.toObject()["id"]==entry["cue"]){cue=c.toObject();break;}if(cue.isEmpty())return;
+        const auto sections=entry["sections"].toArray();const auto section=iteration<sections.size()?sections[iteration].toObject():QJsonObject{};
+        auto design=section["design"].toString().isEmpty()?source:ElementDesign::fromJson(section["design"].toString());
+        if(section["design"].toString().isEmpty()){design.animationCues={};design.startMs=cue["start"].toInt();design.durationMs=cue["end"].toInt();design.loop=false;}
+        const auto fields=section["fields"].toObject();for(auto it=fields.begin();it!=fields.end();++it)setStudioField(design,it.key(),it.value().toString());
+        m_editingId=elementId;m_cueEntry=entryId;m_cueIteration=iteration;m_cueBase=QString::fromUtf8(QJsonDocument(entry).toJson(QJsonDocument::Compact));refreshElements();m_name->setText(section["name"].toString(QString("%1 · %2 · Play %3").arg(element->name,cue["name"].toString()).arg(iteration+1)));m_model->reset(design);m_model->setTime(design.startMs);m_savedJson=design.toJson();m_savedName=m_name->text();m_draftName=m_name->text();m_canvas->frameAll();say("Editing an independent repetition. New cues stay inside this section.");return;
+    }
+}
+
 void BuildWorkspace::newEffect() {
+    m_cueEntry.clear();m_cueIteration=-1;
     m_editingId.clear();refreshElements();m_name->setText("New effect");m_msg->clear();
     m_model->reset(sceneEffectPreset("Fade"));m_model->select(sceneEffect(m_model->design)->id);
     m_savedJson=m_model->design.toJson();m_savedName=m_name->text();m_draftName=m_name->text();
@@ -1449,6 +1466,13 @@ void BuildWorkspace::save() {
         return;
     }
     if (m_model->editMode) m_model->exitEdit();
+    if(m_cueIteration>=0){
+        for(auto &element:m_lib->elements)if(element.id==m_editingId)for(int i=0;i<element.cueBoard.size();++i){auto entry=element.cueBoard[i].toObject();if(entry["id"].toString()!=m_cueEntry)continue;
+            if(QString::fromUtf8(QJsonDocument(entry).toJson(QJsonDocument::Compact))!=m_cueBase){say("This cue entry changed in Studio. Reopen its repetition before saving.",true);return;}
+            auto sections=entry["sections"].toArray();while(sections.size()<=m_cueIteration)sections.append(QJsonObject{});auto section=sections[m_cueIteration].toObject();section["design"]=m_model->design.toJson();auto fields=section["fields"].toObject();for(auto it=fields.begin();it!=fields.end();++it)if(const auto *o=m_model->design.find(it.key()))it.value()=o->text;section["fields"]=fields;section["name"]=n;sections[m_cueIteration]=section;entry["sections"]=sections;const auto previous=element.cueBoard;element.cueBoard[i]=entry;QString error;if(!m_lib->saveChecked(&error)){element.cueBoard=previous;say("Could not save this repetition: "+error,true);return;}m_cueBase=QString::fromUtf8(QJsonDocument(entry).toJson(QJsonDocument::Compact));m_lib->commitElements();m_savedJson=m_model->design.toJson();m_savedName=m_name->text();m_draftName=m_name->text();say("Saved this repetition. Source animation and other repetitions are unchanged.");return;
+        }
+        say("The cue entry was removed. Reopen it from Studio.",true);return;
+    }
     if(const auto *existing=m_lib->element(m_editingId)){const auto saved=ElementDesign::fromJson(existing->design).animationCues;for(int i=0;i<m_model->design.animationCues.size();++i){auto cue=m_model->design.animationCues[i].toObject();for(auto value:saved){const auto prior=value.toObject();if(prior["id"]==cue["id"])for(const auto *key:{"trigger","triggerMs"})if(prior.contains(key))cue[key]=prior[key];}m_model->design.animationCues[i]=cue;}}
     if(const auto *existing=m_lib->element(m_editingId)){
         const auto saved=ElementDesign::fromJson(m_savedJson),latest=ElementDesign::fromJson(existing->design);
@@ -1491,4 +1515,4 @@ void BuildWorkspace::save() {
 }
 
 void BuildWorkspace::refreshElements(){QSignalBlocker block(m_elementPicker);const auto name=m_name->text();m_elementPicker->clear();for(const auto &e:m_lib->elements)m_elementPicker->addItem(e.name,e.id);m_elementPicker->setCurrentIndex(m_elementPicker->findData(m_editingId));m_name->setText(name);}
-void BuildWorkspace::capturePreview(){const bool fresh=m_editingId.isEmpty();if(fresh||hasUnsavedChanges()){save();if(fresh||m_editingId.isEmpty()||hasUnsavedChanges())return;}for(auto &e:m_lib->elements)if(e.id==m_editingId){Element draft=e;draft.previewMs=m_model->t;if(editElementPresentation(draft,this)){e=draft;m_name->setText(e.name);m_savedName=e.name;if(!m_lib->elementPlaylists.contains(e.playlist))m_lib->elementPlaylists.append(e.playlist);m_lib->commitElements();}break;}}
+void BuildWorkspace::capturePreview(){if(m_cueIteration>=0){say("Edit the library thumbnail from the source scene or Studio.");return;}const bool fresh=m_editingId.isEmpty();if(fresh||hasUnsavedChanges()){save();if(fresh||m_editingId.isEmpty()||hasUnsavedChanges())return;}for(auto &e:m_lib->elements)if(e.id==m_editingId){Element draft=e;draft.previewMs=m_model->t;if(editElementPresentation(draft,this)){e=draft;m_name->setText(e.name);m_savedName=e.name;if(!m_lib->elementPlaylists.contains(e.playlist))m_lib->elementPlaylists.append(e.playlist);m_lib->commitElements();}break;}}

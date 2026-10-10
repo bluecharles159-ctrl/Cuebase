@@ -29,6 +29,7 @@ public:
     void newElement();                          // start from a fresh scene
     void newEffect();
     void editElement(const QString &elementId); // open a saved custom element
+    void editCueSection(const QString &elementId,const QString &entryId,int iteration);
 
 signals:
     void closeRequested();                      // "← Studio"
@@ -47,4 +48,6 @@ private:
     QLabel *m_msg;
     QString m_editingId;
     QString m_savedJson, m_savedName, m_draftName;
+    QString m_cueEntry,m_cueBase;
+    int m_cueIteration=-1;
 };
