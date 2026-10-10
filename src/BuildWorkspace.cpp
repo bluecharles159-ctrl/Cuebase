@@ -44,6 +44,7 @@
 #include "LayerPanel.h"
 #include <QTreeWidgetItemIterator>
 #include "AssetImport.h"
+#include "SceneEffects.h"
 #include "DesignAudio.h"
 #include <QFileInfo>
 #include <QFile>
@@ -66,7 +67,9 @@ protected:
         QSizeF size=QSizeF(width()-16,height()-16);const double aspect=lib->display.aspect();
         if(size.width()/size.height()>aspect)size.setWidth(size.height()*aspect);else size.setHeight(size.width()/aspect);
         QRectF frame(QPointF((width()-size.width())/2,(height()-size.height())/2),size);
-        p.fillRect(frame,QColor("#393939"));m->design.render(p,frame,m->t);
+        p.fillRect(frame,QColor("#393939"));
+        if(sceneEffect(m->design))p.drawImage(frame,sceneEffectPreview(m->design,frame.size().toSize(),m->t));
+        else m->design.render(p,frame,m->t);
     }
 private:BuildModel *m;Library *lib;
 };
@@ -369,10 +372,11 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     sideL->setSpacing(6);
     auto *tabs = new QVBoxLayout;
     tabs->setSpacing(4);
-    const QStringList tabNames{"Inspector", "Modifiers", "Material", "World", "Animation Cues"};
+    const QStringList tabNames{"Inspector", "Modifiers", "Material", "World", "Animation Cues", "Effects"};
     QVector<QPushButton *> tabBtns;
     for (const QString &n : tabNames) {
         auto *b = new QPushButton(n);
+        b->setObjectName("buildTab_"+n);
         b->setCheckable(true);
         b->setAutoExclusive(true);
         b->setStyleSheet("padding:6px 4px;");
@@ -383,6 +387,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     tabBtns[2]->hide(); // Material, lighting and camera controls live in the contextual inspector.
     tabs->addStretch();sideL->addLayout(tabs);
     auto *stack = new QStackedWidget;
+    stack->setObjectName("buildPropertyPages");
     sideL->addWidget(stack, 1);
     for (int i = 0; i < tabBtns.size(); ++i) connect(tabBtns[i], &QPushButton::clicked, stack, [stack, i] { stack->setCurrentIndex(i); });
 
@@ -692,6 +697,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     wl->addStretch();
     stack->addWidget(scrollPage(worldPage));
     stack->addWidget(scrollPage(animationCueEditor(m)));
+    stack->addWidget(scrollPage(sceneEffectEditor(m)));
 
     // ================================================================ menus
     auto *addMenu = new QMenu(this);
@@ -1415,8 +1421,20 @@ void BuildWorkspace::editElement(const QString &id) {
         }
         m_model->reset(design);m_model->select(design.objects.last().id);
     }
+    if(const auto *effect=sceneEffect(m_model->design)){
+        m_model->select(effect->id);
+        if(auto *tab=findChild<QPushButton*>("buildTab_Effects"))tab->click();
+    }
     m_savedJson=m_model->design.toJson();m_savedName=m_name->text();m_draftName=m_name->text();
     m_canvas->frameAll();
+}
+
+void BuildWorkspace::newEffect() {
+    m_editingId.clear();refreshElements();m_name->setText("New effect");m_msg->clear();
+    m_model->reset(sceneEffectPreset("Fade"));m_model->select(sceneEffect(m_model->design)->id);
+    m_savedJson=m_model->design.toJson();m_savedName=m_name->text();m_draftName=m_name->text();
+    m_canvas->frameAll();
+    if(auto *tab=findChild<QPushButton*>("buildTab_Effects"))tab->click();
 }
 
 void BuildWorkspace::save() {
@@ -1448,7 +1466,7 @@ void BuildWorkspace::save() {
         if (e.id == m_editingId) {
             e.name = n;
             e.design = json;
-            e.type = "Custom";
+            e.type = sceneEffect(m_model->design)?"Effect":"Custom";
             e.seconds = secs;refreshElementThumbnail(e);
             updated = true;
         }
@@ -1456,7 +1474,8 @@ void BuildWorkspace::save() {
         Element e;
         e.id = Library::newId();
         e.name = n;
-        e.type = "Custom";
+        e.type = sceneEffect(m_model->design)?"Effect":"Custom";
+        if(e.type=="Effect")e.playlist="Effects";
         e.design = json;
         e.seconds = secs;
         e.color = color;

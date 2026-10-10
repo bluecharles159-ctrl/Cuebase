@@ -70,6 +70,7 @@
 #include "Playout.h"
 #include "QueueStrip.h"
 #include "TimelineWidget.h"
+#include "Replay.h"
 #include "ViewportWidget.h"
 #include "NetworkOutput.h"
 
@@ -360,6 +361,7 @@ QList<QPair<QString, QString>> MainWindow::shortcutRows() const {
     rows.append(QPair<QString,QString>{"Build: add object", "Shift+A"});
     rows.append(QPair<QString,QString>{"Studio timeline: fit / reveal playhead", "Home / F"});
     rows.append(QPair<QString,QString>{"Studio timeline: zoom / pan / step", "Wheel / Middle-drag / Alt+wheel"});
+    rows.append(QPair<QString,QString>{"Studio timeline: select replay range", "Right-drag"});
     rows.append(QPair<QString,QString>{"Build: set placement cursor", "Shift+right-click"});
     rows.append(QPair<QString,QString>{"Build: move / rotate / scale", "G / R / S"});
     rows.append(QPair<QString,QString>{"Build: constrain transform", "X / Y / Z"});
@@ -468,6 +470,10 @@ void MainWindow::buildUi() {
     setCentralWidget(m_stack);
     connect(m_build, &BuildWorkspace::closeRequested, this, [this] { showStudio(); });
     connect(m_lib, &Library::buildRequested, this, [this](const QString &id) { showBuild(id, true); });
+    connect(m_lib,&Library::effectRequested,this,[this]{
+        if(m_build->hasUnsavedChanges()&&!m_build->saveForClose())return;
+        m_build->newEffect();showBuild({},false);
+    });
 
     resetLayout();
     QSettings s;
@@ -515,6 +521,8 @@ QWidget *MainWindow::buildPreview() {
 
     // the timeline sits in a darker rounded container, like the tracks of a video editor
     auto *tl = new TimelineWidget(m_play, m_lib);
+    connect(tl,&TimelineWidget::replayRequested,this,[this](qint64 from,qint64 to){showReplayDialog(m_play,m_lib,from,to,this);});
+    connect(m_play->replay(),&Replay::failed,this,[this](const QString &reason){report(reason);});
     auto *box = new QFrame;
     box->setObjectName("tlBox");
     auto *bl = new QVBoxLayout(box);
@@ -555,6 +563,7 @@ QWidget *MainWindow::buildPreview() {
     tool("Fit timeline · Home","fit",[=]{tl->fitView();});tool("Zoom out","remove",[=]{tl->zoomView(1/1.25);});tool("Zoom in","add",[=]{tl->zoomView(1.25);});tool("Reveal playhead · F","cursor",[=]{tl->revealPlayhead();});
     auto *timeLabel=new QLabel;auto showTime=[=,this]{timeLabel->setText(QString("%1 s").arg(m_play->playheadMs()/1000.,0,'f',2));};connect(m_play,&Playout::ticked,timeLabel,showTime);showTime();row->addWidget(timeLabel);row->addStretch();auto *navHint=new QLabel("Wheel zoom · Middle drag pan · Alt wheel step");navHint->setStyleSheet("color:#969ca5;font-size:10px;");row->addWidget(navHint);
 
+    navHint->hide();
     l->addWidget(caption("TIMELINE"));
     l->addWidget(box);
     l->addLayout(row);
@@ -690,24 +699,23 @@ void MainWindow::closeEvent(QCloseEvent *event) {
 void MainWindow::buildStatusBar() {
     QStatusBar *sb = statusBar();
     sb->setSizeGripEnabled(false);
-    sb->setFixedHeight(26);
+    sb->setFixedHeight(23);
 
     auto *left = new QWidget;
     auto *ll = new QHBoxLayout(left);
     ll->setContentsMargins(10, 0, 0, 0);
     ll->setSpacing(8);
     m_keyChip = new QLabel;
-    m_keyChip->setStyleSheet("background:#1e3a8a; color:#dbeafe; border-radius:4px; padding:1px 8px;"
-                             "font-family:Consolas; font-size:12px; font-weight:700;");
+    m_keyChip->setStyleSheet("color:#c2cedc;padding:1px 5px;font-size:10px;");
     m_keyChip->hide();
-    m_msg = new QLabel("Ready");
-    m_msg->setStyleSheet("color:#94a3b8; font-size:12px;");
+    m_msg = new QLabel("Wheel zoom · Middle drag pan · Right drag replay range");
+    m_msg->setStyleSheet("color:#94a3b8; font-size:10px;");
     ll->addWidget(m_keyChip);
     ll->addWidget(m_msg, 1);
     sb->addWidget(left, 1);
 
     auto stat = [sb](QLabel *l) {
-        l->setStyleSheet("color:#94a3b8; font-size:12px; padding:0 10px;");
+        l->setStyleSheet("color:#a3adba; font-size:10px; padding:0 7px;");
         sb->addPermanentWidget(l);
     };
     m_stState = new QLabel;
@@ -728,8 +736,8 @@ void MainWindow::buildStatusBar() {
 
     m_msgTimer.setSingleShot(true);
     connect(&m_msgTimer, &QTimer::timeout, this, [this] {
-        m_msg->setText("Ready");
-        m_msg->setStyleSheet("color:#94a3b8; font-size:12px;");
+        m_msg->setText("Wheel zoom · Middle drag pan · Right drag replay range");
+        m_msg->setStyleSheet("color:#94a3b8; font-size:10px;");
     });
     m_statTimer.setInterval(500);
     connect(&m_statTimer, &QTimer::timeout, this, &MainWindow::updateStats);
@@ -745,18 +753,21 @@ void MainWindow::updateStats() {
     if (!m_stState) return;
     const bool live = m_play->isLive();
     const bool paused = m_play->state() == Playout::Paused;
-    m_stState->setText(paused ? "❚❚ PAUSED" : live ? "● ON AIR" : "● OFF AIR");
-    m_stState->setStyleSheet(QString("color:%1; font-size:12px; font-weight:700; padding:0 10px;")
-                                 .arg(paused ? "#fbbf24" : live ? "#ef4444" : "#64748b"));
+    const bool replay=m_play->replay()->active();
+    m_stState->setText(replay?"REPLAY":paused ? "❚❚ PAUSED" : live ? "● ON AIR" : "● OFF AIR");
+    m_stState->setStyleSheet(QString("color:%1; font-size:10px; font-weight:600; padding:0 7px;")
+                                 .arg(replay?"#e9b674":paused ? "#fbbf24" : live ? "#ef4444" : "#64748b"));
     m_stPos->setText(QString("Playhead %1 / %2").arg(clockText(m_play->playheadMs()), clockText(m_play->totalMs())));
-    m_stLeft->setText("Queue left " + clockText(m_play->remainingMs()));
+    if(replay)m_stPos->setText(QString("Replay %1 · Main %2").arg(clockText(m_play->replay()->position),clockText(m_play->playheadMs())));
+    const auto left=m_play->remainingMs();const auto days=left/86400000;
+    m_stLeft->setText((days?QString("%1d ").arg(days):QString())+clockText(left%86400000)+" remaining");
 
     int programs = 0, ads = 0;
-    for (const ProgramItem &p : std::as_const(m_lib->programs)) (p.isAdSpot() ? ads : programs)++;
+    for (const ProgramItem &p : std::as_const(m_lib->programs)) if(m_play->groupEndMs(p.id)>m_play->playheadMs()) (p.isAdSpot() ? ads : programs)++;
     QString items = QString("%1 program%2").arg(programs).arg(programs == 1 ? "" : "s");
     if (ads) items += QString(" · %1 ad%2").arg(ads).arg(ads == 1 ? "" : "s");
     const int placed = int(m_lib->placements.size());
-    if (placed) items += QString(" · %1 placed").arg(placed);
+    if (placed) items += QString(" · %1 overlays").arg(placed);
     m_stItems->setText(items);
 
     if (m_memTick++ % 4 == 0) {  // memory is only read every couple of seconds

@@ -1,4 +1,5 @@
 #include "ViewportWidget.h"
+#include "Replay.h"
 
 #include <QEnterEvent>
 #include <QDateTime>
@@ -61,6 +62,7 @@ ViewportWidget::ViewportWidget(Library *lib, Playout *play, QWidget *parent)
     setMouseTracking(true);
 
     auto refresh = [this] { update(); };
+    connect(play->replay(),&Replay::changed,this,[this,play]{if(play->replay()->active()&&play->replay()->elapsed==0)goCurrent();update();});
     connect(play, &Playout::ticked, this, refresh);
     connect(play, &Playout::segmentChanged, this, refresh);
     connect(play, &Playout::stateChanged, this, refresh);
@@ -351,7 +353,9 @@ void ViewportWidget::paintEvent(QPaintEvent *) {
     p.save();
     p.setClipRect(g.screen);
     const DisplaySettings &ds = m_lib->display;
-    if (colorManagementActive(ds.colorView, ds.colorLook, ds.exposure, ds.gamma)) {
+    if(!m_detached&&m_play->replay()->active()){
+        p.drawImage(g.screen,programFrame(g.screen.size()));
+    } else if (colorManagementActive(ds.colorView, ds.colorLook, ds.exposure, ds.gamma)) {
         // colour management is applied to the picture itself, not to the controls drawn over it
         QImage img(g.screen.size(), QImage::Format_ARGB32_Premultiplied);
         img.fill(Qt::black);
@@ -391,6 +395,11 @@ QImage ViewportWidget::programFrame(QSize size){
     QImage image(size,QImage::Format_ARGB32);image.fill(Qt::black);
     View live;live.seg=m_play->current();live.posMs=m_play->timelinePosMs();live.segElapsed=m_play->segmentElapsed();live.tcMs=m_play->totalElapsed();live.onAir=m_play->isLive();live.frame=&m_frame;
     QPainter p(&image);p.setRenderHint(QPainter::Antialiasing);p.setRenderHint(QPainter::SmoothPixmapTransform);drawScreen(p,image.rect(),live,false);p.end();
+    if(auto *replay=m_play->replay();replay->active()){
+        QImage picture(size,QImage::Format_ARGB32);picture.fill(Qt::black);
+        View view;view.seg=&replay->segment;view.posMs=replay->position;view.segElapsed=replay->segmentElapsed();view.tcMs=replay->elapsed;view.onAir=true;view.frame=&replay->frame;
+        QPainter painter(&picture);drawScreen(painter,picture.rect(),view,false);painter.end();image=replay->composite(image,picture);
+    }
     const auto &d=m_lib->display;if(colorManagementActive(d.colorView,d.colorLook,d.exposure,d.gamma))applyColorManagement(image,d.colorView,d.colorLook,d.exposure,d.gamma);
     if(d.regionOn){QPainter crop(&image);QPainterPath all,keep;all.addRect(image.rect());keep.addRect(QRectF(size.width()*d.rx0,size.height()*d.ry0,size.width()*(d.rx1-d.rx0),size.height()*(d.ry1-d.ry0)));crop.fillPath(all.subtracted(keep),Qt::black);}
     return image;

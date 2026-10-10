@@ -27,6 +27,7 @@ public:
     bool importFile(const QString &path);
     void exportFile();
     void newElement();                          // start from a fresh scene
+    void newEffect();
     void editElement(const QString &elementId); // open a saved custom element
 
 signals:

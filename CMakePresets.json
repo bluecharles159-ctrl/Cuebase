@@ -8,6 +8,8 @@
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS_DEBUG": "-g1",
+        "CMAKE_AUTOGEN_PARALLEL": "1",
         "CMAKE_CXX_COMPILER": "C:/msys64/ucrt64/bin/g++.exe"
       },
       "environment": {
@@ -19,6 +21,7 @@
     {
       "name": "default",
       "configurePreset": "default",
+      "jobs": 1,
       "environment": {
         "PATH": "C:/msys64/ucrt64/bin;$penv{PATH}"
       }

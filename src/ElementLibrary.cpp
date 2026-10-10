@@ -1,4 +1,5 @@
 #include "ElementLibrary.h"
+#include "SceneEffects.h"
 #include "UiControls.h"
 #include <QBuffer>
 #include <QDialog>
@@ -38,6 +39,8 @@ bool setStudioField(ElementDesign &design,const QString &id,const QString &value
     }return fail("Only text and media objects can be edited here.");
 }
 static QImage renderElement(const Element &element,qint64 time,QSize size){
+    const auto design=ElementDesign::fromJson(element.design);
+    if(sceneEffect(design))return sceneEffectPreview(design,size,time);
     QImage image(size,QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);QPainter p(&image);
     if(!element.design.isEmpty())ElementDesign::fromJson(element.design).render(p,QRectF(image.rect()),time,true,nullptr,false);
     else if(!element.image.isEmpty())p.drawImage(QRectF(image.rect()),QImage(element.image));
@@ -56,7 +59,8 @@ void ElementPreview::setElement(const Element &value){element=value;design=Eleme
 void ElementPreview::setTime(qint64 value){time=value;update();}
 QRectF ElementPreview::frame()const{QSizeF size(16,9);size.scale(width(),height(),Qt::KeepAspectRatio);return QRectF(QPointF((width()-size.width())/2,(height()-size.height())/2),size);}
 void ElementPreview::paintEvent(QPaintEvent*){QPainter p(this);p.fillRect(rect(),QColor("#242527"));auto r=frame();p.save();p.setClipRect(r);for(int y=r.top();y<r.bottom();y+=12)for(int x=r.left();x<r.right();x+=12)p.fillRect(QRect(x,y,12,12),((x-int(r.left()))/12+(y-int(r.top()))/12)%2?QColor("#35363a"):QColor("#3a3b3f"));
-    if(!element.design.isEmpty())design.render(p,r,time,true,nullptr,false);else p.drawImage(r,renderElement(element,time,{480,270}));p.restore();
+    if(sceneEffect(design))p.drawImage(r,sceneEffectPreview(design,r.size().toSize(),time));
+    else if(!element.design.isEmpty())design.render(p,r,time,true,nullptr,false);else p.drawImage(r,renderElement(element,time,{480,270}));p.restore();
     if(cropping){QRectF selected(r.x()+crop.x()*r.width(),r.y()+crop.y()*r.height(),crop.width()*r.width(),crop.height()*r.height());p.setPen(QPen(QColor("#86b9ef"),2));p.setBrush(QColor(70,130,200,25));p.drawRect(selected);}
 }
 void ElementPreview::mousePressEvent(QMouseEvent *e){if(!cropping||e->button()!=Qt::LeftButton)return;auto r=frame();cropStart={(e->position().x()-r.x())/r.width(),(e->position().y()-r.y())/r.height()};cropStart.setX(qBound(0.,cropStart.x(),1.));cropStart.setY(qBound(0.,cropStart.y(),1.));}
@@ -70,7 +74,7 @@ bool editElementPresentation(Element &element,QWidget *parent){
     auto *preview=new ElementPreview;preview->setElement(element);preview->time=element.previewMs;preview->cropping=true;preview->crop={element.previewX,element.previewY,element.previewW,element.previewH};layout->addWidget(preview,1);
     auto *slider=new QSlider(Qt::Horizontal);slider->setRange(0,qMax<qint64>(1,element.lengthMs()));slider->setValue(element.previewMs);layout->addWidget(slider);QObject::connect(slider,&QSlider::valueChanged,preview,[=](int value){preview->setTime(value);});
     auto *hint=new QLabel("Drag a rectangle to crop the thumbnail. Scrub to choose a recognizable frame.");hint->setWordWrap(true);layout->addWidget(hint);auto *full=new QPushButton("Full screen");layout->addWidget(full);QObject::connect(full,&QPushButton::clicked,preview,[=]{preview->crop={0,0,1,1};preview->update();});
-    auto *form=new QFormLayout;auto *name=new QLineEdit(element.name);auto *description=new QPlainTextEdit(element.description);description->setMaximumHeight(60);auto *group=new QComboBox;group->setEditable(true);group->addItems({"Overlays","Break screens","Logos"});group->setCurrentText(element.playlist);form->addRow("Name",name);form->addRow("Description",description);form->addRow("Playlist",group);layout->addLayout(form);
+    auto *form=new QFormLayout;auto *name=new QLineEdit(element.name);auto *description=new QPlainTextEdit(element.description);description->setMaximumHeight(60);auto *group=new QComboBox;group->setEditable(true);group->addItems({"Overlays","Break screens","Logos","Effects"});group->setCurrentText(element.playlist);form->addRow("Name",name);form->addRow("Description",description);form->addRow("Playlist",group);layout->addLayout(form);
     auto *buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);layout->addWidget(buttons);QObject::connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);QObject::connect(buttons,&QDialogButtonBox::accepted,&dialog,[&]{if(name->text().trimmed().isEmpty()){name->setFocus();return;}dialog.accept();});
     if(dialog.exec()!=QDialog::Accepted)return false;element.name=name->text().trimmed();element.description=description->toPlainText();element.playlist=group->currentText().trimmed();if(element.playlist.isEmpty())element.playlist="Overlays";element.previewMs=slider->value();element.previewX=preview->crop.x();element.previewY=preview->crop.y();element.previewW=preview->crop.width();element.previewH=preview->crop.height();refreshElementThumbnail(element);return true;
 }

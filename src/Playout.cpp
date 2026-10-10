@@ -1,4 +1,5 @@
 #include "Playout.h"
+#include "Replay.h"
 #include "DesignAudio.h"
 #include <QDateTime>
 
@@ -45,6 +46,7 @@ const Segment *Playout::current() const {
     if (m_state == Stopped || m_index < 0 || m_index >= m_segs.size()) return nullptr;
     return &m_segs[m_index];
 }
+Replay *Playout::replay(){if(!m_replay)m_replay=new Replay(this,m_lib);return m_replay;}
 
 int Playout::currentProgramIndex() const {
     const Segment *s = current();
@@ -333,6 +335,7 @@ void Playout::start(int segment, qint64 inSegmentMs) {
 
 void Playout::jumpTo(int segment, qint64 inSegmentMs) {
     if (segment < 0 || segment >= m_segs.size()) return;
+    m_finishAfterReplay=false;if(m_replay&&m_replay->active())m_replay->cancel();
     if (m_state == Stopped) {
         start(segment, inSegmentMs);
         return;
@@ -383,6 +386,7 @@ void Playout::playProgram(const QString &programId) {
 }
 
 void Playout::stop() {
+    m_finishAfterReplay=false;
     m_manualCues.clear();
     if (m_state == Stopped) return;
     m_state = Stopped;
@@ -398,6 +402,7 @@ void Playout::stop() {
 }
 
 void Playout::finishAll() {
+    if(m_replay&&m_replay->active()){m_finishAfterReplay=true;m_state=Paused;m_player->pause();if(m_index>=0)m_segElapsed=m_segs[m_index].ms;syncSounds();emit stateChanged();return;}
     m_state = Stopped;
     m_index = -1;
     m_pendingSeek = -1;
@@ -485,14 +490,14 @@ void Playout::setMuted(bool m) {
 void Playout::layerAudio(const Placement &pl, Sfx &s) const {
     if (!s.out) return;
     const LayerState &ls = m_lib->layers.value(qBound(0, pl.layer, 3));
-    s.out->setVolume(float(m_volume * ls.volume / 100.0));
+    s.out->setVolume(float(m_volume * ls.volume / 100.0 * (1-m_replayMix)));
     s.out->setMuted(m_muted || ls.muted);
 }
 
 void Playout::applyAudio() {
     syncDesignAudio();
     const LayerState &main = m_lib->layers.value(0);
-    m_audio->setVolume(float(m_volume * main.volume / 100.0));
+    m_audio->setVolume(float(m_volume * main.volume / 100.0 * (1-m_replayMix)));
     m_audio->setMuted(m_muted || main.muted);
     for (const Placement &pl : std::as_const(m_lib->placements)) {
         const auto it = m_sfx.find(pl.id);
@@ -582,7 +587,7 @@ void Playout::syncDesignAudio(){
         auto found=m_audioDesigns.find(element.id);if(found==m_audioDesigns.end()||found->first!=element.design)found=m_audioDesigns.insert(element.id,{element.design,ElementDesign::fromJson(element.design)});
         cues.append(designAudioCues(found->second,time,m_state==Playing&&advancing,element.id+"/",gain,!controlled));
     };
-    if(m_state!=Stopped){const double gain=m_muted?0:m_volume;
+    if(m_state!=Stopped){const double gain=m_muted?0:m_volume*(1-m_replayMix);
         for(const auto &element:m_lib->elements){const auto playback=graphicPlayback(element,timelinePosMs());if(playback.visible)append(element,playback.time,gain,playback.controlled,playback.advancing);else if(playback.controlled)drawn.insert(element.id);}
         for(const auto &placement:m_lib->placements){const auto layer=m_lib->layers.value(qBound(0,placement.layer,3));
             if(placement.type!="Element"||!layer.visible||timelinePosMs()<placement.startMs||timelinePosMs()>=placement.startMs+placement.lengthMs())continue;

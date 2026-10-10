@@ -37,8 +37,10 @@ void PropertyTrack::setKey(int ms, double value, const QString &interpolation) {
 double PropertyTrack::evaluate(qint64 ms, double fallback) const {
     if (keys.isEmpty()) return fallback;
     if (ms <= keys.first().ms) return keys.first().value;
+    if (ms >= keys.last().ms) return keys.last().value;
     for (int i = 1; i < keys.size(); ++i) {
         if (ms > keys[i].ms) continue;
+        if (ms == keys[i].ms) return keys[i].value;
         const auto &a = keys[i - 1], &b = keys[i];
         if (a.interpolation == "Bezier") {
             const QPointF p0(a.ms,a.value),p3(b.ms,b.value);

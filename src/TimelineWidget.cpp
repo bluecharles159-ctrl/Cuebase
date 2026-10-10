@@ -473,6 +473,7 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
     p.setFont(QFont("Segoe UI",8));p.setPen(QColor("#9ca3af"));const int left=hbar()?hbar()->value():0;
     for(double time=std::ceil(xToMs(left)/1000./step)*step;msToX(time*1000)<left+(parentWidget()?parentWidget()->width():width());time+=step){int x=msToX(time*1000);p.drawText(QRect(x,1,64,16),QString::number(time,'g',4)+"s");p.drawLine(x,18,x,21);}
     // ---- playhead (drag it to move where the broadcast plays from)
+    if(m_rangeStart>=0&&m_rangeStart!=m_rangeEnd){const int a=msToX(qMin(m_rangeStart,m_rangeEnd)),b=msToX(qMax(m_rangeStart,m_rangeEnd));p.fillRect(QRect(a,20,b-a,height()-20),QColor(100,160,225,55));p.setPen(QColor("#98c6f4"));p.drawRect(QRect(a,20,b-a,height()-21));}
     const int px = playheadX();
     const bool grabbing = m_drag == Drag::Playhead && m_moved;
     const QColor pc = m_play->isLive() || grabbing ? QColor("#ef4444") : QColor("#64748b");
@@ -508,6 +509,7 @@ void TimelineWidget::updateCursor() {
 }
 
 void TimelineWidget::mousePressEvent(QMouseEvent *e) {
+    if(e->button()==Qt::RightButton){m_drag=Drag::Range;m_rangeStart=m_rangeEnd=xToMs(e->position().x());update();return;}
     if(e->button()==Qt::MiddleButton){m_drag=Drag::Pan;m_pressPos=e->position().toPoint();m_panScroll=hbar()?hbar()->value():0;return;}
     if (e->button() != Qt::LeftButton) return;
     const QPoint pos = e->position().toPoint();
@@ -571,6 +573,7 @@ void TimelineWidget::mousePressEvent(QMouseEvent *e) {
 }
 
 void TimelineWidget::mouseMoveEvent(QMouseEvent *e) {
+    if(m_drag==Drag::Range){m_rangeEnd=xToMs(e->position().x());autoScroll(e->position().x());update();return;}
     const QPoint pos = e->position().toPoint();
     m_hover = pos;m_hasHover = true;
     if(m_drag==Drag::Pan){if(auto *bar=hbar())bar->setValue(m_panScroll+m_pressPos.x()-pos.x());return;}
@@ -602,6 +605,7 @@ void TimelineWidget::mouseMoveEvent(QMouseEvent *e) {
 }
 
 void TimelineWidget::mouseReleaseEvent(QMouseEvent *e) {
+    if(m_drag==Drag::Range){m_drag=Drag::None;update();return;}
     if(m_drag==Drag::Pan){m_drag=Drag::None;return;}
     if (e->button() != Qt::LeftButton) return;
     if(m_drag==Drag::TrimLeft||m_drag==Drag::TrimRight){m_drag=Drag::None;m_lib->commitPlacements();updateCursor();return;}
@@ -628,6 +632,7 @@ void TimelineWidget::leaveEvent(QEvent *) {
 }
 
 void TimelineWidget::contextMenuEvent(QContextMenuEvent *e) {
+    if(m_rangeStart>=0&&qAbs(m_rangeEnd-m_rangeStart)>0){QMenu menu(this);auto *replay=menu.addAction("Replay selected frames…");auto *clear=menu.addAction("Clear range");const auto *chosen=menu.exec(e->globalPos());if(chosen==replay)emit replayRequested(qMin(m_rangeStart,m_rangeEnd),qMax(m_rangeStart,m_rangeEnd));if(chosen==clear){m_rangeStart=m_rangeEnd=-1;update();}e->accept();return;}
     const QPoint pos = e->pos();
     e->accept();
 

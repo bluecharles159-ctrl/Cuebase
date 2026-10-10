@@ -3,6 +3,7 @@
 #include <QMenu>
 #include <QSettings>
 #include "ElementLibrary.h"
+#include "SceneEffects.h"
 #include "AssetImport.h"
 #include "DesignAudio.h"
 #include "MediaFrames.h"
@@ -52,6 +53,19 @@ private slots:
         m.keyProperty(id,"position.x");QCOMPARE(m.active()->track("position.x")->keys.size(),3);
         m.setTime(0);m.selChannel="position.x";m.deleteKey();QCOMPARE(m.active()->track("position.x")->keys.size(),2);
         QVERIFY(m.undo());QCOMPARE(m.active()->track("position.x")->keys.size(),3);QVERIFY(m.redo());QCOMPARE(m.active()->track("position.x")->keys.size(),2);
+    }
+    void screenEffects(){
+        auto design=sceneEffectPreset("Fade");QVERIFY(!design.isEmpty());QVERIFY(sceneEffect(design));
+        for(const auto &o:design.objects)QVERIFY(!o.isRenderable());
+        QImage a(96,54,QImage::Format_ARGB32);a.fill(Qt::red);QImage b(a.size(),a.format());b.fill(Qt::blue);
+        QCOMPARE(blendSceneEffect(a,b,design,0),a);QCOMPARE(blendSceneEffect(a,b,design,design.durationMs),b);
+        design.loop=true;QCOMPARE(blendSceneEffect(a,b,design,design.durationMs),b);
+        auto gray=sceneEffectPreset("Desaturate and slow");auto image=applySceneEffect(a,gray,1200);auto pixel=image.pixel(48,27);QVERIFY(qAbs(qRed(pixel)-qGreen(pixel))<=1);QVERIFY(qAbs(qBlue(pixel)-qGreen(pixel))<=1);
+        QCOMPARE(sceneEffectValue(ElementDesign::fromJson(gray.toJson()),"scene.speed",1200,1),.35);
+        for(const auto &name:sceneEffectPresets()){auto effect=sceneEffectPreset(name);QVERIFY(!sceneEffectPreview(effect,{160,90},600).isNull());}
+        BuildModel model;model.reset(design);model.select(sceneEffect(model.design)->id);
+        auto *editor=sceneEffectEditor(&model);editor->resize(420,760);editor->show();QTest::qWait(30);
+        QDir().mkpath("artifacts");QVERIFY(editor->grab().save("artifacts/scene-effects.png"));delete editor;
     }
     void independentChannels(){
         BuildModel m;auto id=m.addMesh("Cube");m.keyProperty(id,"position.x");

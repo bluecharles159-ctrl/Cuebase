@@ -10,6 +10,13 @@
 #include <QUdpSocket>
 #include "NetworkOutput.h"
 #include "Playout.h"
+#include "Replay.h"
+#include "SceneEffects.h"
+#include "CrewWorkspace.h"
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QSslError>
+#include <QCryptographicHash>
 #include "ViewportWidget.h"
 #include "TimelineWidget.h"
 #include <QSettings>
@@ -22,6 +29,7 @@
 #include "StudioElements.h"
 #include "StudioDashboard.h"
 #include "MainWindow.h"
+#include "UiControls.h"
 #include <QTcpSocket>
 #include <QLabel>
 #include <QLineEdit>
@@ -31,7 +39,7 @@
 class StreamTests:public QObject{
     Q_OBJECT
 private slots:
-    void initTestCase(){QStandardPaths::setTestModeEnabled(true);qApp->setOrganizationName("CuebaseStreamTests");qApp->setApplicationName(QUuid::createUuid().toString(QUuid::WithoutBraces));}
+    void initTestCase(){installUiBehavior(qApp);QStandardPaths::setTestModeEnabled(true);qApp->setOrganizationName("CuebaseStreamTests");qApp->setApplicationName(QUuid::createUuid().toString(QUuid::WithoutBraces));QDir().mkpath("artifacts");}
     void cleanProgram(){
         Library library;library.display.watermarkOn=false;library.display.safeArea=false;
         ProgramItem program;program.id="test";program.title="Test program";library.programs={program};
@@ -45,6 +53,32 @@ private slots:
         play.stop();QCOMPARE(monitor.programFrame(size),black);
     }
     void validation(){StreamSettings s;s.executable=NetworkOutput::findEncoder();QVERIFY(!s.executable.isEmpty());s.endpoint="file:///tmp/output";QVERIFY(!NetworkOutput::validate(s).isEmpty());s.endpoint="rtmp://127.0.0.1/live/test";QVERIFY(NetworkOutput::validate(s).isEmpty());s.size={321,180};QVERIFY(!NetworkOutput::validate(s).isEmpty());}
+    void replayIndependentClock(){
+        Library library;ProgramItem p;p.id="replay-show";p.kind="News";p.seconds=60;library.programs={p};Playout play(&library);auto *replay=play.replay();QString reason;
+        QVERIFY(!replay->start(0,1000,"preset:Fade","preset:Fade",false,&reason));play.start(0,10000);
+        QVERIFY(replay->start(0,2000,"preset:Fade","preset:Fade",false,&reason));const auto before=play.playheadMs();QTest::qWait(120);QVERIFY(play.playheadMs()>before);QVERIFY(replay->position>0);replay->cancel();QCOMPARE(play.state(),Playout::Playing);
+        QVERIFY(replay->start(0,2000,"preset:Fade","preset:Fade",true,&reason));const auto held=play.playheadMs();QTest::qWait(120);QCOMPARE(play.playheadMs(),held);QCOMPARE(play.state(),Playout::Paused);replay->cancel();QCOMPARE(play.state(),Playout::Playing);
+        play.togglePause();QVERIFY(replay->start(0,2000,"preset:Fade","preset:Fade",true,&reason));replay->cancel();QCOMPARE(play.state(),Playout::Paused);
+        QVERIFY(!replay->start(0,50000,"preset:Fade","preset:Fade",false,&reason));play.stop();QVERIFY(!replay->active());
+        play.start(0,59900);QVERIFY(replay->start(0,2000,"preset:Fade","preset:Fade",false,&reason));
+        QTest::qWait(200);QVERIFY(replay->active());QCOMPARE(play.state(),Playout::Paused);
+        replay->cancel();QCOMPARE(play.state(),Playout::Stopped);
+    }
+    void crewPermissionsAndConflicts(){
+        Library library;auto design=elementPreset("News lower third");Element element;element.id="crew-text";element.design=design.toJson();library.elements={element};CrewSession session(&library);auto first=session.snapshot();auto fields=first["fields"].toArray();QVERIFY(!fields.isEmpty());auto field=fields[0].toObject();field["value"]="Updated by the graphics crew";fields[0]=field;first["fields"]=fields;QString error;
+        QVERIFY(!session.apply(first,"Viewer","Guest",&error));QCOMPARE(session.revision(),quint64(1));QVERIFY(session.apply(first,"Editor","Graphics",&error));QCOMPARE(session.revision(),quint64(2));QVERIFY(!session.apply(first,"Editor","Other",&error));
+        auto saved=ElementDesign::fromJson(library.elements.first().design);QCOMPARE(saved.find(field["object"].toString())->text,QString("Updated by the graphics crew"));QVERIFY(!saved.find(field["object"].toString())->tracks.isEmpty());
+        auto invalid=session.snapshot();auto rows=invalid["fields"].toArray();auto bad=rows[0].toObject();bad["object"]="not-exposed";rows[0]=bad;invalid["fields"]=rows;QVERIFY(!session.apply(invalid,"Editor","Graphics",&error));QCOMPARE(session.revision(),quint64(2));
+        Library reopened;reopened.load();QCOMPARE(reopened.production["audit"].toArray().last().toObject()["author"].toString(),QString("Graphics"));
+        auto *page=crewWorkspace(&library);page->resize(760,650);page->show();QTest::qWait(20);QVERIFY(page->grab().save("artifacts/crew-workspace.png"));delete page;
+    }
+    void crewEncryptedSession(){
+        Library library;CrewSession session(&library);QString error;QVERIFY2(session.startSession(0,&error,QHostAddress::LocalHost),qPrintable(error));QString member;auto code=session.invite("Viewer","Viewer",&member);QVERIFY(!code.isEmpty());QNetworkAccessManager manager;
+        auto request=[&](QByteArray method,QByteArray body={}){QNetworkRequest req(QUrl(QString("https://127.0.0.1:%1/api/session").arg(session.serverPort())));req.setRawHeader("Authorization","Bearer "+code.toLatin1());req.setHeader(QNetworkRequest::ContentTypeHeader,"application/json");auto *reply=manager.sendCustomRequest(req,method,body);connect(reply,&QNetworkReply::sslErrors,reply,[&session,reply](const QList<QSslError> &errors){bool expected=true;for(const auto &e:errors)expected&=QString::fromLatin1(e.certificate().digest(QCryptographicHash::Sha256).toHex(':'))==session.fingerprint();if(expected)reply->ignoreSslErrors(errors);});return reply;};
+        auto *get=request("GET");QTRY_VERIFY_WITH_TIMEOUT(get->isFinished(),15000);QCOMPARE(get->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),200);auto document=get->readAll();QCOMPARE(QJsonDocument::fromJson(document).object()["role"].toString(),QString("Viewer"));delete get;
+        auto *post=request("POST",document);QTRY_VERIFY_WITH_TIMEOUT(post->isFinished(),15000);QCOMPARE(post->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),403);delete post;session.revoke(member);
+        get=request("GET");QTRY_VERIFY_WITH_TIMEOUT(get->isFinished(),15000);QCOMPARE(get->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),403);delete get;code=session.invite("Producer","Editor");post=request("POST",document);QTRY_VERIFY_WITH_TIMEOUT(post->isFinished(),15000);QCOMPARE(post->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),200);delete post;post=request("POST",document);QTRY_VERIFY_WITH_TIMEOUT(post->isFinished(),15000);QCOMPARE(post->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),409);delete post;session.stopSession();QVERIFY(!session.isListening());
+    }
     void timelineTrim(){
         QSettings().setValue("studio/timelineScale",14.);
         Library library;ProgramItem program;program.id="trim";program.seconds=30;library.programs={program};
@@ -127,6 +161,9 @@ private slots:
         for(const auto &value:streams){auto stream=value.toObject();if(stream["codec_type"]=="video"){video=true;QCOMPARE(stream["codec_name"].toString(),QString("h264"));QCOMPARE(stream["width"].toInt(),320);QCOMPARE(stream["height"].toInt(),180);}if(stream["codec_type"]=="audio"){audio=true;QCOMPARE(stream["codec_name"].toString(),QString("aac"));}}
         QVERIFY(video);QVERIFY(audio);QProcess decode;decode.start(ffmpeg,{"-hide_banner","-loglevel","error","-i",received,"-map","0:a:0","-f","s16le","-ac","1","-ar","48000","pipe:1"});QVERIFY(decode.waitForFinished(10000));auto samples=decode.readAllStandardOutput();QVERIFY(samples.size()>48000);qint64 energy=0;for(int i=0;i+1<samples.size();i+=2){qint16 sample=qint16(quint8(samples[i])|(quint16(quint8(samples[i+1]))<<8));energy+=qAbs(int(sample));}QVERIFY2(energy/(samples.size()/2)>100,"Stream audio was silent");
         QDir().mkpath("artifacts");QFile::remove(QString("artifacts/loopback-%1.%2").arg(protocol,protocol=="rtmp"?"flv":"ts"));QVERIFY(QFile::copy(received,QString("artifacts/loopback-%1.%2").arg(protocol,protocol=="rtmp"?"flv":"ts"))||QFileInfo::exists(QString("artifacts/loopback-%1.%2").arg(protocol,protocol=="rtmp"?"flv":"ts")));
+        Library replayLibrary;ProgramItem recorded;recorded.id="recorded";recorded.kind="Video";recorded.file=received;recorded.seconds=3;replayLibrary.programs={recorded};Playout replayPlay(&replayLibrary);replayPlay.start(0,2000);replayPlay.togglePause();QString reason;
+        auto *replay=replayPlay.replay();QVERIFY2(replay->start(0,1800,"preset:Fade","preset:Fade",false,&reason),qPrintable(reason));
+        QTRY_VERIFY_WITH_TIMEOUT(!replay->frame.isNull(),15000);QVERIFY(replay->position<1800);QCOMPARE(replayPlay.state(),Playout::Paused);replay->cancel();replayPlay.stop();
     }
 };
 QTEST_MAIN(StreamTests)

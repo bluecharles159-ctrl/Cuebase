@@ -4,6 +4,7 @@
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QSaveFile>
 #include <QJsonObject>
 
 qint64 Element::lengthMs() const {if(type=="Custom"){auto json=QJsonDocument::fromJson(design.toUtf8()).object();const auto duration=qint64(json["duration"].toDouble());if(duration>0)return duration;}return qMax(1,seconds)*1000LL;}
@@ -198,6 +199,7 @@ void Library::load() {
         return;
     }
     const QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
+    production=o["production"].toObject();
     programs.clear();
     ads.clear();
     elements.clear();
@@ -212,6 +214,7 @@ void Library::load() {
         p.adId = j["adId"].toString();
         p.breakIn = j["breakIn"].toString();
         p.breakOut = j["breakOut"].toString();
+        p.replayInEffect=j["replayInEffect"].toString("preset:Fade");p.replayOutEffect=j["replayOutEffect"].toString("preset:Fade");
         p.seconds = j["seconds"].toInt(60);
         p.offsetMs = j["offsetMs"].toInt(0);
         p.slotAfter = j["slotAfter"].toBool(false);
@@ -301,10 +304,14 @@ void Library::load() {
 }
 
 void Library::save() const {
+    saveChecked();
+}
+bool Library::saveChecked(QString *error) const {
     QJsonArray pa, aa, ea, la;
     for (const ProgramItem &p : programs)
         pa.append(QJsonObject{{"id", p.id}, {"title", p.title}, {"kind", p.kind}, {"file", p.file},
                               {"adId", p.adId}, {"breakIn", p.breakIn}, {"breakOut", p.breakOut},
+                              {"replayInEffect",p.replayInEffect},{"replayOutEffect",p.replayOutEffect},
                               {"seconds", p.seconds}, {"offsetMs", p.offsetMs}, {"slotAfter", p.slotAfter},
                               {"description", p.description}, {"image", p.image}, {"fx", fxToJson(p.fx)}});
     for (const Ad &a : ads)
@@ -333,9 +340,9 @@ void Library::save() const {
                         {"colorLook", display.colorLook}, {"exposure", display.exposure}, {"gamma", display.gamma},
                         {"regionOn", display.regionOn}, {"rx0", display.rx0}, {"ry0", display.ry0}, {"rx1", display.rx1},
                         {"ry1", display.ry1}};
-    const QJsonObject o{{"programs", pa}, {"ads", aa}, {"elements", ea}, {"elementPlaylists",QJsonArray::fromStringList(elementPlaylists)}, {"placements", la}, {"layers", lay}, {"display", d}};
-    QFile f(filePath());
-    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) f.write(QJsonDocument(o).toJson());
+    const QJsonObject o{{"programs", pa}, {"ads", aa}, {"elements", ea}, {"elementPlaylists",QJsonArray::fromStringList(elementPlaylists)}, {"placements", la}, {"layers", lay}, {"display", d},{"production",production}};
+    QSaveFile f(filePath());const auto bytes=QJsonDocument(o).toJson();
+    if(!f.open(QIODevice::WriteOnly)||f.write(bytes)!=bytes.size()||!f.commit()){if(error)*error=f.errorString();return false;}return true;
 }
 
 // First launch only: a small starter set so everything can be tested straight away.

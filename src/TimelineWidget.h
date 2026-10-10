@@ -44,6 +44,7 @@ signals:
     // lane 0 = the main timeline (insert in front of beforeId, "" = at the end); 1..3 = an extra timeline at startMs
     void dropped(const DragPayload &payload, int lane, qint64 startMs, const QString &beforeId);
     void heightWanted(int height);
+    void replayRequested(qint64 from,qint64 to);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -60,7 +61,8 @@ private:
     struct Slot { QRect rect; QString programId; };
     struct PBlock { QString id, type; QRect rect; int lane; };
     struct Insert { bool valid = false; QString beforeId; int x = 0; int seg = -1; };
-    enum class Drag { None, Playhead, Press, Foreign, TrimLeft, TrimRight, Pan };
+    enum class Drag { None, Playhead, Press, Foreign, TrimLeft, TrimRight, Pan, Range };
+    qint64 m_rangeStart=-1,m_rangeEnd=-1;
     double m_pixelsPerSecond=14;
     QString m_trimId;
     qint64 m_trimStart=0,m_trimLength=0;

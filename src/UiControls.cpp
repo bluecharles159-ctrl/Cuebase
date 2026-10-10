@@ -3,6 +3,35 @@
 #include <QToolButton>
 #include <QTimer>
 #include <QPlainTextEdit>
+#include <QProxyStyle>
+#include <QStyleFactory>
+#include <QStyleOption>
+
+class RoundedControlStyle final : public QProxyStyle {
+public:
+    explicit RoundedControlStyle(QStyle *base):QProxyStyle(base){}
+    int pixelMetric(PixelMetric metric,const QStyleOption *option=nullptr,const QWidget *widget=nullptr) const override {
+        if(metric==PM_IndicatorWidth||metric==PM_IndicatorHeight)return 14;
+        return QProxyStyle::pixelMetric(metric,option,widget);
+    }
+    void drawPrimitive(PrimitiveElement element,const QStyleOption *option,QPainter *painter,const QWidget *widget=nullptr) const override {
+        if(element!=PE_IndicatorCheckBox&&element!=PE_IndicatorItemViewItemCheck){QProxyStyle::drawPrimitive(element,option,painter,widget);return;}
+        const bool enabled=option->state&State_Enabled;
+        const bool checked=option->state&(State_On|State_NoChange);
+        const bool hover=enabled&&(option->state&State_MouseOver);
+        const bool focus=enabled&&(option->state&State_HasFocus);
+        painter->save();painter->setRenderHint(QPainter::Antialiasing);
+        QRectF box(option->rect);const qreal side=qMin(box.width(),box.height())-2;
+        box=QRectF(box.center().x()-side/2,box.center().y()-side/2,side,side);
+        painter->setPen(QPen(QColor(!enabled?"#444b55":focus?"#bbd5f3":hover?"#91a9c5":checked?"#7897bf":"#657181"),1));
+        painter->setBrush(QColor(!enabled?"#303640":checked?(hover?"#6688b3":"#52769f"):(hover?"#374353":"#28313d")));
+        painter->drawRoundedRect(box,3,3);
+        painter->setPen(QPen(QColor(enabled?"#f0f5fb":"#7a8593"),1.6,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin));
+        if(option->state&State_NoChange)painter->drawLine(QPointF(box.left()+3,box.center().y()),QPointF(box.right()-3,box.center().y()));
+        else if(checked){QPainterPath tick;tick.moveTo(box.left()+2.8,box.center().y());tick.lineTo(box.left()+5.1,box.bottom()-3);tick.lineTo(box.right()-2.5,box.top()+3);painter->drawPath(tick);}
+        painter->restore();
+    }
+};
 
 UiGesture *uiGesture(){static UiGesture instance;return &instance;}
 
@@ -10,6 +39,8 @@ QIcon uiIcon(const QString &name,bool active){
     QPixmap image(40,40);image.fill(Qt::transparent);QPainter p(&image);p.setRenderHint(QPainter::Antialiasing);p.scale(2,2);
     p.setPen(QPen(active?QColor("#c7d6e8"):QColor("#526174"),1.35,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin));p.setBrush(Qt::NoBrush);
     const QString n=name.toLower();
+    if(n=="effects"){p.setPen(QPen(QColor("#b79bdb"),1.3));p.drawPolygon(QPolygonF{{10,2},{12,8},{18,10},{12,12},{10,18},{8,12},{2,10},{8,8}});p.end();return QIcon(image);}
+    if(n=="crew"){p.drawEllipse(QPointF(7,6),3,3);p.drawArc(QRectF(1,10,12,10),0,180*16);p.drawEllipse(QPointF(15,7),2,2);p.drawArc(QRectF(12,11,7,7),0,150*16);p.end();return QIcon(image);}
     if(n=="stop"){p.drawRoundedRect(QRectF(4,4,12,12),1,1);p.end();return QIcon(image);}
     if(n=="scale"){p.drawRect(3,11,6,6);p.drawLine(8,12,17,3);p.drawPolyline(QPolygonF{{11,3},{17,3},{17,9}});p.end();return QIcon(image);}
     if(n=="step"){p.drawPolyline(QPolygonF{{2,16},{9,16},{9,5},{18,5}});p.end();return QIcon(image);}
@@ -60,4 +91,10 @@ public:using QObject::QObject;
         return false;
     }
 };
-void installUiBehavior(QApplication *app){app->installEventFilter(new UiBehavior(app));}
+void installUiBehavior(QApplication *app){
+    if(app->property("cuebaseUiInstalled").toBool())return;
+    app->setProperty("cuebaseUiInstalled",true);
+    auto *base=QStyleFactory::create(app->style()->objectName());
+    app->setStyle(new RoundedControlStyle(base?base:QStyleFactory::create("Fusion")));
+    app->installEventFilter(new UiBehavior(app));
+}

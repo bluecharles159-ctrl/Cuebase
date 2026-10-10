@@ -11,6 +11,7 @@
 #include "Data.h"
 #include "ElementDesign.h"
 class DesignAudio;
+class Replay;
 
 class QAudioOutput;
 class QMediaPlayer;
@@ -75,6 +76,9 @@ public:
     void applyAudio();                        // re-applies master + per-timeline volume and mute
     double volume() const { return m_volume; }
     bool muted() const { return m_muted; }
+    Replay *replay();
+    void setReplayMix(double value){m_replayMix=qBound(0.,value,1.);applyAudio();}
+    void finishReplay(){if(m_finishAfterReplay){m_finishAfterReplay=false;finishAll();}}
     struct GraphicPlayback {bool visible=false,controlled=false; qint64 time=0;QString cue;bool advancing=true;};
     GraphicPlayback graphicPlayback(const Element &element,qint64 timelineTime,qint64 placementStart=-1,qint64 offset=0) const;
     void triggerElementAnimation(const QString &elementId,const QString &cueId);
@@ -146,4 +150,7 @@ private:
     QSet<QString> m_soundsOn;
     double m_volume = 0.8;
     bool m_muted = false;
+    double m_replayMix=0;
+    Replay *m_replay=nullptr;
+    bool m_finishAfterReplay=false;
 };

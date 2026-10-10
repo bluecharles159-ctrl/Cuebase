@@ -4,12 +4,14 @@ This update uses `Cuebase-buildstudio-updated.zip` as its source baseline. Build
 
 ## Build and test
 
+Code::Blocks is not required. On this machine, double-click `Build-Cuebase.cmd` to configure, build with one compiler job, and launch the executable only when the build succeeds. The script also supplies the UCRT64 Qt runtime path when launched from Windows or a MINGW64 terminal. The default preset uses compact debug information and one compiler job for this 4 GB computer. Avoid building multiple copies simultaneously.
+
 Requirements: C++20, CMake 3.25+, Ninja, Qt 6.8+ Widgets/Multimedia/Network/Test, Assimp, pkg-config, FFmpeg development libraries (avformat, avcodec, avutil, swscale), and FFmpeg with libx264, AAC, RTMP and SRT support. The supplied presets use the installed MSYS2 UCRT64 toolchain. RTMP loopback tests also use MediaMTX at `tools/mediamtx/mediamtx.exe`.
 
 ```powershell
 $env:PATH = 'C:\msys64\ucrt64\bin;' + $env:PATH
 cmake --preset default
-cmake --build --preset default --parallel 2
+cmake --build --preset default
 ctest --test-dir build --output-on-failure
 ```
 
@@ -19,7 +21,7 @@ On this machine, open `Run-Cuebase.cmd` to launch the verified `build-final` exe
 
 ## Studio library and broadcast monitoring
 
-Screen Elements now has playlist cards, private animation previews, thumbnail cropping, editable text/media fields and validated playhead-following placement. Build has a saved-element dropdown, autosaving New scene action and four animated starter presets. Use `{{studio:Sponsor}}Sponsored by NVIDIA` or the Studio Field checkbox to expose reusable content without changing its animation.
+Screen Elements now has playlist cards, private animation previews, thumbnail cropping, editable text/media fields and validated playhead-following placement. Build has a saved-element dropdown, autosaving New scene action and four animated starter presets. Use `{{studio:Headline}}Cuebase is one year old` or the Studio Field checkbox to expose any reusable text without changing its animation.
 
 Studio Monitor can start the included localhost MediaMTX receiver and record real receiver connections by server/path over time. Public distribution needs a reachable server or CDN. See [PRODUCTION-GUIDE.md](PRODUCTION-GUIDE.md) for local RTMP/SRT URLs, audience-count limits and the full workflow.
 

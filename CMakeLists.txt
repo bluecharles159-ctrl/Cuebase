@@ -12,6 +12,7 @@ pkg_check_modules(AV REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil l
 add_library(CuebaseBuildCore STATIC
     src/Data.h src/Data.cpp
     src/ElementLibrary.h src/ElementLibrary.cpp
+    src/SceneEffects.h src/SceneEffects.cpp
     src/UiControls.h src/UiControls.cpp
     src/AssetImport.h src/AssetImport.cpp
     src/MediaFrames.h src/MediaFrames.cpp
@@ -33,6 +34,8 @@ add_executable(Cuebase WIN32
     src/AddMenu.h src/AddMenu.cpp
     src/HelpCenter.h src/HelpCenter.cpp src/AppLinks.h
     src/Playout.h src/Playout.cpp src/AnimationPlayout.cpp
+    src/Replay.h src/Replay.cpp
+    src/CrewWorkspace.h src/CrewWorkspace.cpp src/CrewPortal.h
     src/ViewportWidget.h src/ViewportWidget.cpp
     src/TimelineWidget.h src/TimelineWidget.cpp
     src/QueueStrip.h src/QueueStrip.cpp
@@ -65,6 +68,8 @@ if(BUILD_TESTING)
         src/EditorPanel.h src/EditorPanel.cpp
     src/StudioElements.h src/StudioElements.cpp src/StudioDashboard.h src/StudioDashboard.cpp
         src/AnimationPlayout.cpp
+        src/Replay.h src/Replay.cpp
+        src/CrewWorkspace.h src/CrewWorkspace.cpp src/CrewPortal.h
         src/TimelineWidget.h src/TimelineWidget.cpp src/DragDrop.h src/DragDrop.cpp
         src/Playout.h src/Playout.cpp src/ViewportWidget.h src/ViewportWidget.cpp
         src/ColorManagement.h src/ColorManagement.cpp)

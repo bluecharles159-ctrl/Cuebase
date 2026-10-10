@@ -5,6 +5,9 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include "EditorPanel.h"
+#include "Replay.h"
+#include "SceneEffects.h"
+#include "CrewWorkspace.h"
 #include "BuildContextAction.h"
 #include <QMenu>
 
@@ -737,6 +740,12 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
     form->addRow("Break out", outBox);
     form->addRow("Description", desc);
     form->addRow("Poster", posterRow);
+    auto *replayIn=new QComboBox,*replayOut=new QComboBox;
+    auto fillReplay=[=]{for(auto *box:{replayIn,replayOut}){const auto keep=box->currentData();QSignalBlocker block(box);box->clear();for(const auto &name:sceneEffectPresets())box->addItem(name,"preset:"+name);for(const auto &e:lib->elements)if(e.type=="Effect")box->addItem(e.name,e.id);int at=box->findData(keep);box->setCurrentIndex(qMax(0,at));}};fillReplay();
+    QObject::connect(lib,&Library::elementsChanged,page,fillReplay);
+    form->addRow("Replay entry effect",replayIn);form->addRow("Replay return effect",replayOut);
+    auto *createEffect=new QPushButton(uiIcon("add"),"Create effect in Build");form->addRow(createEffect);QObject::connect(createEffect,&QPushButton::clicked,page,[=]{lib->requestEffect();});
+    auto *returnReplay=new QPushButton(uiIcon("back"),"Return from replay");returnReplay->setEnabled(false);form->addRow(returnReplay);QObject::connect(returnReplay,&QPushButton::clicked,page,[=]{play->replay()->returnToProgram();});QObject::connect(play->replay(),&Replay::changed,page,[=]{returnReplay->setEnabled(play->replay()->active());});
 
     auto *addBtn = smallButton("Add Program");
     addBtn->setObjectName("save");
@@ -827,6 +836,7 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
         desc->clear();
         poster->clear();
         fx->set(Transition());
+        replayIn->setCurrentIndex(0);replayOut->setCurrentIndex(0);
         setDefaults();
         addBtn->setText("Add Program");
     };
@@ -860,6 +870,7 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
         desc->setPlainText(p->description);
         poster->setText(p->image);
         fx->set(p->fx);
+        replayIn->setCurrentIndex(qMax(0,replayIn->findData(p->replayInEffect)));replayOut->setCurrentIndex(qMax(0,replayOut->findData(p->replayOutEffect)));
         addBtn->setText("Update Program");
         msg->clear();
     });
@@ -899,6 +910,7 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
         item.description = desc->toPlainText().trimmed();
         item.image = poster->text().trimmed();
         item.fx = fx->get();
+        item.replayInEffect=replayIn->currentData().toString();item.replayOutEffect=replayOut->currentData().toString();
         bool inserted = false;
         if (updated) {
             for (ProgramItem &p : lib->programs) if (p.id == item.id) p = item;
@@ -1028,6 +1040,7 @@ EditorPanel::EditorPanel(Library *lib, Playout *play, QWidget *parent) : QFrame(
         {"play", "Programs", makePlannerPage(lib, play)},
         {"image", "Screen Elements", makeElementsPage(lib, play)},
         {"graph", "Monitor", studioDashboard(play)},
+        {"crew", "Production / Crew", crewWorkspace(lib)},
     };
     for (int i = 0; i < tools.size(); ++i) {
         auto *b = new QToolButton;

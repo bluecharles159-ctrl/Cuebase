@@ -6,6 +6,7 @@
 #include <QString>
 #include <QStringList>
 #include <QVector>
+#include <QJsonObject>
 
 // ---- shared vocabulary ------------------------------------------------------
 
@@ -85,6 +86,7 @@ struct ProgramItem {
     Transition fx;
 
     // kind "Ad" is a standalone ad spot placed on the timeline (its adId points at the ad)
+    QString replayInEffect="preset:Fade",replayOutEffect="preset:Fade";
     bool isAdSpot() const { return kind == QLatin1String("Ad"); }
 };
 
@@ -145,6 +147,7 @@ public:
     QList<Placement> placements;
     QVector<LayerState> layers = QVector<LayerState>(4);  // 0 = main, 1..3 = extra timelines
     DisplaySettings display;
+    QJsonObject production;
 
     // set while the user is filling a "+" on the timeline: what they chose there and where it goes
     QString pendingKind;    // "", "Clip", "Ad Center" or "Element"
@@ -182,6 +185,7 @@ public:
 
     void load();
     void save() const;
+    bool saveChecked(QString *error=nullptr) const;
 
     void commitPrograms() { save(); emit programsChanged(); }
     void commitAds() { save(); emit adsChanged(); }
@@ -192,6 +196,7 @@ public:
     void commitLayers() { save(); emit layersChanged(); }
     // Asks the main window to open the Build workspace (id "" = a brand-new element) or a program in Programs.
     void requestBuild(const QString &elementId = QString()) { emit buildRequested(elementId); }
+    void requestEffect() { emit effectRequested(); }
     void requestOpenProgram(const QString &programId) { emit openProgramRequested(programId); }
 
 signals:
@@ -203,7 +208,9 @@ signals:
     void pendingChanged();
     void displayChanged();
     void layersChanged();
+    void productionChanged();
     void buildRequested(const QString &elementId);
+    void effectRequested();
     void openProgramRequested(const QString &programId);
 
 private:

@@ -105,7 +105,7 @@ void ElementDesign::ensureCamera() {
 
 bool ElementDesign::isEmpty() const {
     for (const DObject &o : objects)
-        if (o.isRenderable() || o.type=="Audio") return false;
+        if (o.isRenderable() || o.type=="Audio" || o.type=="Effect") return false;
     return true;
 }
 

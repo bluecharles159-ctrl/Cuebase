@@ -1,4 +1,5 @@
 #include "BuildCanvas.h"
+#include "SceneEffects.h"
 
 #include <QAbstractSpinBox>
 #include <QApplication>
@@ -379,7 +380,7 @@ void BuildCanvas::paintEvent(QPaintEvent *) {
     p.setClipRect(r);
     p.fillRect(r,QColor("#393939"));
     if (m_shading == Rendered) {
-        d.render(p,r,m_m->t,true);
+        if(sceneEffect(d))p.drawImage(r,sceneEffectPreview(d,r.size().toSize(),m_m->t));else d.render(p,r,m_m->t,true);
     } else {
         PaintOpts o;
         o.shade = PaintOpts::Shade(m_shading);
