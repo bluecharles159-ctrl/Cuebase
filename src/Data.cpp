@@ -10,11 +10,11 @@
 
 qint64 Element::lengthMs() const {
     if(!cueBoard.isEmpty()){
-        struct CachedLength{QString design;QJsonArray board;qint64 duration;};
+        struct CachedLength{QString design;QJsonArray board;QJsonObject settings;qint64 duration;};
         static thread_local QHash<QString,CachedLength> cache;
         if(cache.size()>1024)cache.clear();auto found=cache.constFind(id);
-        if(found==cache.cend()||found->design!=design||found->board!=cueBoard){
-            const auto duration=compileCueBoard(ElementDesign::fromJson(design),cueBoard).duration();cache[id]={design,cueBoard,duration};if(duration>0)return duration;
+        if(found==cache.cend()||found->design!=design||found->board!=cueBoard||found->settings!=cueBoardSettings){
+            const auto duration=compileCueBoard(ElementDesign::fromJson(design),cueBoard,cueBoardSettings).duration();cache[id]={design,cueBoard,cueBoardSettings,duration};if(duration>0)return duration;
         }else if(found->duration>0)return found->duration;
     }
     if(type=="Custom"){auto json=QJsonDocument::fromJson(design.toUtf8()).object();const auto duration=qint64(json["duration"].toDouble());if(duration>0)return duration;}
@@ -258,7 +258,7 @@ void Library::load() {
         e.seconds = j["seconds"].toInt(4);
         e.live = j["live"].toBool();
         e.design = j["design"].toString();
-        e.description=j["description"].toString();e.playlist=j["playlist"].toString(e.type=="Break"?"Break screens":e.type=="Logo"?"Logos":"Overlays");e.thumbnail=j["thumbnail"].toString();e.previewMs=j["previewMs"].toDouble();e.cueBoard=j["cueBoard"].toArray();
+        e.description=j["description"].toString();e.playlist=j["playlist"].toString(e.type=="Break"?"Break screens":e.type=="Logo"?"Logos":"Overlays");e.thumbnail=j["thumbnail"].toString();e.previewMs=j["previewMs"].toDouble();e.cueBoard=j["cueBoard"].toArray();e.cueBoardSettings=j["cueBoardSettings"].toObject();
         e.previewX=j["previewX"].toDouble();e.previewY=j["previewY"].toDouble();e.previewW=j["previewW"].toDouble(1);e.previewH=j["previewH"].toDouble(1);
         e.fx = fxFromJson(j["fx"].toObject());
         elements.append(e);
@@ -275,7 +275,7 @@ void Library::load() {
         pl.file = j["file"].toString();
         pl.startMs = qint64(j["startMs"].toDouble());
         pl.seconds = j["seconds"].toInt(8);
-        pl.durationMs=qint64(j["durationMs"].toDouble());
+        pl.durationMs=qint64(j["durationMs"].toDouble());pl.boardSnapshot=j["boardSnapshot"].toObject();pl.boardCycleMs=j["boardCycleMs"].toDouble();
         pl.layer = qBound(1, j["layer"].toInt(1), 3);
         pl.offsetMs = j["offsetMs"].toInt(0);
         pl.kind = j["kind"].toString();
@@ -291,6 +291,7 @@ void Library::load() {
     }
     const QJsonObject d = o["display"].toObject();
     display.channel = d["channel"].toString(display.channel);
+    display.channelLogo=d["channelLogo"].toString();display.channelLogoElement=d["channelLogoElement"].toString();display.channelDescription=d["channelDescription"].toString();
     display.resolution = d["resolution"].toString(display.resolution);
     display.fps = d["fps"].toInt(display.fps);
     display.bitrate = d["bitrate"].toDouble(display.bitrate);
@@ -333,17 +334,17 @@ bool Library::saveChecked(QString *error) const {
         ea.append(QJsonObject{{"id", e.id}, {"name", e.name}, {"type", e.type}, {"text", e.text},
                               {"color", e.color}, {"position", e.position}, {"image", e.image},
                               {"seconds", e.seconds}, {"live", e.live}, {"design", e.design},
-                              {"description",e.description},{"playlist",e.playlist},{"thumbnail",e.thumbnail},{"previewMs",double(e.previewMs)},{"cueBoard",e.cueBoard},
+                              {"description",e.description},{"playlist",e.playlist},{"thumbnail",e.thumbnail},{"previewMs",double(e.previewMs)},{"cueBoard",e.cueBoard},{"cueBoardSettings",e.cueBoardSettings},
                               {"previewX",e.previewX},{"previewY",e.previewY},{"previewW",e.previewW},{"previewH",e.previewH},
                               {"fx", fxToJson(e.fx)}});
     for (const Placement &pl : placements)
         la.append(QJsonObject{{"id", pl.id}, {"type", pl.type}, {"refId", pl.refId}, {"name", pl.name},
-                              {"file", pl.file}, {"startMs", double(pl.startMs)}, {"seconds", pl.seconds}, {"durationMs",double(pl.durationMs)},
+                              {"file", pl.file}, {"startMs", double(pl.startMs)}, {"seconds", pl.seconds}, {"durationMs",double(pl.durationMs)},{"boardSnapshot",pl.boardSnapshot},{"boardCycleMs",double(pl.boardCycleMs)},
                               {"layer", pl.layer}, {"offsetMs", pl.offsetMs}, {"kind", pl.kind}});
     QJsonArray lay;
     for (const LayerState &s : layers)
         lay.append(QJsonObject{{"muted", s.muted}, {"visible", s.visible}, {"volume", s.volume}});
-    const QJsonObject d{{"channel", display.channel}, {"resolution", display.resolution},
+    const QJsonObject d{{"channel", display.channel},{"channelLogo",display.channelLogo},{"channelLogoElement",display.channelLogoElement},{"channelDescription",display.channelDescription}, {"resolution", display.resolution},
                         {"fps", display.fps}, {"bitrate", display.bitrate},
                         {"watermarkOn", display.watermarkOn}, {"watermarkText", display.watermarkText},
                         {"safeArea", display.safeArea}, {"resScale", display.resScale}, {"pixAspX", display.pixAspX},
@@ -371,3 +372,5 @@ void Library::seed() {
     ProgramItem c{newId(), "Good Life", "Lifestyle", "", ads[0].id, brIn.id, brOut.id, 20};
     programs = {a, b, c};
 }
+
+Element Library::placementElement(const Placement &pl)const{Element e;if(const auto *source=element(pl.refId))e=*source;if(!pl.boardSnapshot.isEmpty()){e.design=pl.boardSnapshot["design"].toString();e.cueBoard=pl.boardSnapshot["cueBoard"].toArray();e.cueBoardSettings=pl.boardSnapshot["settings"].toObject();e.name=pl.name;e.type="Custom";}e.id="placement:"+pl.id;e.live=false;e.cueBoardSettings["_placementLength"]=double(pl.lengthMs());e.cueBoardSettings["_cycle"]=double(pl.boardCycleMs);return e;}

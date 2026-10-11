@@ -1,4 +1,6 @@
 #include "ViewportWidget.h"
+#include <algorithm>
+#include "Continuity.h"
 #include "Replay.h"
 
 #include <QEnterEvent>
@@ -17,6 +19,7 @@
 #include <QVideoFrame>
 #include <QVideoSink>
 #include <cmath>
+#include <QtMath>
 
 #include "Playout.h"
 
@@ -93,6 +96,8 @@ ViewportWidget::ViewportWidget(Library *lib, Playout *play, QWidget *parent)
         if (m_scrub || !m_viewPlaying) m_vplayer->pause();
         else m_vplayer->play();
     });
+    m_transitionTimer.setInterval(16);
+    connect(&m_transitionTimer,&QTimer::timeout,this,[this]{update();if((!m_returnTransition.isValid()||m_returnTransition.elapsed()>420)&&(!m_monitorTransition.isValid()||m_monitorTransition.elapsed()>300))m_transitionTimer.stop();});
     m_vtimer.setInterval(40);
     connect(&m_vtimer, &QTimer::timeout, this, [this] { tickViewer(); });
     m_vclock.start();
@@ -129,8 +134,8 @@ ViewportWidget::Geo ViewportWidget::viewGeo() const {
     const int cy = g.bar.bottom() - 18;
     const int left = g.bar.left() + 12, right = g.bar.right() - 12;
     g.playBtn = QRect(left, cy - 13, 26, 26);
-    g.currentBtn = QRect(right - 84, cy - 12, 84, 24);
-    g.track = QRect(left + 34, cy - 4, qMax(10, (right - 92) - (left + 34)), 8);
+    g.currentBtn = QRect(right - 104, cy - 12, 104, 24);
+    g.track = QRect(left + 34, cy - 4, qMax(10, (right - 114) - (left + 34)), 8);
     g.trackHit = g.track.adjusted(-8, -14, 8, 14);
     return g;
 }
@@ -166,24 +171,17 @@ ViewportWidget::Range ViewportWidget::scrubRange() const {
     else if (m_play->isLive()) ref = m_play->index();
     else ref = m_play->segmentAtMs(m_play->playheadMs());
     Range r;
-    r.a = m_play->groupFirst(ref);
-    r.b = m_play->groupLast(ref);
+    if(ref>=0&&ref<m_play->segments().size()){r.a=ref;r.b=ref;}
     return r;
 }
 
 double ViewportWidget::rangeUnit(qint64 ms, const Range &r) const {
-    if (r.a < 0) return 0.0;
-    const double u0 = m_play->unitAt(r.a, false), u1 = m_play->unitAt(r.b, true);
-    if (u1 <= u0) return 0.0;
-    return qBound(0.0, (m_play->msToUnit(ms) - u0) / (u1 - u0), 1.0);
+    if(r.a<0)return 0.;const qint64 start=m_play->segmentStartMs(r.a),duration=m_play->segments()[r.a].ms;
+    return duration>0?qBound(0.,double(ms-start)/duration,1.):0.;
 }
-
-qint64 ViewportWidget::rangeMs(double unit, const Range &r) const {
-    if (r.a < 0) return 0;
-    const double u0 = m_play->unitAt(r.a, false), u1 = m_play->unitAt(r.b, true);
-    const qint64 lo = m_play->segmentStartMs(r.a);
-    const qint64 hi = m_play->segmentStartMs(r.b) + m_play->segments()[r.b].ms - 1;
-    return qBound(lo, m_play->unitToMs(u0 + qBound(0.0, unit, 1.0) * (u1 - u0)), hi);
+qint64 ViewportWidget::rangeMs(double unit,const Range &r) const {
+    if(r.a<0)return 0;const qint64 start=m_play->segmentStartMs(r.a),duration=m_play->segments()[r.a].ms;
+    return start+qBound<qint64>(0,qRound64(qBound(0.,unit,1.)*duration),qMax<qint64>(0,duration-1));
 }
 
 void ViewportWidget::detachAt(qint64 ms) {
@@ -192,6 +190,7 @@ void ViewportWidget::detachAt(qint64 ms) {
     m_detached = true;
     m_viewMs = qBound<qint64>(0, ms, qMax<qint64>(0, m_play->totalMs() - 1));
     if (!was) {
+        m_monitorTransition.start();m_transitionTimer.start();
         m_viewPlaying = true;
         m_vlast = m_vclock.elapsed();
         m_vtimer.start();
@@ -209,6 +208,7 @@ void ViewportWidget::scrubTo(int x) {
 
 void ViewportWidget::goCurrent() {
     if (!m_detached) return;
+    m_returnTransition.start();m_transitionTimer.start();
     m_detached = false;
     m_scrub = false;
     m_vtimer.stop();
@@ -353,20 +353,17 @@ void ViewportWidget::paintEvent(QPaintEvent *) {
     p.save();
     p.setClipRect(g.screen);
     const DisplaySettings &ds = m_lib->display;
-    if(!m_detached&&m_play->replay()->active()){
+    if(!m_detached&&(m_play->replay()->active()||m_play->continuity()->active())){
         p.drawImage(g.screen,programFrame(g.screen.size()));
-    } else if (colorManagementActive(ds.colorView, ds.colorLook, ds.exposure, ds.gamma)) {
+    } else {
         // colour management is applied to the picture itself, not to the controls drawn over it
         QImage img(g.screen.size(), QImage::Format_ARGB32_Premultiplied);
         img.fill(Qt::black);
         QPainter q(&img);
-        q.translate(-g.screen.topLeft());
-        drawScreen(q, g.screen, v);
+        drawScreen(q, img.rect(), v);
         q.end();
-        applyColorManagement(img, ds.colorView, ds.colorLook, ds.exposure, ds.gamma);
+        if(colorManagementActive(ds.colorView,ds.colorLook,ds.exposure,ds.gamma))applyColorManagement(img, ds.colorView, ds.colorLook, ds.exposure, ds.gamma);
         p.drawImage(g.screen.topLeft(), img);
-    } else {
-        drawScreen(p, g.screen, v);
     }
     if (ds.regionOn && (ds.rx0 > 0.001 || ds.ry0 > 0.001 || ds.rx1 < 0.999 || ds.ry1 < 0.999)) {
         // render region: only that part of the picture is output, the rest is black
@@ -381,6 +378,20 @@ void ViewportWidget::paintEvent(QPaintEvent *) {
         p.setBrush(Qt::NoBrush);
         p.drawRect(keep);
     }
+    if(m_detached){
+        const int width=qMax(100,g.screen.width()/4),height=width*9/16;
+        const QRect target(g.screen.right()-width-12,g.screen.bottom()-height-72,width,height);
+        const double t=m_monitorTransition.isValid()?qBound(0.,m_monitorTransition.elapsed()/300.,1.):1.;
+        const double eased=1.-qPow(1.-t,3.);
+        const QRect start(g.screen.topLeft()+QPoint(12,12),g.screen.size());
+        const QRect liveRect(int(start.x()+(target.x()-start.x())*eased),int(start.y()+(target.y()-start.y())*eased),int(start.width()+(target.width()-start.width())*eased),int(start.height()+(target.height()-start.height())*eased));
+        p.save();QPainterPath path;path.addRoundedRect(liveRect,7,7);p.setClipPath(path,Qt::IntersectClip);p.drawImage(liveRect,programFrame(target.size()));p.fillRect(QRect(liveRect.left(),liveRect.top(),liveRect.width(),20),QColor(0,0,0,140));p.setPen(QColor("#ff6767"));p.setFont(uiFont(9,true));p.drawText(liveRect.adjusted(7,3,-7,-3),Qt::AlignTop|Qt::AlignLeft,"LIVE OUTPUT");p.restore();p.setPen(QPen(QColor(255,255,255,95),1));p.setBrush(Qt::NoBrush);p.drawRoundedRect(liveRect,7,7);
+    }
+    if(!m_detached&&m_returnTransition.isValid()&&m_returnTransition.elapsed()<420){
+        const double t=m_returnTransition.elapsed()/420.;const double opacity=qSin(t*3.141592653589793);
+        p.fillRect(g.screen,QColor(0,0,0,int(140*opacity)));const QPointF center=g.screen.center();const double cell=12,gap=4;
+        p.setPen(Qt::NoPen);for(int i=0;i<9;++i){const int destination=(i+3)%9;const double ease=t*t*(3-2*t);const QPointF from((i%3-1)*(cell+gap),(i/3-1)*(cell+gap)),to((destination%3-1)*(cell+gap),(destination/3-1)*(cell+gap));p.setBrush(QColor(160+i*7,190+i*5,240,int(220*opacity)));p.drawRoundedRect(QRectF(center+from*(1-ease)+to*ease-QPointF(cell/2,cell/2),QSizeF(cell,cell)),2,2);}
+    }
     if (barVisible()) drawScrubber(p, g, v);
     p.restore();
     drawChrome(p, g.chrome, v);
@@ -392,6 +403,7 @@ void ViewportWidget::paintEvent(QPaintEvent *) {
 }
 
 QImage ViewportWidget::programFrame(QSize size){
+    if(m_play->continuity()->active())return m_play->continuity()->frame(size);
     QImage image(size,QImage::Format_ARGB32);image.fill(Qt::black);
     View live;live.seg=m_play->current();live.posMs=m_play->timelinePosMs();live.segElapsed=m_play->segmentElapsed();live.tcMs=m_play->totalElapsed();live.onAir=m_play->isLive();live.frame=&m_frame;
     QPainter p(&image);p.setRenderHint(QPainter::Antialiasing);p.setRenderHint(QPainter::SmoothPixmapTransform);drawScreen(p,image.rect(),live,false);p.end();
@@ -463,32 +475,12 @@ void ViewportWidget::drawScreen(QPainter &p, const QRect &r, const View &v, bool
     }
 
     // ---- on-screen elements: switched-on ones, plus ones placed on the extra timelines for this moment ----
-    QSet<QString> drawn;
-    const qint64 clock = v.posMs;
-    for (const Element &e : m_lib->elements) {
-        const auto playback=m_play->graphicPlayback(e,clock);
-        if(playback.controlled)drawn.insert(e.id);
-        if (!playback.visible || e.type == "Break") continue;
-        if (e.type == "Ad Element" && !(seg && seg->type == Segment::Ad)) continue;
-        drawElement(p, r, playback.resolved(e), playback.time,playback.controlled);
-        drawn.insert(e.id);
-    }
-    if (v.onAir || m_detached) {
-        for (const Placement &pl : m_lib->placements) {
-            if (pl.type != "Element") continue;
-            if (!m_lib->layers.value(qBound(0, pl.layer, 3)).visible) continue;
-            if (v.posMs < pl.startMs || v.posMs >= pl.startMs + pl.lengthMs()) continue;
-            const Element *e = m_lib->element(pl.refId);
-            if (!e || e->type == "Break" || drawn.contains(e->id)) continue;
-            drawn.insert(e->id);
-            const auto playback=m_play->graphicPlayback(*e,v.posMs,pl.startMs,pl.offsetMs);if(!playback.visible)continue;
-            const qint64 elapsed = v.posMs - pl.startMs;
-            p.save();
-            applyFx(p, r, transitionAt(e->fx, elapsed, pl.lengthMs()));
-            drawElement(p, r, playback.resolved(*e), playback.time,playback.controlled);
-            p.restore();
-        }
-    }
+    struct GraphicLayer{Element element;qint64 time=0,elapsed=0,length=0;bool controlled=false,placed=false;};
+    QVector<GraphicLayer> graphics;QSet<QString> drawn;const qint64 clock=v.posMs;
+    for(const auto &e:m_lib->elements){const auto playback=m_play->graphicPlayback(e,clock);if(playback.controlled)drawn.insert(e.id);if(!playback.visible||e.type=="Break")continue;if(e.type=="Ad Element"&&!(seg&&seg->type==Segment::Ad))continue;graphics.append({playback.resolved(e),playback.time,0,0,playback.controlled,false});drawn.insert(e.id);}
+    if(v.onAir||m_detached)for(const auto &pl:m_lib->placements){if(pl.type!="Element"||!m_lib->layers.value(qBound(0,pl.layer,3)).visible||clock<pl.startMs||clock>=pl.startMs+pl.lengthMs())continue;const auto e=m_lib->placementElement(pl);if(e.type=="Break"||drawn.contains(e.id))continue;drawn.insert(e.id);const auto playback=m_play->graphicPlayback(e,clock,pl.startMs,pl.offsetMs);if(!playback.visible)continue;graphics.append({playback.resolved(e),playback.time,clock-pl.startMs,pl.lengthMs(),playback.controlled,true});}
+    std::stable_sort(graphics.begin(),graphics.end(),[](const GraphicLayer &a,const GraphicLayer &b){return a.element.cueBoardSettings["zIndex"].toInt()<b.element.cueBoardSettings["zIndex"].toInt();});
+    for(const auto &graphic:graphics){p.save();if(graphic.placed)applyFx(p,r,transitionAt(graphic.element.fx,graphic.elapsed,graphic.length));drawElement(p,r,graphic.element,graphic.time,graphic.controlled);p.restore();}
 
     // ---- watermark ----
     const DisplaySettings &d = m_lib->display;
@@ -648,7 +640,7 @@ void ViewportWidget::drawScrubber(QPainter &p, const Geo &g, const View &) {
         p.drawRoundedRect(g.currentBtn, 12, 12);
         p.setPen(Qt::white);
         p.setFont(uiFont(12, true));
-        p.drawText(g.currentBtn, Qt::AlignCenter, "Current");
+        p.drawText(g.currentBtn, Qt::AlignCenter, "Return to live");
     }
 }
 

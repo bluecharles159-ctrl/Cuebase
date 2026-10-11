@@ -1,5 +1,6 @@
 #include "UiControls.h"
 #include <QPainterPath>
+#include <QMap>
 #include <QToolButton>
 #include <QTimer>
 #include <QPlainTextEdit>
@@ -39,6 +40,10 @@ QIcon uiIcon(const QString &name,bool active){
     QPixmap image(40,40);image.fill(Qt::transparent);QPainter p(&image);p.setRenderHint(QPainter::Antialiasing);p.scale(2,2);
     p.setPen(QPen(active?QColor("#c7d6e8"):QColor("#526174"),1.35,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin));p.setBrush(Qt::NoBrush);
     const QString n=name.toLower();
+    if(active){const QMap<QString,QString> accents{{"cue","#88d9b0"},{"clock","#d9bc83"},{"layers","#9ca9ed"},{"broadcast","#df8e91"},{"play","#8bcdb8"},{"next","#a3b9e6"},{"world","#7ebdda"},{"camera","#91cbb2"},{"save","#a4bed5"}};if(accents.contains(n))p.setPen(QPen(QColor(accents[n]),1.35,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin));}
+    if(n=="layers"){for(int y:{5,10,15})p.drawPolyline(QPolygonF{{2,qreal(y)},{10,qreal(y-4)},{18,qreal(y)},{10,qreal(y+4)},{2,qreal(y)}});p.end();return QIcon(image);}
+    if(n=="broadcast"){p.drawEllipse(QPointF(10,10),2,2);p.drawArc(QRectF(5,5,10,10),-65*16,130*16);p.drawArc(QRectF(1,1,18,18),-65*16,130*16);p.drawArc(QRectF(5,5,10,10),115*16,130*16);p.drawArc(QRectF(1,1,18,18),115*16,130*16);p.end();return QIcon(image);}
+
     if(n=="next"){p.drawPolygon(QPolygonF{{4,3},{13,10},{4,17}});p.drawLine(16,3,16,17);p.end();return QIcon(image);}
     if(n=="cue"){p.drawRoundedRect(QRectF(2,3,16,14),2,2);p.drawPolygon(QPolygonF{{8,6},{14,10},{8,14}});p.end();return QIcon(image);}
     if(n=="clock"){p.drawEllipse(QRectF(2,2,16,16));p.drawPolyline(QPolygonF{{10,5},{10,10},{14,12}});p.end();return QIcon(image);}

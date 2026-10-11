@@ -694,7 +694,12 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
     l->addWidget(pendingBanner(lib, "Clip", "Fill in the clip below and press Add Clip to insert it"));
 
     auto *list = new QListWidget;
-    list->setMinimumHeight(150);
+    list->setMinimumHeight(210);
+    list->setObjectName("programLibrary");list->setSpacing(8);list->setIconSize(QSize(104,60));
+    list->setStyleSheet("QListWidget{background:#202830;border:1px solid #40505f;border-radius:10px;padding:8px;} QListWidget::item{padding:10px;border:1px solid #364857;border-radius:8px;} QListWidget::item:selected{background:#344c61;border-color:#719aca;} QListWidget::item:hover{background:#2c3d4c;}");
+    auto *browseRow=new QHBoxLayout;auto *search=new QLineEdit;search->setPlaceholderText("Search programs…");auto *viewMode=new QComboBox;viewMode->addItems({"List","Grid"});browseRow->addWidget(search,1);browseRow->addWidget(viewMode);l->addLayout(browseRow);
+    QObject::connect(viewMode,&QComboBox::currentIndexChanged,page,[=](int mode){list->setViewMode(mode?QListView::IconMode:QListView::ListMode);list->setFlow(mode?QListView::LeftToRight:QListView::TopToBottom);list->setWrapping(mode);list->setResizeMode(QListView::Adjust);list->setGridSize(mode?QSize(220,140):QSize());list->setIconSize(mode?QSize(180,90):QSize(104,60));});
+    QObject::connect(search,&QLineEdit::textChanged,page,[=](QString term){for(int i=0;i<list->count();++i)list->item(i)->setHidden(!list->item(i)->text().contains(term,Qt::CaseInsensitive));});
     auto *title = new QLineEdit;
     title->setObjectName("programTitle");
     title->setPlaceholderText("Program title");
@@ -806,7 +811,8 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
             const QString prefix = i == cur ? "▶  " : fin > 0 ? "✓  " : "     ";
             QString text = QString("%1%2. %3   ·   %4   ·   %5").arg(prefix).arg(i + 1).arg(p.title, p.kind, formatDuration(p.seconds));
             if (!p.isAdSpot() && lib->ad(p.adId)) text += "   ·   + ad";
-            auto *it = new QListWidgetItem(text);
+            text=QString("%1%2\n%3 · %4%5").arg(i==cur?"ON AIR · ":fin>0?"PLAYED · ":"",p.title,p.kind,formatDuration(p.seconds),p.description.isEmpty()?QString():" · "+p.description.left(80));
+            auto *it = new QListWidgetItem(text);QPixmap picture(p.image);if(!picture.isNull())it->setIcon(QIcon(picture));else it->setIcon(uiIcon("play"));it->setToolTip(p.title+"\n"+p.description);it->setHidden(!text.contains(search->text(),Qt::CaseInsensitive));
             it->setData(Qt::UserRole, p.id);
             if (i == cur) it->setForeground(QColor("#60a5fa"));
             else if (fin > 0) it->setForeground(QColor("#64748b"));

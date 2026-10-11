@@ -1,9 +1,13 @@
 #pragma once
 
 #include <QString>
+#include <QStringList>
+#include <functional>
 #include <QWidget>
 
 class Library;
+struct Element;
+struct Placement;
 class QLabel;
 class QLineEdit;
 class QComboBox;
@@ -29,6 +33,8 @@ public:
     void newElement();                          // start from a fresh scene
     void newEffect();
     void editElement(const QString &elementId); // open a saved custom element
+    std::function<bool(const Element &,const Element &,const Placement &,QString *)> cueEditGuard;
+    void editCuePath(const QString &elementId,const QString &placementId,const QStringList &path);
     void editCueSection(const QString &elementId,const QString &entryId,int iteration);
 
 signals:
@@ -48,6 +54,8 @@ private:
     QLabel *m_msg;
     QString m_editingId;
     QString m_savedJson, m_savedName, m_draftName;
+    QStringList m_cuePath;
+    QString m_cuePlacement;
     QString m_cueEntry,m_cueBase;
     int m_cueIteration=-1;
 };

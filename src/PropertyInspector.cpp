@@ -33,11 +33,13 @@ PropertyInspector::PropertyInspector(BuildModel *model,Library *library,QWidget 
 }
 void PropertyInspector::apply(const std::function<void()> &operation){if(syncing)return;m->pushUndo();operation();m->notify();}
 QFormLayout *PropertyInspector::section(const QString &title,bool open){
-    open = expanded.value(title,QSettings().value("inspector/sections/"+title,title == "TRANSFORM").toBool());
+    const auto *object=m->active();const QString scope=(object?object->id:QString("scene"))+"/"+title;
+    const bool defaultOpen=title=="TRANSFORM"||(title=="TYPOGRAPHY"&&object&&object->type=="Text");
+    open=expanded.value(scope,QSettings().value("inspector/objects/"+scope,defaultOpen).toBool());
     auto *button=new QToolButton;button->setText(title);button->setCheckable(true);button->setChecked(open);button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);button->setIcon(uiIcon(open?"down":"right"));button->setIconSize(QSize(12,12));button->setToolTip("Expand / collapse "+title);
     button->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);layout->addWidget(button);
     auto *body=new QWidget;auto *form=new QFormLayout(body);form->setContentsMargins(18,2,5,8);form->setSpacing(4);form->setSizeConstraint(QLayout::SetMinimumSize);body->setSizePolicy(QSizePolicy::Preferred,QSizePolicy::Maximum);body->setVisible(open);layout->addWidget(body);
-    connect(button,&QToolButton::toggled,body,[=, this](bool visible){expanded[title]=visible;QSettings().setValue("inspector/sections/"+title,visible);body->setVisible(visible);button->setIcon(uiIcon(visible?"down":"right"));});return form;
+    connect(button,&QToolButton::toggled,body,[=, this](bool visible){expanded[scope]=visible;QSettings().setValue("inspector/objects/"+scope,visible);body->setVisible(visible);button->setIcon(uiIcon(visible?"down":"right"));});return form;
 }
 void PropertyInspector::number(QFormLayout *form,const QString &label,const QString &path,double low,double high,double step,const QString &suffix){
     auto *row=new QWidget;auto *h=new QHBoxLayout(row);h->setContentsMargins(0,0,0,0);h->setSpacing(2);
@@ -206,6 +208,8 @@ void PropertyInspector::rebuild(){
         auto *text=section("TYPOGRAPHY");auto *content=new QPlainTextEdit(o->text);content->setMaximumHeight(70);text->addRow(content);
         sync.append([=,this]{if(auto *object=m->active();object&&!content->hasFocus()&&content->toPlainText()!=object->text){QSignalBlocker blocker(content);content->setPlainText(object->text);}});
         connect(content,&QPlainTextEdit::textChanged,this,[=, this]{apply([&]{if(auto *x=m->active()){if(parseStudioText(*x,content->toPlainText())){QSignalBlocker block(content);content->setPlainText(x->text);}}});});
+        choice(text,"Formatting","text.format",{"Plain text","Markdown"},"Plain text");
+        content->setToolTip("Markdown: **bold**, *italic*, ~~strike~~, # heading, - list, > quote, `code`. Choose Markdown below. Studio field prefixes still work.");
         auto *family=new QFontComboBox;family->setCurrentFont(QFont(o->style["text.family"].toString("Segoe UI")));text->addRow("Font",family);
         connect(family,&QFontComboBox::currentFontChanged,this,[=, this](const QFont &font){apply([&]{if(auto *x=m->active())x->style["text.family"]=font.family();});});
         number(text,"Size","text.size",1,1000,1," px");

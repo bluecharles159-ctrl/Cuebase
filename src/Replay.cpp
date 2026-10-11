@@ -1,4 +1,5 @@
 #include "Replay.h"
+#include "Continuity.h"
 #include "SceneEffects.h"
 #include "UiControls.h"
 #include "DesignAudio.h"
@@ -50,11 +51,11 @@ void Replay::sync(){
         if(!segment.file.isEmpty()){pending=segment.offsetMs+position-starts[index];player->setSource(QUrl::fromLocalFile(segment.file));}
     }
     const auto mix=phase==Enter?sceneEffectValue(entryEffect,"scene.mix",phaseTime,0):phase==Leave?1-sceneEffectValue(exitEffect,"scene.mix",phaseTime,0):1;
-    play->setReplayMix(mix);audio->setVolume(float(play->volume()*library->layers.value(0).volume/100.*qBound(0.,mix,1.)));audio->setMuted(play->muted()||library->layers.value(0).muted);
-    QList<DesignAudioCue> cues;QSet<QString> drawn;const double gain=play->muted()?0:play->volume()*qBound(0.,mix,1.),speed=qBound(.1,sceneEffectValue(entryEffect,"scene.speed",elapsed,1),2.);
+    play->setReplayMix(mix);audio->setVolume(float(play->volume()*library->layers.value(0).volume/100.*qBound(0.,mix,1.)));audio->setMuted(play->muted()||library->layers.value(0).muted||play->continuity()->active());
+    QList<DesignAudioCue> cues;QSet<QString> drawn;const double gain=(play->muted()||play->continuity()->active())?0:play->volume()*qBound(0.,mix,1.),speed=qBound(.1,sceneEffectValue(entryEffect,"scene.speed",elapsed,1),2.);
     auto append=[&](const Element &element,qint64 time,double level,bool controlled,bool advancing){if(element.type!="Custom"||drawn.contains(element.id))return;drawn.insert(element.id);auto it=audioDesigns.find(element.id);if(it==audioDesigns.end()||it->first!=element.design)it=audioDesigns.insert(element.id,{element.design,ElementDesign::fromJson(element.design)});auto added=designAudioCues(it->second,time,phase!=Leave&&advancing,"replay/"+element.id+"/",level,!controlled);for(auto &cue:added)cue.rate*=speed;cues.append(added);};
     for(const auto &element:library->elements){const auto playback=play->graphicPlayback(element,position);if(playback.visible)append(playback.resolved(element),playback.time,gain,playback.controlled,playback.advancing);}
-    for(const auto &placement:library->placements){if(position<placement.startMs||position>=placement.startMs+placement.lengthMs())continue;const auto layer=library->layers.value(qBound(0,placement.layer,3));const auto level=layer.muted?0:gain*layer.volume/100.;if(placement.type=="Element"){if(layer.visible)if(const auto *element=library->element(placement.refId)){const auto playback=play->graphicPlayback(*element,position,placement.startMs,placement.offsetMs);if(playback.visible)append(playback.resolved(*element),playback.time,level,playback.controlled,playback.advancing);}}else if(!placement.file.isEmpty())cues.append({"replay/placement/"+placement.id,placement.file,position-placement.startMs+placement.offsetMs,level,phase!=Leave,speed});}
+    for(const auto &placement:library->placements){if(position<placement.startMs||position>=placement.startMs+placement.lengthMs())continue;const auto layer=library->layers.value(qBound(0,placement.layer,3));const auto level=layer.muted?0:gain*layer.volume/100.;if(placement.type=="Element"){if(layer.visible){const auto instance=library->placementElement(placement);const auto *element=&instance;const auto playback=play->graphicPlayback(*element,position,placement.startMs,placement.offsetMs);if(playback.visible)append(playback.resolved(*element),playback.time,level,playback.controlled,playback.advancing);}}else if(!placement.file.isEmpty())cues.append({"replay/placement/"+placement.id,placement.file,position-placement.startMs+placement.offsetMs,level,phase!=Leave,speed});}
     layers->sync(cues);
 }
 void Replay::tick(){

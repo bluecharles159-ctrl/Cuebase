@@ -35,6 +35,7 @@ add_executable(Cuebase WIN32
     src/AddMenu.h src/AddMenu.cpp
     src/HelpCenter.h src/HelpCenter.cpp src/AppLinks.h
     src/Playout.h src/Playout.cpp src/AnimationPlayout.cpp
+    src/Continuity.h src/Continuity.cpp
     src/Replay.h src/Replay.cpp
     src/CrewWorkspace.h src/CrewWorkspace.cpp src/CrewPortal.h
     src/ViewportWidget.h src/ViewportWidget.cpp
@@ -69,7 +70,8 @@ if(BUILD_TESTING)
         src/EditorPanel.h src/EditorPanel.cpp
     src/StudioElements.h src/StudioElements.cpp src/StudioCueBoard.h src/StudioCueBoard.cpp src/StudioDashboard.h src/StudioDashboard.cpp
         src/AnimationPlayout.cpp
-        src/Replay.h src/Replay.cpp
+        src/Continuity.h src/Continuity.cpp
+    src/Replay.h src/Replay.cpp
         src/CrewWorkspace.h src/CrewWorkspace.cpp src/CrewPortal.h
         src/TimelineWidget.h src/TimelineWidget.cpp src/DragDrop.h src/DragDrop.cpp
         src/Playout.h src/Playout.cpp src/ViewportWidget.h src/ViewportWidget.cpp

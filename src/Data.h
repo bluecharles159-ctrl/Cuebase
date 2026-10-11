@@ -77,6 +77,7 @@ struct Element {
     qint64 previewMs=0;
     Transition fx;
     QJsonArray cueBoard;
+    QJsonObject cueBoardSettings;
 };
 
 struct ProgramItem {
@@ -101,6 +102,8 @@ struct Placement {
     int seconds = 8;                                   // how long it stays / plays
     int layer = 1;                                     // 1..3 = the second, third and fourth timeline
     int offsetMs = 0;                                  // Clip: where in the media file it starts
+    QJsonObject boardSnapshot;
+    qint64 boardCycleMs=0;
     QString kind;                                      // Clip: the program type (for its colour)
 };
 
@@ -113,6 +116,7 @@ struct LayerState {
 
 struct DisplaySettings {
     QString channel = "TV1 — Main", resolution = "1920x1080";
+    QString channelLogo,channelLogoElement,channelDescription;
     int fps = 25;
     double bitrate = 8.5;
     bool watermarkOn = true;
@@ -167,6 +171,7 @@ public:
     const Element *element(const QString &id) const;
     int programIndex(const QString &id) const;
     Placement *placement(const QString &id);
+    Element placementElement(const Placement &placement) const;
     static QString newId();
 
     // ---- timeline editing (each one commits and notifies) ----
@@ -213,6 +218,8 @@ signals:
     void productionChanged();
     void buildRequested(const QString &elementId);
     void cueBuildRequested(const QString &elementId,const QString &entryId,int iteration);
+    void cuePathBuildRequested(const QString &elementId,const QString &placementId,const QStringList &path);
+    void openCuePlacementRequested(const QString &placementId);
     void effectRequested();
     void openProgramRequested(const QString &programId);
 

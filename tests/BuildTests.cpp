@@ -1,3 +1,5 @@
+#include <QDialogButtonBox>
+#include <QDialog>
 #include <QtTest>
 #include <QToolButton>
 #include <QMenu>
@@ -28,11 +30,19 @@
 #include "BuildContextAction.h"
 #include "SurfaceEffects.h"
 #include "AnimationCuePanel.h"
+#include "PropertyInspector.h"
 #include <QCheckBox>
 
 class BuildTests:public QObject {
     Q_OBJECT
 private slots:
+    void inspectorExpansionPerObject(){BuildModel m;Library lib;const auto first=m.addText();PropertyInspector inspector(&m,&lib);auto button=[&](QString title)->QToolButton*{QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);for(auto *b:inspector.findChildren<QToolButton*>())if(b->text()==title)return b;return nullptr;};QVERIFY(button("CORNERS"));QVERIFY(!button("CORNERS")->isChecked());button("CORNERS")->setChecked(true);const auto second=m.addText();QVERIFY(button("CORNERS"));QVERIFY(!button("CORNERS")->isChecked());m.select(first);QVERIFY(button("CORNERS")->isChecked());m.select(second);QVERIFY(!button("CORNERS")->isChecked());m.addText();QVERIFY(button("TYPOGRAPHY"));QVERIFY(button("TYPOGRAPHY")->isChecked());}
+
+    void markdownTextRendering(){
+        ElementDesign scene;DObject text;text.id="markdown-text";text.type="Text";text.w=5;text.h=3;text.fontPx=32;text.text="# Headline\n**Bold** and *italic*\n- First\n- Second";text.style["text.align"]="Left";text.style["text.vertical"]="Top";
+        const auto plain=scene.textureFor(text);text.style["text.format"]="Markdown";const auto formatted=scene.textureFor(text);QVERIFY(!formatted.isNull());QVERIFY(formatted!=plain);scene.objects.append(text);const auto reopened=ElementDesign::fromJson(scene.toJson());const auto *saved=reopened.find(text.id);QVERIFY(saved);QCOMPARE(saved->style["text.format"].toString(),QString("Markdown"));QCOMPARE(reopened.textureFor(*saved),formatted);
+    }
+
     void initTestCase(){
         installUiBehavior(qApp);
         QStandardPaths::setTestModeEnabled(true);
@@ -90,8 +100,17 @@ private slots:
         entry["holdManual"]=true;plan=compileCueBoard(source,{entry});QCOMPARE(plan.sample(500000).step,1);QVERIFY(!plan.sample(500000).advancing);QCOMPARE(plan.next(1),2);
         auto child=variant.animationCues[0].toObject();child["disabled"]=true;variant.animationCues[0]=child;first["design"]=variant.toJson();sections[0]=first;entry["sections"]=sections;plan=compileCueBoard(source,{entry});QCOMPARE(plan.steps.first().cueId,QString("reverse"));
     }
+    void bakedBoardsAndLiveProtection(){
+        auto design=ElementDesign::defaultScene();QJsonObject cue{{"id","intro"},{"name","Intro"},{"start",0},{"end",3000},{"hold",true},{"holdMs",2000},{"holdManual",false},{"repeat",2}};design.animationCues={cue};
+        Element source;source.id="original";source.type="Custom";source.design=design.toJson();source.cueBoard={newCueBoardEntry(cue)};source.cueBoardSettings={{"repeat",2},{"hold",true},{"holdMs",1000},{"holdManual",false}};
+        auto plan=compileCueBoard(design,source.cueBoard,source.cueBoardSettings);QCOMPARE(plan.duration(),qint64(22000));
+        Library lib;lib.elements={source};Placement first;first.id="first";first.refId=source.id;first.boardSnapshot=bakeCueBoard(source);first.boardCycleMs=plan.duration();first.durationMs=plan.duration();auto second=first;second.id="second";lib.placements={first,second};
+        auto instance=lib.placementElement(first);auto other=lib.placementElement(second);QVERIFY(instance.id!=other.id);QCOMPARE(instance.design,first.boardSnapshot["design"].toString());lib.elements[0].design=ElementDesign::defaultScene().toJson();QCOMPARE(lib.placementElement(first).design,first.boardSnapshot["design"].toString());
+        auto changed=instance;auto entry=changed.cueBoard[0].toObject();entry["repeat"]=3;changed.cueBoard[0]=entry;QString error;QVERIFY(canEditCueBoard(instance,changed,400000,0,true,&error));QVERIFY(!canEditCueBoard(instance,changed,299999,0,true,&error));QVERIFY(!error.isEmpty());QVERIFY(canEditCueBoard(instance,changed,0,10000,false,&error));
+        auto snapshot=second.boardSnapshot;snapshot["name"]="Independent";second.boardSnapshot=snapshot;QCOMPARE(first.boardSnapshot["name"].toString(),source.name);
+    }
     void cueVariantBuildSave(){
-        Library lib;Element e;e.id="cue-source";e.name="Cue source";e.type="Custom";auto design=elementPreset("News lower third");QJsonObject cue{{"id","bounce"},{"name","Bounce"},{"start",0},{"end",1000},{"hold",false},{"repeat",2}};design.animationCues={cue};e.design=design.toJson();auto entry=newCueBoardEntry(cue);e.cueBoard={entry};lib.elements={e};BuildWorkspace workspace(&lib);workspace.editCueSection(e.id,entry["id"].toString(),1);auto *model=workspace.findChild<BuildModel*>();QVERIFY(model);QVERIFY(model->design.animationCues.isEmpty());const auto text=model->addText();model->active()->text="Only this repetition";model->notify();emit model->cueFramesRequested(0,400);QCOMPARE(model->design.animationCues.size(),1);QVERIFY(workspace.findChild<QPushButton*>("buildTab_Animation Cues")->isChecked());workspace.findChild<QPushButton*>("buildSave")->click();
+        Library lib;Element e;e.id="cue-source";e.name="Cue source";e.type="Custom";auto design=elementPreset("News lower third");QJsonObject cue{{"id","bounce"},{"name","Bounce"},{"start",0},{"end",1000},{"hold",false},{"repeat",2}};design.animationCues={cue};e.design=design.toJson();auto entry=newCueBoardEntry(cue);e.cueBoard={entry};lib.elements={e};BuildWorkspace workspace(&lib);workspace.editCueSection(e.id,entry["id"].toString(),1);auto *model=workspace.findChild<BuildModel*>();QVERIFY(model);QVERIFY(model->design.animationCues.isEmpty());const auto text=model->addText();model->active()->text="Only this repetition";model->notify();emit model->cueFramesRequested(0,400);auto *range=workspace.findChild<QDialog*>("cueRangeDialog");QVERIFY(range);range->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Save)->click();QCOMPARE(model->design.animationCues.size(),1);QVERIFY(workspace.findChild<QPushButton*>("buildTab_Animation Cues")->isChecked());workspace.findChild<QPushButton*>("buildSave")->click();
         QCOMPARE(lib.element(e.id)->design,e.design);const auto sections=lib.element(e.id)->cueBoard[0].toObject()["sections"].toArray();QCOMPARE(sections.size(),2);QVERIFY(sections[0].toObject()["design"].toString().isEmpty());const auto variant=ElementDesign::fromJson(sections[1].toObject()["design"].toString());QVERIFY(variant.find(text));QCOMPARE(variant.animationCues.size(),1);QVERIFY(!workspace.hasUnsavedChanges());Library reopened;reopened.load();QCOMPARE(reopened.element(e.id)->cueBoard,lib.element(e.id)->cueBoard);
     }
     void defaultsToggleAndDuplicates(){
@@ -254,12 +273,16 @@ private slots:
         auto cues=designAudioCues(design,500,true,{},1,false);QCOMPARE(cues.size(),1);QCOMPARE(cues[0].position,qint64(2000));QCOMPARE(cues[0].volume,.5);QCOMPARE(cues[0].rate,2.);
         cues=designAudioCues(design,5500,true,{},1,false);QCOMPARE(cues[0].position,qint64(3000));QCOMPARE(cues[0].volume,.5);
     }
+    void cuePlaybackIgnoresSceneRange(){
+        Library lib;BuildWorkspace workspace(&lib);auto *model=workspace.findChild<BuildModel*>();QVERIFY(model);auto design=ElementDesign::defaultScene();design.startMs=1000;design.durationMs=2000;design.animationCues={QJsonObject{{"id","independent"},{"start",0},{"end",400},{"hold",false}}};model->reset(design);model->previewCueId="independent";model->t=1000;emit model->cuePlaybackRequested();QVERIFY(model->playing);QCOMPARE(model->t,qint64(0));model->playing=false;model->notify();
+    }
     void cueEditorPersistence(){
         BuildModel model;auto *editor=animationCueEditor(&model);editor->resize(340,390);editor->show();
-        QPushButton *add=nullptr,*apply=nullptr;for(auto *b:editor->findChildren<QPushButton*>()){if(b->text()=="Add")add=b;if(b->text()=="Apply")apply=b;}QVERIFY(add&&apply);QTest::mouseClick(add,Qt::LeftButton);QCOMPARE(model.design.animationCues.size(),1);
-        editor->findChild<QLineEdit*>("cueName")->setText("Exit");editor->findChild<QSpinBox*>("cueEnd")->setValue(50);editor->findChild<QCheckBox*>("cueHold")->setChecked(false);QTest::mouseClick(apply,Qt::LeftButton);
+        auto *add=editor->findChild<QPushButton*>("createAnimationCue");QVERIFY(add);QTest::mouseClick(add,Qt::LeftButton);QVERIFY(model.design.animationCues.isEmpty());
+        auto *dialog=editor->findChild<QDialog*>("cueRangeDialog");QVERIFY(dialog);QVERIFY(model.cueRangeStart>=0);
+        dialog->findChild<QLineEdit*>("cueName")->setText("Exit");dialog->findChild<QSpinBox*>("cueEnd")->setValue(50);dialog->findChild<QCheckBox*>("cueHold")->setChecked(false);dialog->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Save)->click();QCOMPARE(model.cueRangeStart,qint64(-1));
         auto cue=model.design.animationCues.first().toObject();QCOMPARE(cue["name"].toString(),QString("Exit"));QVERIFY(!cue["hold"].toBool());QCOMPARE(cue["end"].toInt(),50*model.frameMs());QCOMPARE(ElementDesign::fromJson(model.design.toJson()).animationCues,model.design.animationCues);
-        QVERIFY(editor->grab().save("artifacts/animation-cues.png"));QVERIFY(model.undo());QVERIFY(model.design.animationCues.first().toObject()["hold"].toBool());delete editor;
+        QVERIFY(editor->grab().save("artifacts/animation-cues.png"));QVERIFY(model.undo());QVERIFY(model.design.animationCues.isEmpty());delete editor;
     }
     void graphCoordinatesAndInterpolation(){
         QSettings().remove("animation/graphView");

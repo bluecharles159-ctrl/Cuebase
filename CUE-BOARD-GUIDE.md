@@ -1,13 +1,23 @@
-# Animation cue boards
+# Animation cues, preview and broadcast continuity
 
-In Build, select animation keys and choose **Cue selected frames** from the animation toolbar or context menu. The Animation Cues panel opens with the selected range. Give the cue a name, choose its total play count, and optionally hold its last frame for a number of seconds or until manually continued. Four plays means four total passes, with a hold after each pass. Loop repeats until stopped.
+In Build, open **Animation Cues** and choose **Create animation cue**. You can also select keys and choose **Cue selected frames**. The modal collects the name, start/end frames, total plays, looping and holds. A green range marks the frames while you edit; Save or Cancel clears it. Selecting a saved cue opens its details. **Play this cue** plays only that range; the back arrow returns to the full animation.
 
-Open the saved element in Studio, then add its authored cues to the vertical cue board. Select a play to preview it privately. Expand a cue to see its repetitions and any child cues. Preview does not take the element on air.
+Save the screen element and open it in Studio. Its preview starts automatically and never changes broadcast playback. Elements with authored cues have a board with an **Add animation cue** picker. Drag cards to reorder them; right-click to duplicate, disable, remove or modify their keyframes independently. Choose a repetition to edit its exposed text/media fields. **Open child cues** navigates into an independently modified cue's children; the back arrow returns to its parent.
 
-Each repetition can override exposed text fields without changing the source animation or other repetitions. Choose the field and enter its replacement text. **Use original text** restores inheritance. Right-click a repetition and choose **Modify in Build** to create an independent scene for that repetition. Saving returns those edits to that section; new animation cues remain inside it, ordered by their source frames. Child cues can be disabled individually.
+Cue and board duration includes every timed hold and repetition. For example, a three-second cue with a two-second hold and two total plays lasts ten seconds. Manual holds and endless loops show an infinite duration. The preview's next button advances past a hold or loop privately. Whole-board hold/repeat controls apply after the last cue.
 
-Save the board to keep the draft. **Render board** starts it on the broadcast clock; if playout is paused, it is armed until playback resumes. **Continue section** advances past a held or looping section. **Hide** removes it from output. Finite boards can also be placed on the timeline with the clock control. Their duration includes every repetition and timed hold. Manually held and endless boards require live control and cannot be placed as fixed-duration clips.
+**Render** saves the board and places an independent snapshot on a free overlay layer at the current playhead plus the delay, initially three seconds. Set zero for immediate placement or enter a longer delay in seconds. Infinite boards are bounded by the placed clip's end. **Continue on air** advances a rendered copy past a hold/loop; **Hide on air** hides that copy. Neither changes other copies or the source. Extending a finite board beyond its original total length repeats it.
 
-Build and Studio check for conflicting changes before saving a repetition or board. If another edit changed the same source, reopen it to load the latest version. Source scenes and other repetitions retain their independent content.
+Right-click a board clip on the Studio timeline to edit that copy or duplicate it onto a free layer. Keyframe/board edits while broadcasting require at least five minutes before the affected section. Played or near-air sections are protected. Closing an unsaved timeline-board editor offers Save, Discard or Cancel.
 
-**Source content and thumbnail** retains the original scene fields, media replacement and thumbnail tools. **Animation schedules** retains individual cue triggers and program/ad timers. A newer scheduled trigger can replace a playing or held board; manual triggers win ties. Previewing a cue remains private.
+Hover over the main viewport to use its draggable preview scrubber. Scrubbing opens a private preview while a small bottom-right monitor keeps showing live output. **Return to live** synchronizes the operator view with a short graphic transition; the outgoing stream is unaffected.
+
+**Black / standby** immediately replaces outgoing picture and audio. Expand Standby settings to choose black, a branded message, a saved element, or a looping ad/video. Messages are editable. The error selector copies actual media/encoder errors only when chosen; network destinations are removed from that copy. Return to program restores the existing paused/playing rundown. Click the header channel icon to set the channel name, description and imported or Build-made logo.
+
+Scene-name shorthand is separate from editable text: `{{element:main-logo|Station logo}}` assigns the channel's main logo; `{{element:break|We'll be right back}}` categorizes a break screen. Other categories include logo, overlay, lower-third, title, ticker, clock, ident, replay, effect and credits. Editable object text retains the `{{studio:Field label}}Visible text` syntax.
+
+Production accounts, isolated multiple channels and timed multi-source split layouts remain under development; this update does not provide a public cloud account service.
+
+Text formatting: in Build > Typography > Formatting, choose Markdown for `**bold**`, `*italic*`, `~~strike~~`, headings, lists, quotes and inline code. Plain text remains the default for existing objects. Studio-editable text keeps this format and its original animation. Raw HTML is disabled.
+
+Programs supports search and List/Grid thumbnail cards. Cards use your poster when provided; the fallback is a program icon, not a fabricated thumbnail.

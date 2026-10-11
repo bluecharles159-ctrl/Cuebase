@@ -47,7 +47,8 @@ QJsonObject newCueBoardEntry(const QJsonObject &cue){
     QJsonObject entry=cue;entry["id"]=Library::newId();entry["cue"]=cue["id"];entry["repeat"]=repetitions(cue);entry["hold"]=cue["hold"].toBool(true);entry["holdManual"]=manualHold(cue);entry["holdMs"]=double(holdTime(cue));entry.remove("trigger");entry.remove("triggerMs");entry["sections"]=QJsonArray{};return entry;
 }
 CuePlan compileAnimationCue(const ElementDesign &source,const QJsonObject &cue){CuePlan plan;appendCue(plan,source,cue,{},0,source.toJson());return plan;}
-CuePlan compileCueBoard(const ElementDesign &source,const QJsonArray &board){
+CuePlan compileCueBoard(const ElementDesign &source,const QJsonArray &board,const QJsonObject &settings,int depth){
+    if(depth>8)return CuePlan{{},"Cue nesting exceeds eight levels."};
     CuePlan plan;
     for(const auto &value:board){
         const auto entry=value.toObject();if(entry["disabled"].toBool())continue;
@@ -63,8 +64,9 @@ CuePlan compileCueBoard(const ElementDesign &source,const QJsonArray &board){
             QList<QJsonObject> children;for(const auto &child:design.animationCues)children.append(child.toObject());
             if(!section["design"].toString().isEmpty()&&!children.isEmpty()){
                 std::sort(children.begin(),children.end(),[](const auto &a,const auto &b){return a["start"].toDouble()<b["start"].toDouble();});
-                const int childFirst=plan.steps.size();
-                for(const auto &child:children)appendCue(plan,design,child,entry["id"].toString(),n,json);
+                QJsonArray childBoard=section["board"].toArray();if(!section.contains("board"))for(const auto &child:children)childBoard.append(newCueBoardEntry(child));
+                auto nested=compileCueBoard(design,childBoard,section["boardSettings"].toObject(),depth+1);if(!nested.error.isEmpty()){plan.error=nested.error;return plan;}
+                const int childFirst=plan.steps.size();for(auto step:nested.steps){step.entryId=entry["id"].toString();step.iteration=n;if(step.loopTo>=0)step.loopTo+=childFirst;plan.steps.append(step);}
                 if(plan.steps.size()>childFirst){auto &last=plan.steps.last();last.holdMs+=holdTime(cue);last.manualHold=last.manualHold||manualHold(cue);}
             }else{
                 auto once=cue;once["repeat"]=1;once["loop"]=false;
@@ -75,6 +77,11 @@ CuePlan compileCueBoard(const ElementDesign &source,const QJsonArray &board){
         }
         if(cue["loop"].toBool()&&plan.steps.size()>first)plan.steps.last().loopTo=first;
     }
+    if(!plan.steps.isEmpty()){
+        plan.steps.last().holdMs+=holdTime(settings);plan.steps.last().manualHold|=settings["hold"].toBool(false)&&manualHold(settings);
+        const auto cycle=plan.steps;for(int repeat=1;repeat<repetitions(settings);++repeat){const int offset=plan.steps.size();if(offset+cycle.size()>10000){plan.error="This board exceeds 10,000 playback sections.";return plan;}for(auto step:cycle){if(step.loopTo>=0)step.loopTo+=offset;plan.steps.append(step);}}
+        if(settings["loop"].toBool())plan.steps.last().loopTo=0;
+    }
     return plan;
 }
 QString cueTimingLabel(const QJsonObject &cue){
@@ -82,3 +89,16 @@ QString cueTimingLabel(const QJsonObject &cue){
     if(manualHold(cue))label+=" · Manual hold";else if(holdTime(cue)>0)label+=QString(" · Hold %1 s each").arg(holdTime(cue)/1000.,0,'g',4);
     return label;
 }
+
+QJsonObject bakeCueBoard(const Element &element){auto design=ElementDesign::fromJson(element.design);for(int i=0;i<design.animationCues.size();++i){auto cue=design.animationCues[i].toObject();cue["trigger"]="Manual";cue.remove("triggerMs");design.animationCues[i]=cue;}auto settings=element.cueBoardSettings;settings.remove("_placementLength");settings.remove("_cycle");return {{"design",design.toJson()},{"cueBoard",element.cueBoard},{"settings",settings}};}
+bool canEditCueBoard(const Element &before,const Element &after,qint64 start,qint64 now,bool live,QString *reason){
+    if(!live)return true;const auto plan=compileCueBoard(ElementDesign::fromJson(before.design),before.cueBoard,before.cueBoardSettings);
+    qint64 earliest=start;const bool global=before.design!=after.design||before.cueBoardSettings!=after.cueBoardSettings;
+    int first=0;if(!global){while(first<before.cueBoard.size()&&first<after.cueBoard.size()&&before.cueBoard[first]==after.cueBoard[first])++first;if(first==before.cueBoard.size()&&first==after.cueBoard.size())return true;QSet<QString> prefix;for(int i=0;i<first;++i)prefix.insert(before.cueBoard[i].toObject()["id"].toString());for(const auto &step:plan.steps){if(!prefix.contains(step.entryId))break;if(step.duration()<0||step.loopTo>=0){earliest=now;break;}earliest+=step.duration();}}
+    if(earliest-now>=300000)return true;if(reason)*reason="On air, only cues at least five minutes ahead may be changed. Played and near-air cues are protected.";return false;
+}
+
+Element cueBoardContext(const Element &root,const QStringList &path){Element current=root;for(int at=0;at+1<path.size();at+=2){QJsonObject entry;for(auto value:current.cueBoard)if(value.toObject()["id"].toString()==path[at])entry=value.toObject();const auto sections=entry["sections"].toArray();const int n=path[at+1].toInt();if(entry.isEmpty()||n<0||n>=sections.size())return {};const auto section=sections[n].toObject();current.design=section["design"].toString();current.name=section["name"].toString(entry["name"].toString()+QString(" · Play %1").arg(n+1));current.cueBoard=section["board"].toArray();current.cueBoardSettings=section["boardSettings"].toObject();if(!section.contains("board")){auto d=ElementDesign::fromJson(current.design);QList<QJsonObject> cues;for(auto c:d.animationCues)cues.append(c.toObject());std::sort(cues.begin(),cues.end(),[](auto a,auto b){return a["start"].toDouble()<b["start"].toDouble();});for(auto c:cues)current.cueBoard.append(newCueBoardEntry(c));}}return current;}
+QJsonObject cueBoardSection(const Element &root,const QStringList &path){if(path.size()<2)return {};auto parent=cueBoardContext(root,path.mid(0,path.size()-2));for(auto value:parent.cueBoard){auto e=value.toObject();if(e["id"].toString()!=path[path.size()-2])continue;auto sections=e["sections"].toArray();int n=path.last().toInt();return n>=0&&n<sections.size()?sections[n].toObject():QJsonObject{};}return {};}
+bool setCueBoardSection(Element &root,const QStringList &path,const QJsonObject &section){if(path.size()<2||path.size()%2)return false;auto parentPath=path.mid(0,path.size()-2);auto parent=cueBoardContext(root,parentPath);for(int i=0;i<parent.cueBoard.size();++i){auto e=parent.cueBoard[i].toObject();if(e["id"].toString()!=path[path.size()-2])continue;int n=path.last().toInt();if(n<0||n>=100)return false;auto sections=e["sections"].toArray();while(sections.size()<=n)sections.append(QJsonObject{});sections[n]=section;e["sections"]=sections;parent.cueBoard[i]=e;return setCueBoardContext(root,parentPath,parent);}return false;}
+bool setCueBoardContext(Element &root,const QStringList &path,const Element &context){if(path.isEmpty()){root=context;return true;}auto section=cueBoardSection(root,path);section["design"]=context.design;section["board"]=context.cueBoard;section["boardSettings"]=context.cueBoardSettings;section["name"]=context.name;return setCueBoardSection(root,path,section);}

@@ -19,6 +19,8 @@ public:
     QSet<QString> sel;
     qint64 t = 0;
     bool playing = false;
+    QString previewCueId;
+    qint64 previewCueElapsed=0, cueRangeStart=-1, cueRangeEnd=-1;
     bool autoKey = false;              // OFF by default; explicit property key buttons are the normal workflow
     QString selChannel;
     bool isolateParents=false;
@@ -110,6 +112,7 @@ public:
     void notify() { emit changed(); }
 
 signals:
+    void cuePlaybackRequested();
     void cueFramesRequested(qint64 start,qint64 end);
     void cueEditorRequested(const QString &cueId);
     void changed();

@@ -1,4 +1,5 @@
 #include "ControlPanel.h"
+#include "Continuity.h"
 #include "UiControls.h"
 #include "ElementLibrary.h"
 
@@ -77,11 +78,12 @@ ControlPanel::ControlPanel(Library *lib, Playout *play, QWidget *parent, Network
     l->addWidget(m_pause);
     l->addWidget(m_skip);
     l->addWidget(m_break);
+    l->addWidget(continuityControls(lib,play,output));
 
     l->addSpacing(6);
     l->addWidget(caption("VOLUME"));
     auto *volume = new QSlider(Qt::Horizontal);
-    volume->setRange(0, 100);
+    volume->setRange(0, 100);volume->setSingleStep(1);volume->setPageStep(5);volume->setObjectName("masterVolume");volume->setToolTip("Broadcast volume · Scroll vertically to adjust");
     volume->setValue(80);
     auto *mute = new QCheckBox("Mute");
     l->addWidget(volume);

@@ -133,6 +133,7 @@ protected:
         QPainter p(this);p.setRenderHint(QPainter::Antialiasing);p.fillRect(rect(),QColor("#28292c"));auto r=area();p.fillRect(r,QColor("#303135"));QFont f=font();f.setPixelSize(10);p.setFont(f);
         double frames0=t0/m->frameMs(),frames1=t1/m->frameMs(),step=qMax(1.,niceStep(frames1-frames0,r.width()));step=qCeil(step);
         for(double frame=std::ceil(frames0/step)*step;frame<=frames1;frame+=step){double x=r.left()+(frame*m->frameMs()-t0)/(t1-t0)*r.width();p.setPen(QColor("#414247"));p.drawLine(QPointF(x,r.top()),QPointF(x,r.bottom()));p.setPen(QColor("#a7a9b0"));p.drawText(QRectF(x+3,1,62,17),tickText(frame));}
+        if(m->cueRangeStart>=0){const double a=r.left()+(m->cueRangeStart-t0)/(t1-t0)*r.width(),b=r.left()+(m->cueRangeEnd-t0)/(t1-t0)*r.width();p.save();p.setClipRect(r);p.fillRect(QRectF(a,r.top(),qMax(1.,b-a),r.height()),QColor(82,207,151,48));p.setPen(QPen(QColor("#7ee5b1"),2));p.drawLine(QPointF(a,r.top()),QPointF(a,r.bottom()));p.drawLine(QPointF(b,r.top()),QPointF(b,r.bottom()));p.restore();}
         if(graph){double stepY=niceStep(v1-v0,r.height());for(double value=std::ceil(v0/stepY)*stepY;value<=v1;value+=stepY){double y=r.bottom()-(value-v0)/(v1-v0)*r.height();p.setPen(QColor(qAbs(value)<1e-8?"#73767e":"#414247"));p.drawLine(QPointF(r.left(),y),QPointF(r.right(),y));p.setPen(QColor("#b8bac2"));p.drawText(QRectF(0,y-7,55,16),Qt::AlignRight,tickText(value));}}
         p.save();p.setClipRect(r.adjusted(-5,0,5,0));
         if(graph)for(auto ref:tracks()){
@@ -149,7 +150,7 @@ protected:
                     QPointF c(r.left()+(time.key()-t0)/(t1-t0)*r.width(),y);p.setPen(QColor("#292a2e"));p.setBrush(sel?QColor("#f1c66b"):active?QColor("#81b7ed"):QColor("#8b8e96"));p.drawPolygon(QPolygonF{{c.x(),c.y()-4},{c.x()+4,c.y()},{c.x(),c.y()+4},{c.x()-4,c.y()}});if(dirty){p.setPen(QPen(QColor("#ff9d53"),1.5));p.setBrush(Qt::NoBrush);p.drawEllipse(c,6,6);}}
             }
         }
-        if(drag==Box){p.setPen(QColor("#7fa9d6"));p.setBrush(QColor(100,160,220,25));p.drawRect(QRectF(press,last).normalized());}p.restore();
+        if(drag==Box){p.setPen(QColor("#74d6a3"));p.setBrush(QColor(75,190,135,38));p.drawRect(QRectF(press,last).normalized());}p.restore();
         double x=r.left()+(m->t-t0)/(t1-t0)*r.width();if(x>=r.left()&&x<=r.right()){p.setPen(QPen(QColor("#77a6d9"),1));p.drawLine(QPointF(x,r.top()),QPointF(x,r.bottom()));QString label=QString::number(qRound(double(m->t)/m->frameMs()));double w=qMax(24,p.fontMetrics().horizontalAdvance(label)+10);p.setPen(Qt::NoPen);p.setBrush(QColor("#426b9f"));p.drawRoundedRect(QRectF(qBound(0.,x-w/2,width()-w),1,w,18),3,3);p.setPen(Qt::white);p.drawText(QRectF(qBound(0.,x-w/2,width()-w),1,w,18),Qt::AlignCenter,label);p.setPen(Qt::NoPen);p.setBrush(QColor("#77a6d9"));p.drawPolygon(QPolygonF{{x-5,20},{x+5,20},{x,27}});}
         publishView();
     }

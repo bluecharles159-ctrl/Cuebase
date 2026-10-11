@@ -33,6 +33,10 @@ const QVector<SceneEffectControl> &sceneEffectControls(){
         {"Optics","Blur (px)","scene.blur",0,40,0,.5},
         {"Optics","Vignette","scene.vignette",0,1,0,.01},
         {"Optics","Chromatic offset (px)","scene.chromatic",0,16,0,.25},
+        {"Texture","Light sweep strength","scene.sweep",0,1,0,.01},
+        {"Texture","Light sweep position","scene.sweepPosition",-1,2,0,.01},
+        {"Texture","Light sweep width","scene.sweepWidth",.01,1,.15,.01},
+        {"Texture","Light sweep angle","scene.sweepAngle",-90,90,25,1},
         {"Texture","Film grain","scene.grain",0,.3,0,.005},
         {"Texture","Scanlines","scene.scanlines",0,.5,0,.01},
         {"Motion","Pulse amplitude","scene.pulse",0,.3,0,.005},
@@ -48,7 +52,7 @@ double sceneEffectValue(const ElementDesign &design,const QString &key,qint64 ti
     const qint64 at=key!="scene.mix"&&design.loop&&design.durationMs>0?qMax<qint64>(0,time)%design.durationMs:qBound(qint64(0),time,qint64(design.durationMs));
     double value=o->propertyValue(key,at);return std::isfinite(value)?value:fallback;
 }
-QStringList sceneEffectPresets(){return {"Fade","Zoom reveal","Screen breathing","Pulse","Desaturate and slow","Flash","Soft focus","Chromatic impact"};}
+QStringList sceneEffectPresets(){return {"Fade","Zoom reveal","Screen breathing","Pulse","Desaturate and slow","Flash","Soft focus","Chromatic impact","Metal light sweep"};}
 ElementDesign sceneEffectPreset(const QString &name){
     auto d=ElementDesign::defaultScene();d.loop=false;d.durationMs=1200;d.world.transparent=true;
     d.objects.removeIf([](const DObject &o){return o.type!="Camera";});
@@ -63,6 +67,7 @@ ElementDesign sceneEffectPreset(const QString &name){
     else if(name=="Flash"){key("scene.exposure",0,3,0);key("scene.blur",0,6,0);}
     else if(name=="Soft focus"){key("scene.blur",0,18,0);key("scene.vignette",0,.45,0);}
     else if(name=="Chromatic impact"){key("scene.chromatic",0,10,0);key("scene.shake",0,.025,0);key("scene.contrast",1,1.5,1);}
+    else if(name=="Metal light sweep"){d.durationMs=2200;d.loop=true;o.style["scene.sweep"]=.65;o.keyChannel("scene.sweepPosition",0,-.5);o.keyChannel("scene.sweepPosition",d.durationMs,1.5);}
     o.captureDefaults();d.objects.append(o);return d;
 }
 QImage sceneEffectSample(QSize size,bool alternate){
@@ -89,6 +94,7 @@ QImage applySceneEffect(const QImage &source,const ElementDesign &design,qint64 
     if(zoom!=1||shake||v("scene.x")||v("scene.y")||v("scene.rotation")){
         QImage transformed(image.size(),image.format());transformed.fill(Qt::black);QPainter p(&transformed);p.setRenderHint(QPainter::SmoothPixmapTransform);QPointF pivot(width*v("scene.pivotX",.5),height*v("scene.pivotY",.5));p.translate(pivot+QPointF(width*(v("scene.x")+shake*std::sin(phase*7.1)),height*(v("scene.y")+shake*std::sin(phase*9.3))));p.rotate(v("scene.rotation"));p.scale(zoom,zoom);p.translate(-pivot);p.drawImage(0,0,image);p.end();image=transformed;
     }
+    if(v("scene.sweep")>0){QPainter sweep(&image);sweep.setCompositionMode(QPainter::CompositionMode_Screen);sweep.translate(width*v("scene.sweepPosition"),height*.5);sweep.rotate(v("scene.sweepAngle",25));const double band=width*v("scene.sweepWidth",.15);QLinearGradient light(-band,0,band,0);light.setColorAt(0,QColor(0,0,0,0));light.setColorAt(.5,QColor(235,245,255,qRound(v("scene.sweep")*255)));light.setColorAt(1,QColor(0,0,0,0));sweep.fillRect(QRectF(-band,-height*2,band*2,height*4),light);}
     if(layers){QPainter p(&image);design.render(p,image.rect(),time,true,nullptr,design.loop);}return image;
 }
 QImage sceneEffectPreview(const ElementDesign &design,QSize size,qint64 time){

@@ -13,6 +13,7 @@
 #include "CueSequence.h"
 class DesignAudio;
 class Replay;
+class ContinuityOutput;
 
 class QAudioOutput;
 class QMediaPlayer;
@@ -78,6 +79,7 @@ public:
     double volume() const { return m_volume; }
     bool muted() const { return m_muted; }
     Replay *replay();
+    ContinuityOutput *continuity();
     void setReplayMix(double value){m_replayMix=qBound(0.,value,1.);applyAudio();}
     void finishReplay(){if(m_finishAfterReplay){m_finishAfterReplay=false;finishAll();}}
     struct GraphicPlayback {bool visible=false,controlled=false; qint64 time=0;QString cue;bool advancing=true;QString design;int boardStep=-1;
@@ -135,6 +137,7 @@ private:
     void layerAudio(const Placement &pl, Sfx &s) const;
     void stopSound(const QString &id);
 
+    ContinuityOutput *m_continuity=nullptr;
     Library *m_lib;
     QList<Segment> m_segs;
     QVector<qint64> m_starts;

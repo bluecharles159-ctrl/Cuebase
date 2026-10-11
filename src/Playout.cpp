@@ -1,4 +1,5 @@
 #include "Playout.h"
+#include "Continuity.h"
 #include "Replay.h"
 #include "DesignAudio.h"
 #include <QDateTime>
@@ -41,6 +42,8 @@ Playout::Playout(Library *lib, QObject *parent) : QObject(parent), m_lib(lib) {
     connect(lib, &Library::layersChanged, this, [this] { applyAudio(); });
     rebuild();
 }
+
+ContinuityOutput *Playout::continuity(){if(!m_continuity){m_continuity=new ContinuityOutput(m_lib,this);connect(m_continuity,&ContinuityOutput::audioSourceCreated,this,&Playout::audioSourceCreated);connect(m_continuity,&ContinuityOutput::changed,this,[this]{applyAudio();emit ticked();});emit audioSourceCreated(m_continuity->findChild<QMediaPlayer*>(),m_continuity->findChild<QAudioOutput*>());}return m_continuity;}
 
 const Segment *Playout::current() const {
     if (m_state == Stopped || m_index < 0 || m_index >= m_segs.size()) return nullptr;
@@ -214,7 +217,8 @@ void Playout::rebuild() {
             a.title = spotAd ? spotAd->name : p.title;
             a.kind = "Ad";
             a.file = spotAd ? spotAd->file : QString();
-            a.ms = (spotAd ? spotAd->seconds : p.seconds) * 1000;
+            a.ms = p.seconds * 1000;
+            a.offsetMs=p.offsetMs;
             a.fx = spotAd ? spotAd->fx : Transition();
             m_segs << a;
             continue;
@@ -491,14 +495,15 @@ void Playout::layerAudio(const Placement &pl, Sfx &s) const {
     if (!s.out) return;
     const LayerState &ls = m_lib->layers.value(qBound(0, pl.layer, 3));
     s.out->setVolume(float(m_volume * ls.volume / 100.0 * (1-m_replayMix)));
-    s.out->setMuted(m_muted || ls.muted);
+    s.out->setMuted(m_muted || ls.muted || (m_continuity&&m_continuity->active()));
 }
 
 void Playout::applyAudio() {
     syncDesignAudio();
     const LayerState &main = m_lib->layers.value(0);
     m_audio->setVolume(float(m_volume * main.volume / 100.0 * (1-m_replayMix)));
-    m_audio->setMuted(m_muted || main.muted);
+    m_audio->setMuted(m_muted || main.muted || (m_continuity&&m_continuity->active()));
+    if(m_continuity)m_continuity->setAudio(m_volume,m_muted);
     for (const Placement &pl : std::as_const(m_lib->placements)) {
         const auto it = m_sfx.find(pl.id);
         if (it != m_sfx.end()) layerAudio(pl, *it);
@@ -587,11 +592,11 @@ void Playout::syncDesignAudio(){
         auto found=m_audioDesigns.find(element.id);if(found==m_audioDesigns.end()||found->first!=element.design)found=m_audioDesigns.insert(element.id,{element.design,ElementDesign::fromJson(element.design)});
         cues.append(designAudioCues(found->second,time,m_state==Playing&&advancing,element.id+"/",gain,!controlled));
     };
-    if(m_state!=Stopped){const double gain=m_muted?0:m_volume*(1-m_replayMix);
+    if(m_state!=Stopped&&!(m_continuity&&m_continuity->active())){const double gain=m_muted?0:m_volume*(1-m_replayMix);
         for(const auto &element:m_lib->elements){const auto playback=graphicPlayback(element,timelinePosMs());if(playback.visible)append(playback.resolved(element),playback.time,gain,playback.controlled,playback.advancing);else if(playback.controlled)drawn.insert(element.id);}
         for(const auto &placement:m_lib->placements){const auto layer=m_lib->layers.value(qBound(0,placement.layer,3));
             if(placement.type!="Element"||!layer.visible||timelinePosMs()<placement.startMs||timelinePosMs()>=placement.startMs+placement.lengthMs())continue;
-            if(const auto *element=m_lib->element(placement.refId)){const auto playback=graphicPlayback(*element,timelinePosMs(),placement.startMs,placement.offsetMs);if(playback.visible)append(playback.resolved(*element),playback.time,layer.muted?0:gain*layer.volume/100.,playback.controlled,playback.advancing);}
+            {const auto instance=m_lib->placementElement(placement);const auto *element=&instance;const auto playback=graphicPlayback(*element,timelinePosMs(),placement.startMs,placement.offsetMs);if(playback.visible)append(playback.resolved(*element),playback.time,layer.muted?0:gain*layer.volume/100.,playback.controlled,playback.advancing);}
         }
     }
     m_designAudio->sync(cues);

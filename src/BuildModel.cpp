@@ -28,6 +28,7 @@ void BuildModel::reset(const ElementDesign &d) {
     selChannel.clear();
     t = 0;
     playing = false;
+    previewCueId.clear();previewCueElapsed=0;cueRangeStart=cueRangeEnd=-1;
     autoKey = false;
     editMode = false;
     esel.clear();

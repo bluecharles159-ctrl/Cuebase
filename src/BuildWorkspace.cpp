@@ -1,6 +1,8 @@
 #include <QSignalBlocker>
 #include "UiControls.h"
 #include "BuildWorkspace.h"
+#include "CueSequence.h"
+#include <QRegularExpression>
 #include <QJsonDocument>
 #include "ElementLibrary.h"
 
@@ -1255,7 +1257,9 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     ticker->setInterval(16);
     auto clockT = std::make_shared<QElapsedTimer>();
     connect(ticker, &QTimer::timeout, this, [=, this] {
+        if(!m->playing){ticker->stop();return;}
         const qint64 dt = clockT->restart();
+        if(!m->previewCueId.isEmpty()){for(auto v:m->design.animationCues){const auto cue=v.toObject();if(cue["id"].toString()!=m->previewCueId)continue;m->previewCueElapsed+=dt;const auto sample=compileAnimationCue(m->design,cue).sample(m->previewCueElapsed);if(sample.visible)m->setTime(sample.frame);else{m->setTime(cue["end"].toDouble());m->playing=false;ticker->stop();}return;}}
         qint64 t = m->t + dt;
         if (t >= m->design.durationMs) {
             if (m->design.loop) {
@@ -1271,7 +1275,8 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     auto togglePlay = [=, this] {
         m->playing = !m->playing;
         if (m->playing) {
-            if (m->t >= m->design.durationMs || m->t < m->design.startMs) m->t = m->design.startMs;
+            if(!m->previewCueId.isEmpty()){m->previewCueElapsed=0;for(auto v:m->design.animationCues)if(v.toObject()["id"].toString()==m->previewCueId)m->t=v.toObject()["start"].toDouble();}
+            if (m->previewCueId.isEmpty()&&(m->t >= m->design.durationMs || m->t < m->design.startMs)) m->t = m->design.startMs;
             clockT->start();
             ticker->start();
         } else {
@@ -1282,6 +1287,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
         m->notify();
     };
     connect(play, &QPushButton::clicked, this, togglePlay);
+    connect(m,&BuildModel::cuePlaybackRequested,this,togglePlay);
     connect(toStart, &QPushButton::clicked, this, [m] { m->setTime(m->design.startMs); });
     connect(loop, &QCheckBox::toggled, this, [m](bool on) { m->design.loop = on; });
     connect(dur, &QDoubleSpinBox::valueChanged, this, [=, this](double s) {
@@ -1385,7 +1391,7 @@ void BuildWorkspace::exportFile(){
 }
 
 void BuildWorkspace::newElement() {
-    m_cueEntry.clear();m_cueIteration=-1;
+    m_cueEntry.clear();m_cueIteration=-1;m_cuePath.clear();m_cuePlacement.clear();
     m_editingId.clear();
     refreshElements();m_name->setText("New element");
     m_msg->clear();
@@ -1402,7 +1408,7 @@ void BuildWorkspace::newElement() {
 }
 
 void BuildWorkspace::editElement(const QString &id) {
-    m_cueEntry.clear();m_cueIteration=-1;
+    m_cueEntry.clear();m_cueIteration=-1;m_cuePath.clear();m_cuePlacement.clear();
     const Element *e = m_lib->element(id);
     if (!e) {
         newElement();
@@ -1433,20 +1439,15 @@ void BuildWorkspace::editElement(const QString &id) {
     m_canvas->frameAll();
 }
 
-void BuildWorkspace::editCueSection(const QString &elementId,const QString &entryId,int iteration){
-    const auto *element=m_lib->element(elementId);if(!element||iteration<0||iteration>=100)return;
-    for(const auto &value:element->cueBoard){const auto entry=value.toObject();if(entry["id"].toString()!=entryId)continue;
-        const auto source=ElementDesign::fromJson(element->design);QJsonObject cue;for(const auto &c:source.animationCues)if(c.toObject()["id"]==entry["cue"]){cue=c.toObject();break;}if(cue.isEmpty())return;
-        const auto sections=entry["sections"].toArray();const auto section=iteration<sections.size()?sections[iteration].toObject():QJsonObject{};
-        auto design=section["design"].toString().isEmpty()?source:ElementDesign::fromJson(section["design"].toString());
-        if(section["design"].toString().isEmpty()){design.animationCues={};design.startMs=cue["start"].toInt();design.durationMs=cue["end"].toInt();design.loop=false;}
-        const auto fields=section["fields"].toObject();for(auto it=fields.begin();it!=fields.end();++it)setStudioField(design,it.key(),it.value().toString());
-        m_editingId=elementId;m_cueEntry=entryId;m_cueIteration=iteration;m_cueBase=QString::fromUtf8(QJsonDocument(entry).toJson(QJsonDocument::Compact));refreshElements();m_name->setText(section["name"].toString(QString("%1 · %2 · Play %3").arg(element->name,cue["name"].toString()).arg(iteration+1)));m_model->reset(design);m_model->setTime(design.startMs);m_savedJson=design.toJson();m_savedName=m_name->text();m_draftName=m_name->text();m_canvas->frameAll();say("Editing an independent repetition. New cues stay inside this section.");return;
-    }
+void BuildWorkspace::editCueSection(const QString &elementId,const QString &entryId,int iteration){editCuePath(elementId,{}, {entryId,QString::number(iteration)});}
+void BuildWorkspace::editCuePath(const QString &elementId,const QString &placementId,const QStringList &path){
+    if(path.size()<2||path.size()%2)return;Element root;if(!placementId.isEmpty()){auto *p=m_lib->placement(placementId);if(!p)return;root=m_lib->placementElement(*p);}else{const auto *e=m_lib->element(elementId);if(!e)return;root=*e;}
+    const auto parent=cueBoardContext(root,path.mid(0,path.size()-2));QJsonObject entry;for(auto v:parent.cueBoard)if(v.toObject()["id"].toString()==path[path.size()-2])entry=v.toObject();if(entry.isEmpty())return;const auto source=ElementDesign::fromJson(parent.design);QJsonObject cue;for(auto c:source.animationCues)if(c.toObject()["id"]==entry["cue"])cue=c.toObject();if(cue.isEmpty())return;const auto section=cueBoardSection(root,path);auto design=section["design"].toString().isEmpty()?source:ElementDesign::fromJson(section["design"].toString());if(section["design"].toString().isEmpty()){design.animationCues={};design.startMs=cue["start"].toInt();design.durationMs=cue["end"].toInt();design.loop=false;}const auto fields=section["fields"].toObject();for(auto key:fields.keys())setStudioField(design,key,fields[key].toString());
+    m_editingId=elementId;m_cuePath=path;m_cuePlacement=placementId;m_cueEntry=entry["id"].toString();m_cueIteration=path.last().toInt();m_cueBase=QString::fromUtf8(QJsonDocument(bakeCueBoard(root)).toJson(QJsonDocument::Compact));refreshElements();m_name->setText(section["name"].toString(parent.name+" · "+cue["name"].toString()+QString(" · Play %1").arg(m_cueIteration+1)));m_model->reset(design);m_model->setTime(design.startMs);m_savedJson=m_model->design.toJson();m_savedName=m_draftName=m_name->text();m_canvas->frameAll();say("Independent cue keyframes. New cues become children of this section.");
 }
 
 void BuildWorkspace::newEffect() {
-    m_cueEntry.clear();m_cueIteration=-1;
+    m_cueEntry.clear();m_cueIteration=-1;m_cuePath.clear();m_cuePlacement.clear();
     m_editingId.clear();refreshElements();m_name->setText("New effect");m_msg->clear();
     m_model->reset(sceneEffectPreset("Fade"));m_model->select(sceneEffect(m_model->design)->id);
     m_savedJson=m_model->design.toJson();m_savedName=m_name->text();m_draftName=m_name->text();
@@ -1455,7 +1456,9 @@ void BuildWorkspace::newEffect() {
 }
 
 void BuildWorkspace::save() {
-    const QString n = m_name->text().trimmed();
+    QString n = m_name->text().trimmed();QString semanticRole,semanticPlaylist;
+    if(m_cueIteration<0){static const QRegularExpression tag("^\\{\\{element:([a-z-]+)\\|([^{}\\r\\n]+)\\}\\}$");const auto match=tag.match(n);if(match.hasMatch()){semanticRole=match.captured(1);n=match.captured(2).trimmed();const QMap<QString,QString> categories{{"logo","Logos"},{"main-logo","Logos"},{"overlay","Overlays"},{"lower-third","Overlays"},{"title","Titles"},{"ticker","Overlays"},{"clock","Overlays"},{"break","Break screens"},{"ident","Break screens"},{"replay","Effects"},{"effect","Effects"},{"credits","Titles"}};if(!categories.contains(semanticRole)){say("Unknown scene category. Use logo, main-logo, overlay, lower-third, title, ticker, clock, break, ident, replay, effect or credits.",true);return;}semanticPlaylist=categories.value(semanticRole);m_name->setText(n);if(auto *camera=m_model->design.camera())camera->style["studio.sceneRole"]=semanticRole;}}
+
     if (n.isEmpty()) {
         say("Give the element a name first.", true);
         m_name->setFocus();
@@ -1467,11 +1470,10 @@ void BuildWorkspace::save() {
     }
     if (m_model->editMode) m_model->exitEdit();
     if(m_cueIteration>=0){
-        for(auto &element:m_lib->elements)if(element.id==m_editingId)for(int i=0;i<element.cueBoard.size();++i){auto entry=element.cueBoard[i].toObject();if(entry["id"].toString()!=m_cueEntry)continue;
-            if(QString::fromUtf8(QJsonDocument(entry).toJson(QJsonDocument::Compact))!=m_cueBase){say("This cue entry changed in Studio. Reopen its repetition before saving.",true);return;}
-            auto sections=entry["sections"].toArray();while(sections.size()<=m_cueIteration)sections.append(QJsonObject{});auto section=sections[m_cueIteration].toObject();section["design"]=m_model->design.toJson();auto fields=section["fields"].toObject();for(auto it=fields.begin();it!=fields.end();++it)if(const auto *o=m_model->design.find(it.key()))it.value()=o->text;section["fields"]=fields;section["name"]=n;sections[m_cueIteration]=section;entry["sections"]=sections;const auto previous=element.cueBoard;element.cueBoard[i]=entry;QString error;if(!m_lib->saveChecked(&error)){element.cueBoard=previous;say("Could not save this repetition: "+error,true);return;}m_cueBase=QString::fromUtf8(QJsonDocument(entry).toJson(QJsonDocument::Compact));m_lib->commitElements();m_savedJson=m_model->design.toJson();m_savedName=m_name->text();m_draftName=m_name->text();say("Saved this repetition. Source animation and other repetitions are unchanged.");return;
-        }
-        say("The cue entry was removed. Reopen it from Studio.",true);return;
+        Element root;Placement *placement=nullptr;Element *source=nullptr;if(!m_cuePlacement.isEmpty()){placement=m_lib->placement(m_cuePlacement);if(!placement){say("Timeline copy was removed.",true);return;}root=m_lib->placementElement(*placement);}else{for(auto &e:m_lib->elements)if(e.id==m_editingId)source=&e;if(!source){say("Source element was removed.",true);return;}root=*source;}
+        if(QString::fromUtf8(QJsonDocument(bakeCueBoard(root)).toJson(QJsonDocument::Compact))!=m_cueBase){say("This board changed elsewhere. Reopen its cue before saving.",true);return;}const auto before=root;auto section=cueBoardSection(root,m_cuePath);section["design"]=m_model->design.toJson();section["name"]=n;auto fields=section["fields"].toObject();for(auto it=fields.begin();it!=fields.end();++it)if(auto *o=m_model->design.find(it.key()))it.value()=o->text;section["fields"]=fields;
+        if(section.contains("board")){auto children=section["board"].toArray();for(auto value:m_model->design.animationCues){bool found=false;for(auto existing:children)found|=existing.toObject()["cue"]==value.toObject()["id"];if(!found)children.append(newCueBoardEntry(value.toObject()));}section["board"]=children;}
+        if(!setCueBoardSection(root,m_cuePath,section)){say("Cue section no longer exists.",true);return;}QString error;if(placement&&cueEditGuard&&!cueEditGuard(before,root,*placement,&error)){say(error,true);return;}const auto oldPlacement=placement?*placement:Placement{};const auto oldSnapshot=placement?placement->boardSnapshot:QJsonObject{};if(placement){const auto plan=compileCueBoard(ElementDesign::fromJson(root.design),root.cueBoard,root.cueBoardSettings);if(!plan.error.isEmpty()){say(plan.error,true);return;}placement->boardSnapshot=bakeCueBoard(root);if(plan.duration()>0){if(placement->lengthMs()==placement->boardCycleMs)placement->durationMs=plan.duration();placement->boardCycleMs=plan.duration();}}else source->cueBoard=root.cueBoard;if(!m_lib->saveChecked(&error)){if(placement)*placement=oldPlacement;else source->cueBoard=before.cueBoard;say(error,true);return;}m_cueBase=QString::fromUtf8(QJsonDocument(bakeCueBoard(root)).toJson(QJsonDocument::Compact));m_savedJson=m_model->design.toJson();m_savedName=m_draftName=m_name->text();if(placement)emit m_lib->placementsChanged();else emit m_lib->elementsChanged();say("Saved independent cue keyframes");return;
     }
     if(const auto *existing=m_lib->element(m_editingId)){const auto saved=ElementDesign::fromJson(existing->design).animationCues;for(int i=0;i<m_model->design.animationCues.size();++i){auto cue=m_model->design.animationCues[i].toObject();for(auto value:saved){const auto prior=value.toObject();if(prior["id"]==cue["id"])for(const auto *key:{"trigger","triggerMs"})if(prior.contains(key))cue[key]=prior[key];}m_model->design.animationCues[i]=cue;}}
     if(const auto *existing=m_lib->element(m_editingId)){
@@ -1491,7 +1493,7 @@ void BuildWorkspace::save() {
             e.name = n;
             e.design = json;
             e.type = sceneEffect(m_model->design)?"Effect":"Custom";
-            e.seconds = secs;refreshElementThumbnail(e);
+            e.seconds = secs;if(!semanticPlaylist.isEmpty())e.playlist=semanticPlaylist;refreshElementThumbnail(e);
             updated = true;
         }
     if (!updated) {
@@ -1499,7 +1501,7 @@ void BuildWorkspace::save() {
         e.id = Library::newId();
         e.name = n;
         e.type = sceneEffect(m_model->design)?"Effect":"Custom";
-        if(e.type=="Effect")e.playlist="Effects";
+        if(e.type=="Effect")e.playlist="Effects";if(!semanticPlaylist.isEmpty())e.playlist=semanticPlaylist;
         e.design = json;
         e.seconds = secs;
         e.color = color;
@@ -1509,6 +1511,8 @@ void BuildWorkspace::save() {
         m_lib->elements.append(e);m_name->setText(e.name);
         m_editingId = e.id;
     }
+    if(semanticRole=="main-logo")m_lib->display.channelLogoElement=m_editingId;
+    if(!semanticPlaylist.isEmpty()&&!m_lib->elementPlaylists.contains(semanticPlaylist))m_lib->elementPlaylists.append(semanticPlaylist);
     m_lib->commitElements();
     m_savedJson=m_model->design.toJson();m_savedName=m_name->text();m_draftName=m_name->text();
     say("Saved to screen elements");

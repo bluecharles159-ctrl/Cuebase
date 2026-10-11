@@ -1,6 +1,13 @@
 #include "MainWindow.h"
+#include "StudioCueBoard.h"
+#include "CueSequence.h"
+#include "ElementLibrary.h"
 
 #include <QAction>
+#include <QFormLayout>
+#include <QDialogButtonBox>
+#include <QLineEdit>
+#include <QComboBox>
 #include <QApplication>
 #include <QBrush>
 #include <QClipboard>
@@ -25,6 +32,7 @@
 #include <QMenuBar>
 #include <QMetaObject>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPixmap>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -73,6 +81,13 @@
 #include "Replay.h"
 #include "ViewportWidget.h"
 #include "NetworkOutput.h"
+
+class CueBoardDialog final:public QDialog {
+public:using QDialog::QDialog;
+    void done(int result)override{if(approveClose())QDialog::done(result);}
+protected:void closeEvent(QCloseEvent *event)override{if(!approveClose()){event->ignore();return;}QDialog::closeEvent(event);}
+private:bool approveClose(){auto *board=findChild<QWidget*>("studioCueBoard");if(!board||!board->property("dirty").toBool())return true;const auto choice=QMessageBox::question(this,"Cue board draft","Save this cue board before closing?",QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel,QMessageBox::Save);if(choice==QMessageBox::Cancel)return false;if(choice==QMessageBox::Discard){board->setProperty("dirty",false);return true;}if(auto *save=board->findChild<QPushButton*>("saveCueBoard"))save->click();return !board->property("dirty").toBool();}
+};
 
 namespace {
 
@@ -234,9 +249,14 @@ void MainWindow::buildMenus() {
     hl->setContentsMargins(10, 4, 10, 4);
     hl->setSpacing(8);
 
-    auto *logo = new QLabel;
-    logo->setPixmap(makeLogo(26));
-    logo->setToolTip("Cuebase");
+    auto *logo = new QToolButton;logo->setObjectName("channelProfile");logo->setIcon(QIcon(makeLogo(26)));logo->setIconSize({26,26});logo->setStyleSheet("QToolButton{border-radius:17px;padding:4px;background:#263640;}");logo->setToolTip("Channel profile");
+    auto refreshLogo=[this,logo]{QPixmap image(m_lib->display.channelLogo);if(const auto *element=m_lib->element(m_lib->display.channelLogoElement))image=QPixmap::fromImage(elementThumbnail(*element));if(image.isNull())logo->setIcon(QIcon(makeLogo(26)));else{QPixmap circle(26,26);circle.fill(Qt::transparent);QPainter painter(&circle);painter.setRenderHint(QPainter::Antialiasing);painter.setRenderHint(QPainter::SmoothPixmapTransform);painter.setPen(Qt::NoPen);painter.setBrush(QColor("#263640"));painter.drawEllipse(circle.rect());QPainterPath mask;mask.addEllipse(QRectF(circle.rect()));painter.setClipPath(mask);const auto fitted=image.scaled(22,22,Qt::KeepAspectRatio,Qt::SmoothTransformation);painter.drawPixmap((26-fitted.width())/2,(26-fitted.height())/2,fitted);painter.end();logo->setIcon(QIcon(circle));}logo->setToolTip(m_lib->display.channel+" / Channel profile");};refreshLogo();connect(m_lib,&Library::elementsChanged,logo,refreshLogo);
+    connect(logo,&QToolButton::clicked,this,[this,refreshLogo]{
+        QDialog dialog(this);dialog.setWindowTitle("Channel profile");dialog.setMinimumWidth(390);dialog.setStyleSheet("QDialog{background:#26313b;border-radius:12px;}QLabel{font-size:11px;}QLineEdit,QPlainTextEdit,QComboBox{border-radius:5px;padding:5px;}");auto *form=new QFormLayout(&dialog);form->setContentsMargins(18,18,18,18);
+        auto *name=new QLineEdit(m_lib->display.channel);auto *description=new QPlainTextEdit(m_lib->display.channelDescription);description->setMaximumHeight(80);auto *image=new QLineEdit(m_lib->display.channelLogo);auto *browse=new QPushButton(uiIcon("image"),"Import logo");auto *element=new QComboBox;element->addItem("Use imported image",QString());for(const auto &e:m_lib->elements)element->addItem(e.name,e.id);element->setCurrentIndex(qMax(0,element->findData(m_lib->display.channelLogoElement)));
+        form->addRow("Channel",name);form->addRow("About / focus",description);form->addRow("Logo image",image);form->addRow(browse);form->addRow("Build screen element",element);auto *error=new QLabel;error->setWordWrap(true);form->addRow(error);auto *buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);form->addRow(buttons);
+        connect(browse,&QPushButton::clicked,&dialog,[&]{const auto file=QFileDialog::getOpenFileName(&dialog,"Channel logo",{},"Images (*.png *.jpg *.jpeg *.webp *.svg)");if(!file.isEmpty()){image->setText(file);element->setCurrentIndex(0);}});connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);connect(buttons,&QDialogButtonBox::accepted,&dialog,[&]{if(name->text().trimmed().isEmpty()){error->setText("Enter a channel name.");return;}if(element->currentData().toString().isEmpty()&&!image->text().isEmpty()&&QImage(image->text()).isNull()){error->setText("Choose a readable logo image.");return;}const auto before=m_lib->display;m_lib->display.channel=name->text().trimmed();m_lib->display.channelDescription=description->toPlainText();m_lib->display.channelLogo=image->text();m_lib->display.channelLogoElement=element->currentData().toString();QString reason;if(!m_lib->saveChecked(&reason)){m_lib->display=before;error->setText(reason);return;}refreshLogo();dialog.accept();});dialog.exec();
+    });
     auto *divider = new QFrame;
     divider->setFrameShape(QFrame::VLine);
     divider->setFixedHeight(18);
@@ -470,6 +490,9 @@ void MainWindow::buildUi() {
     setCentralWidget(m_stack);
     connect(m_build, &BuildWorkspace::closeRequested, this, [this] { showStudio(); });
     connect(m_lib, &Library::buildRequested, this, [this](const QString &id) { showBuild(id, true); });
+    m_build->cueEditGuard=[this](const Element &before,const Element &after,const Placement &p,QString *error){return canEditCueBoard(before,after,p.startMs-p.offsetMs,m_play->playheadMs(),m_play->isLive(),error);};
+    connect(m_lib,&Library::cuePathBuildRequested,this,[this](const QString &id,const QString &placement,const QStringList &path){if(m_build->hasUnsavedChanges()&&!m_build->saveForClose())return;m_build->editCuePath(id,placement,path);showBuild({},false);});
+    connect(m_lib,&Library::openCuePlacementRequested,this,[this](const QString &id){const auto *p=m_lib->placement(id);if(!p)return;auto *dialog=new CueBoardDialog(this);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setWindowTitle("Timeline cue board · "+p->name);dialog->resize(570,780);auto *layout=new QVBoxLayout(dialog);auto *scroll=new QScrollArea;scroll->setWidgetResizable(true);scroll->setWidget(studioCueBoard(m_lib,m_play,p->refId,id));layout->addWidget(scroll);dialog->show();});
     connect(m_lib,&Library::cueBuildRequested,this,[this](const QString &id,const QString &entry,int iteration){if(m_build->hasUnsavedChanges()&&!m_build->saveForClose())return;m_build->editCueSection(id,entry,iteration);showBuild({},false);});
     connect(m_lib,&Library::effectRequested,this,[this]{
         if(m_build->hasUnsavedChanges()&&!m_build->saveForClose())return;
@@ -1033,10 +1056,11 @@ void MainWindow::onSpotRemoved(const QString &spotId) {
     if (!p) return;
     const QString name = p->title;
     const qint64 end = m_play->groupEndMs(spotId);
-    const qint64 len = qint64(p->seconds)*1000;
+    qint64 start=end;for(int i=0;i<m_play->segments().size();++i)if(m_play->segments()[i].programId==spotId){start=m_play->segmentStartMs(i);break;}
+    const qint64 len = end-start;
     m_lib->removeItem(spotId);
     m_lib->shiftPlacements(end, -len);  // whatever was placed after it moves back with the timeline
-    report(QString("Ad \u201c%1\u201d removed from the timeline").arg(name));
+    report(QString("\u201c%1\u201d removed from the timeline").arg(name));
 }
 
 void MainWindow::onPlacementRemoved(const QString &id) {

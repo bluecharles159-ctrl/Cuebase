@@ -83,7 +83,8 @@ private:
     QMediaPlayer *m_vplayer = nullptr;
     QVideoSink *m_vsink = nullptr;
     QTimer m_vtimer;
-    QElapsedTimer m_vclock;
+    QElapsedTimer m_vclock, m_monitorTransition, m_returnTransition;
+    QTimer m_transitionTimer;
     qint64 m_vlast = 0, m_viewMs = 0, m_vpending = -1;
     int m_viewSeg = -1;
     QPoint m_hoverPt{-1, -1};

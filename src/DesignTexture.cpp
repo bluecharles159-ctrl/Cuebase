@@ -101,7 +101,7 @@ QImage ElementDesign::textureFor(const DObject &o) const {
         QString text=o.text, transform=o.style["text.transform"].toString();
         if(transform=="Uppercase")text=text.toUpper();else if(transform=="Lowercase")text=text.toLower();
         else if(transform=="Capitalize")for(int i=0;i<text.size();++i)if(i==0||text[i-1].isSpace())text[i]=text[i].toUpper();
-        QTextDocument doc;doc.setDocumentMargin(0);doc.setDefaultFont(font);doc.setPlainText(text);doc.setTextWidth(w);
+        QTextDocument doc;doc.setDocumentMargin(0);doc.setDefaultFont(font);if(o.style["text.format"].toString()=="Markdown")doc.setMarkdown(text,QTextDocument::MarkdownFeatures(QTextDocument::MarkdownDialectGitHub)|QTextDocument::MarkdownNoHTML);else doc.setPlainText(text);doc.setTextWidth(w);
         QTextCursor cursor(&doc);cursor.select(QTextCursor::Document);
         QTextCharFormat chars;chars.setForeground(brush);cursor.mergeCharFormat(chars);
         QTextBlockFormat block;

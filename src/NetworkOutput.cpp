@@ -1,4 +1,5 @@
 #include "NetworkOutput.h"
+#include <QVariant>
 #include <QAudioBufferOutput>
 #include <QAudioBuffer>
 #include <QCoreApplication>
@@ -34,7 +35,7 @@ NetworkOutput::NetworkOutput(QObject *parent):QObject(parent){
     state("Network output stopped");
 }
 NetworkOutput::~NetworkOutput(){stop();}
-void NetworkOutput::state(const QString &text,bool live){m_status=text;m_streaming=live;emit statusChanged(text,live);}
+void NetworkOutput::state(const QString &text,bool live){if(live)setProperty("lastError",QVariant{});m_status=text;m_streaming=live;emit statusChanged(text,live);}
 void NetworkOutput::attachPlayer(QMediaPlayer *player,QAudioOutput *audio){
     if(!player)return;
     m_sources.removeIf([](const auto &source){return source.player.isNull();});
@@ -52,7 +53,7 @@ void NetworkOutput::attachPlayer(QMediaPlayer *player,QAudioOutput *audio){
     connect(player,&QObject::destroyed,this,[this]{m_sources.removeIf([](const auto &source){return source.player.isNull();});});
 }
 bool NetworkOutput::start(const StreamSettings &settings){
-    const auto error=validate(settings);if(!error.isEmpty()){state(error);return false;}if(!m_provider){state("No program picture is connected to network output.");return false;}
+    const auto error=validate(settings);if(!error.isEmpty()){setProperty("lastError",error);state(error);return false;}if(!m_provider){const QString reason="No program picture is connected to network output.";setProperty("lastError",reason);state(reason);return false;}
     stop();m_settings=settings;m_active=true;m_attempt=0;++m_session;launch();return true;
 }
 void NetworkOutput::launch(){
@@ -72,6 +73,7 @@ void NetworkOutput::release(){
 }
 void NetworkOutput::stop(){m_active=false;++m_session;release();for(auto &source:m_sources)source.data.clear();state("Network output stopped");}
 void NetworkOutput::fail(const QString &reason){
+    setProperty("lastError",reason);
     if(!m_active)return;release();
     if(m_attempt<m_settings.reconnects){++m_attempt;state(reason+QString(" · retry %1/%2 in 2 seconds").arg(m_attempt).arg(m_settings.reconnects));const int session=m_session;QTimer::singleShot(2000,this,[this,session]{if(m_active&&session==m_session)launch();});}
     else{m_active=false;state(reason+" · output stopped");}

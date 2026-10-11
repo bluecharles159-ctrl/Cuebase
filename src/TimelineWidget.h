@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QPoint>
+#include <QElapsedTimer>
+#include <QTimer>
 #include <QRect>
 #include <QString>
 #include <QVector>
@@ -64,7 +66,11 @@ private:
     enum class Drag { None, Playhead, Press, Foreign, TrimLeft, TrimRight, Pan, Range };
     qint64 m_rangeStart=-1,m_rangeEnd=-1;
     double m_pixelsPerSecond=14;
+    QElapsedTimer m_glassClock;
+    QTimer m_glassTimer;
     QString m_trimId;
+    bool m_trimProgram=false;
+    qint64 m_trimGroupEnd=0;
     qint64 m_trimStart=0,m_trimLength=0;
     int m_trimOffset=0,m_panScroll=0;
 
