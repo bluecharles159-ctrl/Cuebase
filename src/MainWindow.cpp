@@ -569,6 +569,7 @@ QWidget *MainWindow::buildPreview() {
     connect(tl, &TimelineWidget::placementRemoveRequested, this, &MainWindow::onPlacementRemoved);
     connect(tl, &TimelineWidget::placementLengthRequested, this, &MainWindow::onPlacementLength);
     connect(m_play, &Playout::segmentChanged, scroll, [this, tl, scroll] {
+        if(tl->fixedPlayhead())return;
         const int i = m_play->index();
         scroll->horizontalScrollBar()->setValue(i < 0 ? 0 : qMax(0, tl->blockX(i) - 30));
     });
@@ -585,6 +586,9 @@ QWidget *MainWindow::buildPreview() {
     row->addWidget(addBtn);
     auto tool=[&](QString label,QString icon,auto fn){auto *b=new QToolButton;b->setIcon(uiIcon(icon));b->setToolTip(label);b->setFixedSize(24,22);connect(b,&QToolButton::clicked,this,fn);row->addWidget(b);};
     tool("Fit timeline · Home","fit",[=]{tl->fitView();});tool("Zoom out","remove",[=]{tl->zoomView(1/1.25);});tool("Zoom in","add",[=]{tl->zoomView(1.25);});tool("Reveal playhead · F","cursor",[=]{tl->revealPlayhead();});
+    auto *fixed=new QToolButton;fixed->setObjectName("fixedTimelinePlayhead");fixed->setIcon(uiIcon("camera"));fixed->setCheckable(true);fixed->setFixedSize(24,22);row->addWidget(fixed);
+    auto updateFollow=[=]{fixed->setChecked(tl->fixedPlayhead());fixed->setToolTip(tl->followingPlayhead()?"Fixed-center playhead · pan to inspect, F to resume following":tl->fixedPlayhead()?"Following paused · F to center on the broadcast playhead":"Enable fixed-center playhead");};
+    connect(fixed,&QToolButton::clicked,tl,&TimelineWidget::setFixedPlayhead);connect(tl,&TimelineWidget::navigationChanged,fixed,updateFollow);updateFollow();
     auto *timeLabel=new QLabel;auto showTime=[=,this]{timeLabel->setText(QString("%1 s").arg(m_play->playheadMs()/1000.,0,'f',2));};connect(m_play,&Playout::ticked,timeLabel,showTime);showTime();row->addWidget(timeLabel);row->addStretch();auto *navHint=new QLabel("Wheel zoom · Middle drag pan · Alt wheel step");navHint->setStyleSheet("color:#969ca5;font-size:10px;");row->addWidget(navHint);
 
     navHint->hide();

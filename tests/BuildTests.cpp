@@ -41,6 +41,8 @@ private slots:
     void inspectorExpansionPerObject(){BuildModel m;Library lib;const auto first=m.addText();PropertyInspector inspector(&m,&lib);auto button=[&](QString title)->QToolButton*{QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);for(auto *b:inspector.findChildren<QToolButton*>())if(b->text()==title)return b;return nullptr;};QVERIFY(button("CORNERS"));QVERIFY(!button("CORNERS")->isChecked());button("CORNERS")->setChecked(true);const auto second=m.addText();QVERIFY(button("CORNERS"));QVERIFY(!button("CORNERS")->isChecked());m.select(first);QVERIFY(button("CORNERS")->isChecked());m.select(second);QVERIFY(!button("CORNERS")->isChecked());m.addText();QVERIFY(button("TYPOGRAPHY"));QVERIFY(button("TYPOGRAPHY")->isChecked());}
 
     void revealAndFrameExport(){
+          FrameExportOptions fractional;QVERIFY(fractional.setProjectFrameRate(30,1.001));QCOMPARE(fractional.fps,30000);QCOMPARE(fractional.fpsBase,1001);
+          QVERIFY(fractional.setProjectFrameRate(25,1.));QCOMPARE(fractional.fps,25);QCOMPARE(fractional.fpsBase,1);QVERIFY(!fractional.setProjectFrameRate(30,0.));QCOMPARE(fractional.fps,0);
         ElementDesign scene;scene.durationMs=120;scene.ensureCamera();scene.camera()->cam.ortho=true;
         DObject shape;shape.id="reveal-shape";shape.type="Shape";shape.w=4;shape.h=2;shape.base.rot={90,0,0};shape.mat.shadeless=true;
         const auto original=scene.textureFor(shape);shape.style["effects.reveal"]=1.;QCOMPARE(scene.textureFor(shape),original);

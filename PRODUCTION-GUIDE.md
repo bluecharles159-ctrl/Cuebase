@@ -22,6 +22,12 @@ Add entrance and exit cues to the Studio cue board. **Render board** begins play
 
 The placement time follows the playhead until manually adjusted. Arrows step a frame; horizontal dragging adjusts the seconds field. Turn Follow playhead back on to resume tracking. While on air, placement behind the playhead is rejected. Off air, earlier placement is allowed. Cuebase chooses a free overlay lane and reports when all three lanes overlap at the chosen time.
 
+## Studio timeline navigation
+
+**Fixed-center playhead** in the timeline toolbar keeps the broadcast playhead in the middle while clips and the ruler move underneath it, including at the beginning and end of the rundown. The mode is remembered between sessions. Turn it off for the conventional scrolling timeline.
+
+Middle-drag, Shift-wheel or the horizontal scrollbar lets you inspect another part of the timeline without seeking the broadcast. In fixed-center mode this pauses following. Press **F** or click **Reveal playhead** to resume. **Home / Fit timeline** shows the whole rundown and also pauses following. The plain wheel zooms, and zoom preserves the centered playhead while following. Alt-wheel retains the existing explicit playhead-stepping behavior.
+
 ## Local streaming tests and monitoring
 
 Open Studio → Monitor and click **Start local test receiver**. Start the rundown, then configure Network Output with one of:

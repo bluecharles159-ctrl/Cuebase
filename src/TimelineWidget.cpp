@@ -62,11 +62,12 @@ QColor segColor(const Segment &s) {
 TimelineWidget::TimelineWidget(Playout *play, Library *lib, QWidget *parent)
     : QWidget(parent), m_play(play), m_lib(lib) {
     m_glassClock.start();m_glassTimer.setInterval(50);connect(&m_glassTimer,&QTimer::timeout,this,[this]{if(isVisible())for(const auto &placement:m_lib->placements)if(!placement.boardSnapshot.isEmpty()){update();break;}});m_glassTimer.start();
-    m_pixelsPerSecond=qBound(.5,QSettings().value("studio/timelineScale",14.).toDouble(),800.);
+    m_pixelsPerSecond=qBound(.1,QSettings().value("studio/timelineScale",14.).toDouble(),800.);
+    m_fixedPlayhead=QSettings().value("studio/fixedPlayhead",true).toBool();
     connect(play, &Playout::segmentsChanged, this, [this] { relayout(); update(); });
-    connect(play, &Playout::segmentChanged, this, [this] { update(); });
-    connect(play, &Playout::stateChanged, this, [this] { update(); });
-    connect(play, &Playout::ticked, this, [this] { update(); });
+    connect(play, &Playout::segmentChanged, this, [this] { followPlayhead(); update(); });
+    connect(play, &Playout::stateChanged, this, [this] { followPlayhead(); update(); });
+    connect(play, &Playout::ticked, this, [this] { followPlayhead(); update(); });
     connect(lib, &Library::placementsChanged, this, [this] { layoutPlacements(); notifyHeight(); update(); });
     connect(lib, &Library::elementsChanged, this, [this] { update(); });
     connect(lib, &Library::layersChanged, this, [this] { update(); });
@@ -77,6 +78,48 @@ TimelineWidget::TimelineWidget(Playout *play, Library *lib, QWidget *parent)
 }
 
 // ---------------------------------------------------------------- layout
+
+int TimelineWidget::viewportWidth() const { return parentWidget()?parentWidget()->width():width(); }
+
+bool TimelineWidget::event(QEvent *event) {
+    const bool handled=QWidget::event(event);
+    if(event->type()==QEvent::ParentChange){
+        if(parentWidget())parentWidget()->installEventFilter(this);
+        if(auto *bar=hbar();bar&&bar!=m_navigationBar){
+            if(m_navigationBar)disconnect(m_navigationBar,nullptr,this,nullptr);
+            m_navigationBar=bar;
+            connect(bar,&QScrollBar::sliderPressed,this,&TimelineWidget::pauseFollowing);
+            connect(bar,&QScrollBar::actionTriggered,this,[this]{pauseFollowing();});
+            connect(bar,&QScrollBar::rangeChanged,this,[this]{followPlayhead();});
+        }
+        QTimer::singleShot(0,this,[this]{relayout();followPlayhead();update();});
+    }
+    return handled;
+}
+
+bool TimelineWidget::eventFilter(QObject *watched,QEvent *event) {
+    if(watched==parentWidget()&&event->type()==QEvent::Resize){
+        relayout();
+        QTimer::singleShot(0,this,[this]{followPlayhead();update();});
+    }
+    return QWidget::eventFilter(watched,event);
+}
+
+void TimelineWidget::pauseFollowing(){
+    if(m_followPaused)return;
+    m_followPaused=true;emit navigationChanged();
+}
+
+void TimelineWidget::followPlayhead(){
+    if(!followingPlayhead()||m_drag!=Drag::None)return;
+    if(auto *bar=hbar())bar->setValue(msToX(m_play->playheadMs())-viewportWidth()/2);
+}
+
+void TimelineWidget::setFixedPlayhead(bool enabled){
+    m_fixedPlayhead=enabled;m_followPaused=false;
+    QSettings().setValue("studio/fixedPlayhead",enabled);
+    relayout();revealPlayhead();emit navigationChanged();
+}
 
 int TimelineWidget::lanesShown() const { return m_reveal ? 3 : m_lib->maxLayer(); }
 int TimelineWidget::laneY(int lane) const { return kLaneTop + (lane - 1) * (kLaneH + kLaneGap); }
@@ -101,10 +144,11 @@ int TimelineWidget::laneAt(const QPoint &pos) const {
 }
 
 void TimelineWidget::relayout() {
+    m_originX=m_fixedPlayhead&&hbar()?viewportWidth()/2:10;
     m_blocks.clear();
     m_slots.clear();
     const auto &segs = m_play->segments();
-    int x = 10;
+    int x = m_originX;
     for (int i = 0; i < segs.size(); ++i) {
         x=msToX(m_play->segmentStartMs(i));
         const int w = qMax(1,msToX(m_play->segmentStartMs(i)+segs[i].ms)-x);
@@ -117,7 +161,7 @@ void TimelineWidget::relayout() {
         if (pi && pi->slotAfter)
             m_slots.append({QRect(x - 2 - kSlotR, kMainTop + (kMainH - 2 * kSlotR) / 2, 2 * kSlotR, 2 * kSlotR), pi->id});
     }
-    m_totalW = qMax(400, x + 10);
+    m_totalW = qMax(400, x + m_originX);
     setMinimumWidth(m_totalW);
     layoutPlacements();
     notifyHeight();
@@ -127,23 +171,25 @@ void TimelineWidget::relayout() {
 // Everything placed on the extra timelines; each timeline has one row, later blocks overlap earlier ones.
 void TimelineWidget::layoutPlacements() {
     m_pblocks.clear();
+    m_totalW=qMax(400,endX()+m_originX);
     for (const Placement &pl : std::as_const(m_lib->placements)) {
         const int lane = qBound(1, pl.layer, 3);
         const int x0 = msToX(pl.startMs);
         const int x1 = qMax(msToX(pl.startMs + pl.lengthMs()), x0 + 1);
         m_pblocks.append({pl.id, pl.type, QRect(x0, laneY(lane) + 1, x1 - x0, kLaneH - 3), lane});
-        m_totalW=qMax(m_totalW,x1+40);setMinimumWidth(m_totalW);
+        m_totalW=qMax(m_totalW,x1+qMax(40,m_originX));
     }
+    setMinimumWidth(m_totalW);
 }
 
-int TimelineWidget::endX() const { return m_blocks.isEmpty() ? 10 : m_blocks.last().x + m_blocks.last().w; }
+int TimelineWidget::endX() const { return m_blocks.isEmpty() ? m_originX : m_blocks.last().x + m_blocks.last().w; }
 
 // timeline time <-> pixels (piecewise: every segment is drawn at its own scale)
-int TimelineWidget::msToX(qint64 ms) const {return 10+qRound(ms*m_pixelsPerSecond/1000.);}
-qint64 TimelineWidget::xToMs(double x) const {return qMax<qint64>(0,qRound64((x-10)*1000./m_pixelsPerSecond));}
+int TimelineWidget::msToX(qint64 ms) const {return m_originX+qRound(ms*m_pixelsPerSecond/1000.);}
+qint64 TimelineWidget::xToMs(double x) const {return qMax<qint64>(0,qRound64((x-m_originX)*1000./m_pixelsPerSecond));}
 
 int TimelineWidget::playheadX() const {
-    if (m_drag == Drag::Playhead && m_moved) return qBound(m_blocks.isEmpty() ? 10 : m_blocks[0].x, m_dragX, endX());
+    if (m_drag == Drag::Playhead && m_moved) return qBound(m_blocks.isEmpty() ? m_originX : m_blocks[0].x, m_dragX, endX());
     return msToX(m_play->playheadMs());
 }
 
@@ -204,7 +250,7 @@ bool TimelineWidget::resolveMainDrop(const DragPayload &d, const QPoint &pos) {
     m_ins = {};
     const auto &segs = m_play->segments();
     if (m_blocks.isEmpty() || m_blocks.size() != segs.size()) {
-        m_ins = {true, QString(), 10, -1};
+        m_ins = {true, QString(), m_originX, -1};
         return false;
     }
     const int gl = pos.x() - d.grabDx, gw = qMax(20, d.widthPx), gr = gl + gw, gc = gl + gw / 2;
@@ -517,7 +563,7 @@ void TimelineWidget::updateCursor() {
 
 void TimelineWidget::mousePressEvent(QMouseEvent *e) {
     if(e->button()==Qt::RightButton){m_drag=Drag::Range;m_rangeStart=m_rangeEnd=xToMs(e->position().x());update();return;}
-    if(e->button()==Qt::MiddleButton){m_drag=Drag::Pan;m_pressPos=e->position().toPoint();m_panScroll=hbar()?hbar()->value():0;return;}
+    if(e->button()==Qt::MiddleButton){pauseFollowing();m_drag=Drag::Pan;m_pressPos=e->globalPosition().toPoint();m_panScroll=hbar()?hbar()->value():0;return;}
     if (e->button() != Qt::LeftButton) return;
     const QPoint pos = e->position().toPoint();
     m_hover = pos;
@@ -584,7 +630,7 @@ void TimelineWidget::mouseMoveEvent(QMouseEvent *e) {
     if(m_drag==Drag::Range){m_rangeEnd=xToMs(e->position().x());autoScroll(e->position().x());update();return;}
     const QPoint pos = e->position().toPoint();
     m_hover = pos;m_hasHover = true;
-    if(m_drag==Drag::Pan){if(auto *bar=hbar())bar->setValue(m_panScroll+m_pressPos.x()-pos.x());return;}
+    if(m_drag==Drag::Pan){if(auto *bar=hbar())bar->setValue(m_panScroll+m_pressPos.x()-e->globalPosition().toPoint().x());return;}
     if(m_drag==Drag::TrimLeft||m_drag==Drag::TrimRight){if(m_trimProgram){const qint64 at=xToMs(pos.x());for(auto &program:m_lib->programs)if(program.id==m_trimId){if(m_drag==Drag::TrimRight)program.seconds=qBound(1,int(qRound64((at-m_trimStart)/1000.)),864000);else{const auto delta=qBound<qint64>(-m_trimOffset,qRound64((at-m_trimStart)/1000.)*1000,m_trimLength-1000);program.offsetMs=m_trimOffset+int(delta);program.seconds=qMax(1,int((m_trimLength-delta)/1000));}break;}emit m_lib->programsChanged();autoScroll(pos.x());update();return;}if(auto *placement=m_lib->placement(m_trimId)){
         const double frame=1000.*m_lib->display.fpsBase/qMax(1,m_lib->display.fps);qint64 at=qRound64(xToMs(pos.x())/frame)*frame;
         if(m_drag==Drag::TrimRight)placement->durationMs=qMax<qint64>(qRound64(frame),at-m_trimStart);
@@ -692,13 +738,20 @@ void TimelineWidget::autoScroll(int localX) {
 
 // Shift + wheel (or a sideways wheel) scrolls the timeline; the plain wheel scrolls the page it sits in.
 void TimelineWidget::wheelEvent(QWheelEvent *e) {
-    if(e->modifiers()&Qt::AltModifier){m_play->seekTo(qMax<qint64>(0,m_play->playheadMs()+(e->angleDelta().y()>0?1:-1)*qMax(1,1000/qMax(1,m_lib->display.fps))));e->accept();return;}
+    if(e->modifiers()&Qt::AltModifier){
+        const int delta=e->angleDelta().y()?e->angleDelta().y():e->angleDelta().x();
+        if(!delta){e->ignore();return;}
+        const double frame=1000.*qMax(.001,m_lib->display.fpsBase)/qMax(1,m_lib->display.fps);
+        m_play->seekTo(qMax<qint64>(0,qRound64((qRound64(m_play->playheadMs()/frame)+(delta>0?1:-1))*frame)));
+        e->accept();return;
+    }
     QScrollBar *sb = hbar();
     if(!(e->modifiers()&Qt::ShiftModifier)&&e->angleDelta().y()){
         const auto anchor=xToMs(e->position().x());const double viewportX=e->position().x()-(sb?sb->value():0);
-        m_pixelsPerSecond=qBound(.5,m_pixelsPerSecond*std::pow(1.2,e->angleDelta().y()/120.),800.);QSettings().setValue("studio/timelineScale",m_pixelsPerSecond);relayout();if(sb)sb->setValue(msToX(anchor)-viewportX);update();e->accept();return;}
+        m_pixelsPerSecond=qBound(.1,m_pixelsPerSecond*std::pow(1.2,e->angleDelta().y()/120.),800.);QSettings().setValue("studio/timelineScale",m_pixelsPerSecond);relayout();if(sb)sb->setValue(msToX(anchor)-viewportX);followPlayhead();update();e->accept();return;}
     const bool sideways = e->angleDelta().x() != 0 || (e->modifiers() & Qt::ShiftModifier);
     if (sb && sideways && sb->maximum() > 0) {
+        pauseFollowing();
         const int d = e->angleDelta().x() != 0 ? e->angleDelta().x() : e->angleDelta().y();
         sb->setValue(sb->value() - d);
         e->accept();
@@ -707,7 +760,7 @@ void TimelineWidget::wheelEvent(QWheelEvent *e) {
     e->ignore();
 }
 
-void TimelineWidget::zoomView(double factor){auto *bar=hbar();int center=(bar?bar->value():0)+(parentWidget()?parentWidget()->width()/2:width()/2);auto time=xToMs(center);m_pixelsPerSecond=qBound(.1,m_pixelsPerSecond*factor,800.);QSettings().setValue("studio/timelineScale",m_pixelsPerSecond);relayout();if(bar)bar->setValue(msToX(time)-(parentWidget()?parentWidget()->width()/2:width()/2));update();}
-void TimelineWidget::fitView(){qint64 end=m_play->totalMs();for(const auto &p:m_lib->placements)end=qMax(end,p.startMs+p.lengthMs());m_pixelsPerSecond=qBound(.1,(parentWidget()?parentWidget()->width()-30:width()-30)/qMax(1.,end/1000.),800.);QSettings().setValue("studio/timelineScale",m_pixelsPerSecond);relayout();if(auto *bar=hbar())bar->setValue(0);update();}
-void TimelineWidget::revealPlayhead(){if(auto *bar=hbar())bar->setValue(qMax(0,playheadX()-(parentWidget()?parentWidget()->width()/2:width()/2)));update();}
+void TimelineWidget::zoomView(double factor){auto *bar=hbar();int center=(bar?bar->value():0)+viewportWidth()/2;auto time=xToMs(center);m_pixelsPerSecond=qBound(.1,m_pixelsPerSecond*factor,800.);QSettings().setValue("studio/timelineScale",m_pixelsPerSecond);relayout();if(bar)bar->setValue(msToX(time)-viewportWidth()/2);followPlayhead();update();}
+void TimelineWidget::fitView(){pauseFollowing();qint64 end=m_play->totalMs();for(const auto &p:m_lib->placements)end=qMax(end,p.startMs+p.lengthMs());m_pixelsPerSecond=qBound(.1,(viewportWidth()-30)/qMax(1.,end/1000.),800.);QSettings().setValue("studio/timelineScale",m_pixelsPerSecond);relayout();if(auto *bar=hbar())bar->setValue(qMax(0,m_originX-15));update();}
+void TimelineWidget::revealPlayhead(){m_followPaused=false;if(auto *bar=hbar())bar->setValue(qMax(0,playheadX()-viewportWidth()/2));emit navigationChanged();update();}
 void TimelineWidget::keyPressEvent(QKeyEvent *e){if(e->key()==Qt::Key_Home){fitView();e->accept();}else if(e->key()==Qt::Key_F){revealPlayhead();e->accept();}else QWidget::keyPressEvent(e);}

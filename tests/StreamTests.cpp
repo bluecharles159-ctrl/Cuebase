@@ -40,10 +40,32 @@
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QDoubleSpinBox>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QWheelEvent>
 
 class StreamTests:public QObject{
     Q_OBJECT
 private slots:
+    void fixedCenterTimeline(){
+        QSettings().setValue("studio/timelineScale",14.);QSettings().setValue("studio/fixedPlayhead",true);
+        Library lib;ProgramItem program;program.id="center-show";program.title="Centered playhead";program.seconds=120;lib.programs={program};Playout play(&lib);
+        QScrollArea scroll;scroll.setWidgetResizable(true);scroll.setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);scroll.resize(640,160);
+        auto *timeline=new TimelineWidget(&play,&lib);scroll.setWidget(timeline);scroll.show();QTest::qWait(40);auto *bar=scroll.horizontalScrollBar();
+        auto centered=[&]{return qAbs(timeline->blockX(0)+qRound(play.playheadMs()*14./1000)-bar->value()-scroll.viewport()->width()/2)<=1;};
+        QVERIFY(centered());play.start(0,60000);play.togglePause();QTest::qWait(20);QVERIFY(centered());
+        const auto broadcastTime=play.playheadMs();const int before=bar->value();const QPoint point(before+300,10);
+        QTest::mousePress(timeline,Qt::MiddleButton,Qt::NoModifier,point);QTest::mouseMove(timeline,point+QPoint(50,0));QTest::mouseRelease(timeline,Qt::MiddleButton,Qt::NoModifier,point+QPoint(50,0));
+        QVERIFY(!timeline->followingPlayhead());QCOMPARE(play.playheadMs(),broadcastTime);QCOMPARE(bar->value(),before-50);
+        const int inspected=bar->value();play.seekTo(65000);QCOMPARE(bar->value(),inspected);timeline->revealPlayhead();QVERIFY(centered());
+        scroll.resize(820,160);QTest::qWait(30);QVERIFY(centered());QVERIFY(scroll.grab().save("artifacts/fixed-center-studio-timeline.png"));
+        lib.display.fps=30;lib.display.fpsBase=1.001;play.seekTo(0);
+        QWheelEvent step(QPointF(100,10),timeline->mapToGlobal(QPoint(100,10)),{},QPoint(0,120),Qt::NoButton,Qt::AltModifier,Qt::NoScrollPhase,false);
+        QApplication::sendEvent(timeline,&step);QCOMPARE(play.playheadMs(),qint64(33));
+        const auto unchanged=play.playheadMs();timeline->fitView();QVERIFY(!timeline->followingPlayhead());QCOMPARE(play.playheadMs(),unchanged);
+        timeline->setFixedPlayhead(false);QCOMPARE(timeline->blockX(0),10);TimelineWidget restored(&play,&lib);QVERIFY(!restored.fixedPlayhead());
+        timeline->setFixedPlayhead(true);QSettings().setValue("studio/timelineScale",14.);play.stop();
+    }
     void overlayZIndexOrder(){Library lib;lib.display.watermarkOn=false;ProgramItem p;p.id="z-show";lib.programs={p};auto design=ElementDesign::defaultScene();DObject shape;shape.id="plate";shape.type="Shape";shape.w=8;shape.h=5;shape.base.rot={90,0,0};shape.mat.color=Qt::red;shape.mat.shadeless=true;design.objects.append(shape);Element red;red.id="red";red.type="Custom";red.live=true;red.design=design.toJson();red.cueBoardSettings["zIndex"]=10;Element blue=red;blue.id="blue";blue.cueBoardSettings["zIndex"]=0;design.find(shape.id)->mat.color=Qt::blue;blue.design=design.toJson();lib.elements={red,blue};Playout play(&lib);ViewportWidget viewport(&lib,&play);play.start();play.togglePause();QCOMPARE(viewport.programFrame({320,180}).pixelColor(160,90),QColor(Qt::red));lib.elements[1].cueBoardSettings["zIndex"]=20;QCOMPARE(viewport.programFrame({320,180}).pixelColor(160,90),QColor(Qt::blue));play.stop();}
 
     void initTestCase(){installUiBehavior(qApp);QStandardPaths::setTestModeEnabled(true);qApp->setOrganizationName("CuebaseStreamTests");qApp->setApplicationName(QUuid::createUuid().toString(QUuid::WithoutBraces));QDir().mkpath("artifacts");}

@@ -1394,7 +1394,7 @@ void BuildWorkspace::exportFile(){
     QString path=QFileDialog::getSaveFileName(this,"Export Build composition",m_name->text(),"Cuebase composition (*.cuebuild);;PNG image (*.png);;PNG animation folder (*.frames)",&selectedFilter);if(path.isEmpty())return;
     if(selectedFilter.startsWith("PNG animation")&&!path.endsWith(".frames",Qt::CaseInsensitive))path+=".frames";
     if(QFileInfo(path).suffix().compare("frames",Qt::CaseInsensitive)==0){
-        FrameExportOptions options;options.size={m_lib->display.resX(),m_lib->display.resY()};options.fps=m_model->fps;options.fpsBase=m_model->fpsBase;
+        FrameExportOptions options;options.size={m_lib->display.resX(),m_lib->display.resY()};options.setProjectFrameRate(m_model->fps,m_model->fpsBase);
         options.firstFrame=qMax(0,qFloor(double(m_model->design.startMs)*options.fps/(1000.*options.fpsBase)));
         options.endFrame=qCeil(double(m_model->design.durationMs)*options.fps/(1000.*options.fpsBase));
         QProgressDialog progress("Exporting PNG frames with transparency (no audio)…","Cancel",0,options.endFrame-options.firstFrame,this);

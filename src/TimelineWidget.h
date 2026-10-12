@@ -7,6 +7,7 @@
 #include <QString>
 #include <QVector>
 #include <QWidget>
+#include <QPointer>
 
 #include "DragDrop.h"
 
@@ -28,6 +29,9 @@ public:
     void fitView();
     void zoomView(double factor);
     void revealPlayhead();
+    void setFixedPlayhead(bool enabled);
+    bool fixedPlayhead() const { return m_fixedPlayhead; }
+    bool followingPlayhead() const { return m_fixedPlayhead && !m_followPaused; }
     int blockX(int index) const { return index >= 0 && index < m_blocks.size() ? m_blocks[index].x : 0; }
     int blockW(int index) const { return index >= 0 && index < m_blocks.size() ? m_blocks[index].w : 0; }
 
@@ -47,8 +51,11 @@ signals:
     void dropped(const DragPayload &payload, int lane, qint64 startMs, const QString &beforeId);
     void heightWanted(int height);
     void replayRequested(qint64 from,qint64 to);
+    void navigationChanged();
 
 protected:
+    bool event(QEvent *event) override;
+    bool eventFilter(QObject *watched,QEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
@@ -66,6 +73,12 @@ private:
     enum class Drag { None, Playhead, Press, Foreign, TrimLeft, TrimRight, Pan, Range };
     qint64 m_rangeStart=-1,m_rangeEnd=-1;
     double m_pixelsPerSecond=14;
+    bool m_fixedPlayhead=true,m_followPaused=false;
+    int m_originX=10;
+    QPointer<QScrollBar> m_navigationBar;
+    int viewportWidth() const;
+    void followPlayhead();
+    void pauseFollowing();
     QElapsedTimer m_glassClock;
     QTimer m_glassTimer;
     QString m_trimId;
