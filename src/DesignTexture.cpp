@@ -137,6 +137,25 @@ QImage ElementDesign::textureFor(const DObject &o) const {
         if(hue!=0){double hv=c.hsvHueF();c.setHsvF(std::fmod(qMax(0.0,hv)+hue/360+2,1.0),c.hsvSaturationF(),c.valueF(),c.alphaF());}
         line[x]=c.rgba();
     }}
+    // A stable object-space threshold makes a keyed reveal reversible and deterministic.
+    const double reveal=qBound(0.,o.propertyBase("effects.reveal"),1.);
+    if(reveal<1){
+        const double rough=qBound(0.,o.propertyBase("effects.revealRoughness"),1.),soft=qMax(.00001,o.propertyBase("effects.revealSoftness"));
+        const double angle=qDegreesToRadians(o.propertyBase("effects.revealAngle")),dx=qCos(angle),dy=qSin(angle),span=qMax(.00001,qAbs(dx)+qAbs(dy));
+        const bool radial=o.style["effects.revealMode"].toString()=="Radial";
+        const double cx=qBound(0.,o.propertyBase("effects.revealX"),1.),cy=qBound(0.,o.propertyBase("effects.revealY"),1.);
+        const double radius=qSqrt(qPow(qMax(cx,1-cx)*w,2)+qPow(qMax(cy,1-cy)*h,2));
+        const double threshold=reveal*(1+rough+2*soft)-rough/2-soft;
+        for(int y=0;y<pixels.height();++y){auto *row=reinterpret_cast<QRgb*>(pixels.scanLine(y));for(int x=0;x<pixels.width();++x){
+            quint32 hash=quint32(x)*374761393u^quint32(y)*668265263u;
+            hash^=hash>>16;hash*=0x7feb352du;hash^=hash>>15;hash*=0x846ca68bu;hash^=hash>>16;
+            const double noise=double(hash&65535)/65535.-.5;
+            const double u=(x-padding+.5)/w,v=(y-padding+.5)/h;
+            const double distance=(radial?qSqrt(qPow((u-cx)*w,2)+qPow((v-cy)*h,2))/radius:((u-.5)*dx+(v-.5)*dy)/span+.5)+noise*rough;
+            const double t=reveal<=0?0:qBound(0.,(threshold-distance)/soft+.5,1.);
+            const int alpha=qRound(qAlpha(row[x])*t*t*(3-2*t));row[x]=qRgba(qRed(row[x]),qGreen(row[x]),qBlue(row[x]),alpha);
+        }}
+    }
     image=blurImage(pixels,qRound(o.propertyBase("effects.blur")));
     if(o.style["shadow.enabled"].toBool()) {
         QImage shadow(image.size(),QImage::Format_ARGB32_Premultiplied);shadow.fill(Qt::transparent);

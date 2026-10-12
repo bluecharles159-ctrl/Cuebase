@@ -29,6 +29,8 @@
 #include "ColorPicker.h"
 #include "BuildContextAction.h"
 #include "SurfaceEffects.h"
+#include "FrameExport.h"
+#include <QDir>
 #include "AnimationCuePanel.h"
 #include "PropertyInspector.h"
 #include <QCheckBox>
@@ -37,6 +39,31 @@ class BuildTests:public QObject {
     Q_OBJECT
 private slots:
     void inspectorExpansionPerObject(){BuildModel m;Library lib;const auto first=m.addText();PropertyInspector inspector(&m,&lib);auto button=[&](QString title)->QToolButton*{QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);for(auto *b:inspector.findChildren<QToolButton*>())if(b->text()==title)return b;return nullptr;};QVERIFY(button("CORNERS"));QVERIFY(!button("CORNERS")->isChecked());button("CORNERS")->setChecked(true);const auto second=m.addText();QVERIFY(button("CORNERS"));QVERIFY(!button("CORNERS")->isChecked());m.select(first);QVERIFY(button("CORNERS")->isChecked());m.select(second);QVERIFY(!button("CORNERS")->isChecked());m.addText();QVERIFY(button("TYPOGRAPHY"));QVERIFY(button("TYPOGRAPHY")->isChecked());}
+
+    void revealAndFrameExport(){
+        ElementDesign scene;scene.durationMs=120;scene.ensureCamera();scene.camera()->cam.ortho=true;
+        DObject shape;shape.id="reveal-shape";shape.type="Shape";shape.w=4;shape.h=2;shape.base.rot={90,0,0};shape.mat.shadeless=true;
+        const auto original=scene.textureFor(shape);shape.style["effects.reveal"]=1.;QCOMPARE(scene.textureFor(shape),original);
+        shape.style["effects.reveal"]=0.;QCOMPARE(qAlpha(scene.textureFor(shape).pixel(100,100)),0);
+        shape.style["effects.reveal"]=.5;const auto middle=scene.textureFor(shape);QVERIFY(qAlpha(middle.pixel(10,100))>240);QCOMPARE(qAlpha(middle.pixel(middle.width()-10,100)),0);
+          shape.style["effects.revealMode"]="Radial";shape.style["effects.revealRoughness"]=0.;shape.style["effects.reveal"]=.15;
+          const auto radial=scene.textureFor(shape);QVERIFY(qAlpha(radial.pixel(radial.width()/2,radial.height()/2))>240);QCOMPARE(qAlpha(radial.pixel(10,10)),0);
+          shape.style["effects.revealX"]=.2;const auto shifted=scene.textureFor(shape);QVERIFY(qAlpha(shifted.pixel(shifted.width()/5,shifted.height()/2))>240);QCOMPARE(qAlpha(shifted.pixel(shifted.width()/2,shifted.height()/2)),0);
+          shape.style["effects.revealMode"]="Linear";
+        shape.keyChannel("effects.reveal",0,0);shape.keyChannel("effects.reveal",80,1);scene.objects.append(shape);
+        const auto restored=ElementDesign::fromJson(scene.toJson());QCOMPARE(restored.find(shape.id)->propertyValue("effects.reveal",80),1.);
+        QTemporaryDir directory;QVERIFY(directory.isValid());FrameExportOptions options;options.size={320,180};options.endFrame=3;
+        const auto result=exportSceneFrames(scene,directory.path(),options);QVERIFY2(result.success,qPrintable(result.error));QCOMPARE(result.written,3);
+        QImage first(directory.filePath("frame_000000.png")),last(directory.filePath("frame_000002.png"));QVERIFY(!first.isNull());QCOMPARE(qAlpha(first.pixel(160,90)),0);QVERIFY(qAlpha(last.pixel(160,90))>240);
+        QFile manifest(directory.filePath("sequence.json"));QVERIFY(manifest.open(QIODevice::ReadOnly));const auto metadata=QJsonDocument::fromJson(manifest.readAll()).object();QCOMPARE(metadata["endFrameExclusive"].toInt(),3);QCOMPARE(metadata["fps"].toInt(),25);
+        QVERIFY(!exportSceneFrames(scene,directory.path(),options).success);QCOMPARE(QImage(directory.filePath("frame_000002.png")),last);
+        QTemporaryDir cancelDirectory;const auto cancelled=exportSceneFrames(scene,cancelDirectory.path(),options,[](int done,int){return done<1;});QVERIFY(cancelled.cancelled);QCOMPARE(cancelled.written,1);QVERIFY(!QFileInfo::exists(cancelDirectory.filePath("sequence.json")));
+        shape.tracks.clear();shape.style["effects.reveal"]=1.;shape.style["shape"]="Triangle";const auto triangle=scene.textureFor(shape);QCOMPARE(qAlpha(triangle.pixel(5,5)),0);QVERIFY(qAlpha(triangle.pixel(triangle.width()/2,triangle.height()/2))>240);
+          QTemporaryDir portable;QVERIFY(portable.isValid());QVERIFY(last.save(portable.filePath("texture.png")));scene.objects.last().image="texture.png";
+          QFile project(portable.filePath("scene.cuebuild"));QVERIFY(project.open(QIODevice::WriteOnly));project.write(scene.toJson().toUtf8());project.close();
+          Library lib;BuildWorkspace workspace(&lib);QVERIFY(workspace.importFile(project.fileName()));auto *model=workspace.findChild<BuildModel*>();QVERIFY(model);
+          QCOMPARE(model->design.find(shape.id)->image,portable.filePath("texture.png"));
+    }
 
     void markdownTextRendering(){
         ElementDesign scene;DObject text;text.id="markdown-text";text.type="Text";text.w=5;text.h=3;text.fontPx=32;text.text="# Headline\n**Bold** and *italic*\n- First\n- Second";text.style["text.align"]="Left";text.style["text.vertical"]="Top";

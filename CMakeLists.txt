@@ -16,6 +16,7 @@ add_library(CuebaseBuildCore STATIC
     src/UiControls.h src/UiControls.cpp
     src/AssetImport.h src/AssetImport.cpp
     src/MediaFrames.h src/MediaFrames.cpp
+    src/FrameExport.h src/FrameExport.cpp
     src/Mesh.h src/Mesh.cpp src/MeshOps.cpp
     src/ElementDesign.h src/ElementDesign.cpp src/Animation.cpp src/DesignTexture.cpp src/Hierarchy.cpp
     src/BuildModel.h src/BuildModel.cpp
@@ -28,6 +29,9 @@ add_library(CuebaseBuildCore STATIC
     src/LayerPanel.h src/LayerPanel.cpp)
 target_include_directories(CuebaseBuildCore PUBLIC src)
 target_link_libraries(CuebaseBuildCore PUBLIC Qt6::Widgets Qt6::Multimedia assimp::assimp PkgConfig::AV)
+
+add_executable(CuebaseRender src/RenderMain.cpp)
+target_link_libraries(CuebaseRender PRIVATE CuebaseBuildCore)
 
 add_executable(Cuebase WIN32
     src/main.cpp

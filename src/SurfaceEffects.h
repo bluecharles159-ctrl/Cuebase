@@ -3,6 +3,7 @@
 
 inline QPainterPath surfaceOutline(QRectF r,const DObject &o){
     QPainterPath path;if(o.style["shape"].toString()=="Ellipse"){path.addEllipse(r);return path;}
+    if(o.style["shape"].toString()=="Triangle"){path.moveTo(r.center().x(),r.top());path.lineTo(r.bottomRight());path.lineTo(r.bottomLeft());path.closeSubpath();return path;}
     double unit=o.style["corner.unit"].toString()=="%"?qMin(r.width(),r.height())/100.:1.;
     auto radius=[&](const char *key){return qBound(0.,o.propertyBase(o.style["corner.linked"].toBool(true)?"corner.radius":key)*unit,qMin(r.width(),r.height())/2);};
     double a=radius("corner.tl"),b=radius("corner.tr"),c=radius("corner.br"),d=radius("corner.bl");

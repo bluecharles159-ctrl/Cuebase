@@ -140,6 +140,7 @@ void PropertyInspector::rebuild(){
     if(o->isRenderable() || multi){auto *appearance=section("APPEARANCE");number(appearance,"Opacity","opacity",0,1,.05);choice(appearance,"Blend mode","blend",{"Normal","Multiply","Screen","Overlay","Darken","Lighten","Color Dodge","Color Burn","Hard Light","Soft Light","Difference","Exclusion"},"Normal");}
     if(!multi && (o->type=="Text"||o->type=="Image"||o->type=="Shape")){
         auto *size=section("LAYOUT");number(size,"Width","layout.width",1,8192,1," px");number(size,"Height","layout.height",1,8192,1," px");
+        if(o->type=="Shape")choice(size,"Shape","shape",{"Rectangle","Ellipse","Triangle"},"Rectangle");
         auto *aspectLock=new QCheckBox("Maintain aspect ratio");size->addRow(aspectLock);
         auto *unlit=new QCheckBox("Ignore lighting");size->addRow(unlit);connect(unlit,&QCheckBox::toggled,this,[=,this](bool value){apply([&]{if(auto *object=m->active())object->mat.shadeless=value;});});sync.append([=,this]{if(auto *object=m->active())unlit->setChecked(object->mat.shadeless);});
         connect(aspectLock,&QCheckBox::toggled,this,[=,this](bool on){apply([&]{if(auto *x=m->active())x->style["layout.aspectLock"]=on;});});
@@ -190,6 +191,13 @@ void PropertyInspector::rebuild(){
         auto *effects=section("EFFECTS",false);
         number(effects,"Backdrop blur","backdrop.blur",0,80,1," px");number(effects,"Backdrop brightness","backdrop.brightness",0,3,.05);
         number(effects,"Blur","effects.blur",0,80,1," px");
+        number(effects,"Reveal","effects.reveal",0,1,.01);
+        choice(effects,"Reveal mode","effects.revealMode",{"Linear","Radial"},"Linear");
+        number(effects,"Reveal roughness","effects.revealRoughness",0,1,.01);
+        number(effects,"Reveal softness","effects.revealSoftness",0,.2,.005);
+        number(effects,"Reveal direction","effects.revealAngle",-180,180,1);
+        number(effects,"Reveal center X","effects.revealX",0,1,.01);
+        number(effects,"Reveal center Y","effects.revealY",0,1,.01);
         for(const auto &path:QStringList{"brightness","contrast","saturation"})number(effects,path,"effects."+path,0,3,.05);
         for(const auto &path:QStringList{"grayscale","invert","sepia"})number(effects,path,"effects."+path,0,1,.05);
         number(effects,"Hue","effects.hue",-360,360,1,"°");

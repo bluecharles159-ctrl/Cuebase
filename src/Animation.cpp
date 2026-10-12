@@ -121,9 +121,11 @@ double DObject::propertyBase(const QString &path) const {
     if (path == "camera.fov") return cam.fov;
     if (path == "camera.scale") return cam.orthoScale;
     if (path == "text.weight") return style[path].toDouble(600);
-    if (path == "fill.stop" || path == "image.x" || path == "image.y") return style[path].toDouble(.5);
+    if (path == "fill.stop" || path == "image.x" || path == "image.y" || path == "effects.revealX" || path == "effects.revealY") return style[path].toDouble(.5);
     if (path.startsWith("corner.") && path != "corner.radius") return style[path].toDouble(style["corner.radius"].toDouble());
-    if (path == "backdrop.brightness" || path == "effects.brightness" || path == "effects.contrast" || path == "effects.saturation" || path == "text.lineHeight") return style[path].toDouble(1);
+    if (path == "effects.revealRoughness") return style[path].toDouble(.15);
+    if (path == "effects.revealSoftness") return style[path].toDouble(.015);
+    if (path == "effects.reveal" || path == "backdrop.brightness" || path == "effects.brightness" || path == "effects.contrast" || path == "effects.saturation" || path == "text.lineHeight") return style[path].toDouble(1);
     return style[path].toDouble();
 }
 double DObject::propertyValue(const QString &path, qint64 ms) const {

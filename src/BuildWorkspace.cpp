@@ -1,6 +1,9 @@
 #include <QSignalBlocker>
 #include "UiControls.h"
 #include "BuildWorkspace.h"
+#include "FrameExport.h"
+#include <QProgressDialog>
+#include <QApplication>
 #include "CueSequence.h"
 #include <QRegularExpression>
 #include <QJsonDocument>
@@ -50,6 +53,7 @@
 #include "SceneEffects.h"
 #include "DesignAudio.h"
 #include <QFileInfo>
+#include <QDir>
 #include <QFile>
 #include <QSaveFile>
 #include <QSettings>
@@ -1377,15 +1381,29 @@ bool BuildWorkspace::importFile(const QString &path){
     }
     if(suffix=="cuebuild"||suffix=="json"){
         QFile file(path);if(!file.open(QIODevice::ReadOnly)){say(file.errorString(),true);return false;}
-        const QString data=QString::fromUtf8(file.readAll());const auto design=ElementDesign::fromJson(data);
+        const QString data=QString::fromUtf8(file.readAll());auto design=ElementDesign::fromJson(data);
         if(design.isEmpty()){say("The file does not contain a Build composition.",true);return false;}
+        for(auto &object:design.objects)if(!object.image.isEmpty()&&QFileInfo(object.image).isRelative())object.image=QFileInfo(path).absoluteDir().absoluteFilePath(object.image);
         m_model->pushUndo();m_model->design=design;m_model->deselectAll();m_model->notify();m_canvas->frameAll();return true;
     }
     if(!m_model->addImage(path).isEmpty())return true;
     say("This file could not be imported.",true);return false;
 }
 void BuildWorkspace::exportFile(){
-    const QString path=QFileDialog::getSaveFileName(this,"Export Build composition",m_name->text()+".cuebuild","Cuebase composition (*.cuebuild);;PNG image (*.png)");if(path.isEmpty())return;
+    QString selectedFilter;
+    QString path=QFileDialog::getSaveFileName(this,"Export Build composition",m_name->text(),"Cuebase composition (*.cuebuild);;PNG image (*.png);;PNG animation folder (*.frames)",&selectedFilter);if(path.isEmpty())return;
+    if(selectedFilter.startsWith("PNG animation")&&!path.endsWith(".frames",Qt::CaseInsensitive))path+=".frames";
+    if(QFileInfo(path).suffix().compare("frames",Qt::CaseInsensitive)==0){
+        FrameExportOptions options;options.size={m_lib->display.resX(),m_lib->display.resY()};options.fps=m_model->fps;options.fpsBase=m_model->fpsBase;
+        options.firstFrame=qMax(0,qFloor(double(m_model->design.startMs)*options.fps/(1000.*options.fpsBase)));
+        options.endFrame=qCeil(double(m_model->design.durationMs)*options.fps/(1000.*options.fpsBase));
+        QProgressDialog progress("Exporting PNG frames with transparency (no audio)…","Cancel",0,options.endFrame-options.firstFrame,this);
+        progress.setWindowModality(Qt::WindowModal);progress.setMinimumDuration(0);
+        const auto result=exportSceneFrames(m_model->design,path,options,[&](int done,int){progress.setValue(done);QApplication::processEvents();return !progress.wasCanceled();});
+        if(result.success)say(QString("Saved %1 PNG frames to %2").arg(result.written).arg(path));
+        else if(result.cancelled)say(QString("Export cancelled; %1 completed frames remain in %2").arg(result.written).arg(path));
+        else say(result.error,true);return;
+    }
     if(QFileInfo(path).suffix().compare("png",Qt::CaseInsensitive)==0){QImage image(m_lib->display.resX(),m_lib->display.resY(),QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);QPainter painter(&image);m_model->design.render(painter,QRectF(image.rect()),m_model->t);painter.end();if(!image.save(path))say("Could not save the image.",true);return;}
     QSaveFile file(path);if(!file.open(QIODevice::WriteOnly)){say(file.errorString(),true);return;}file.write(m_model->design.toJson().toUtf8());if(!file.commit())say(file.errorString(),true);
 }

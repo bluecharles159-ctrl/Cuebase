@@ -63,3 +63,17 @@ The header channel profile clips imported and saved-element logos into a circula
 ## Verified checkpoint — 2026-10-11
 
 Application build succeeded. Final editor suite: 28 passed, 0 failed (100.04 seconds CTest); final Studio/output suite: 22 passed, 0 failed (239.29 seconds CTest), including RTMP/SRT loopback. Per-object inspector, Markdown and Z-index checks pass. The per-object test now flushes Qt deferred deletions before locating the current panel. Earlier counts above describe intermediate checkpoints. Pending production benchmark, timeline/audio and account requirements remain pending.
+
+## Render/export checkpoint — 2026-10-11
+
+Added a real PNG sequence export in Build and the CuebaseRender console tool, with rational frame rates, explicit frame ranges, transparent output, a timing manifest, empty-folder protection and cancellable UI export. Audio mixes, Studio rundown exports and cue-board baking remain separate unfinished requirements. Added object-space paint reveal controls (progress, roughness, softness, direction) and native triangle shape selection. Visual review identified patterned reveal noise; the hash was improved and both suites passed afterward: 29 editor + 22 Studio/output cases, 88.61 seconds combined CTest. Commit 6091aad preserves the preceding verified checkpoint.
+
+Native Cuebase and Blender files for the short HGTV gable ident have been authored under benchmarks/hgtv-toolkit. The reference is 48 frames at 24000/1001 fps. Shared imported texture is the clean opening plaster frame; geometry, text and animation are authored separately. This is not yet the requested full renovation promo, exact visual match or one-hour multi-channel research. User tentatively confirmed M-Net Movies Zone as the ambiguous channel.
+
+## Render comparison delivery — 2026-10-12
+
+Visual comparison exposed the need for an outward reveal; added Linear/Radial mode with keyed center X/Y, and verified hidden/visible/moved-center behavior. Build import now resolves relative image texture paths beside a composition, covered by an import test. Application rebuild succeeded, followed by 29 editor + 22 Studio/output cases (40.22 and 46.43 seconds respectively; 86.71 seconds combined CTest), including localhost RTMP/SRT. No source changes followed these checks except documentation/package paths.
+
+Both native projects rendered all 48 frames at 320×180. Generated and inspected the labeled comparison contact sheet; encoded and probed all 48-frame 24000/1001 fps videos. The short ident reconstruction remains approximate in font, paint edges and timing, with no recreated audio. SSIM at matched low resolution: Blender 0.881512; Cuebase 0.888144, substantially helped by the shared plaster texture. The comparison report explicitly records these limitations. Separate private benchmark archive keeps third-party reference assets outside the application source package.
+
+The four additional images sent on 2026-10-12 are deferred references: user will explain them later. Do not infer new implementation instructions from them yet. Existing timeline/audio, production-account and full renovation-promo requirements remain pending.
