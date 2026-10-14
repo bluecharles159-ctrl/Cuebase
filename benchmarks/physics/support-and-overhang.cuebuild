@@ -1,0 +1,15 @@
+{
+  "version": 6,
+  "duration": 5000,
+  "start": 0,
+  "loop": false,
+  "world": {"color": "#101b24", "transparent": false, "ambient": 1, "floor": true, "gravity": 9.81},
+  "objects": [
+    {"id":"camera","name":"Front camera","type":"Camera","locked":true,"base":{"loc":[0,-10,2.5],"rot":[90,0,0],"scl":[1,1,1],"opacity":1},"cam":{"ortho":true,"orthoScale":12}},
+    {"id":"ground-guide","name":"Ground guide (visual only)","type":"Shape","w":12,"h":0.04,"base":{"loc":[0,0,-0.02],"rot":[90,0,0],"scl":[1,1,1],"opacity":1},"mat":{"color":"#526a7b","shadeless":true,"alpha":1},"style":{"shape":"Rectangle"}},
+    {"id":"centered-support","name":"Centered support · passive","type":"Shape","w":2,"h":0.5,"base":{"loc":[-2,0,2],"rot":[90,0,0],"scl":[1,1,1],"opacity":1},"mat":{"color":"#526a7b","shadeless":true,"alpha":1},"style":{"shape":"Rectangle","physics.planar":true},"phys":{"enabled":true,"active":false,"mass":1,"friction":0.6,"bounce":0}},
+    {"id":"centered-body","name":"Centered block · active","type":"Shape","w":1,"h":1,"base":{"loc":[-2,0,4.5],"rot":[90,0,0],"scl":[1,1,1],"opacity":1},"mat":{"color":"#35b7f1","shadeless":true,"alpha":1},"style":{"shape":"Rectangle","physics.planar":true},"phys":{"enabled":true,"active":true,"mass":1,"friction":0.6,"bounce":0}},
+    {"id":"overhang-support","name":"Overhang support · passive","type":"Shape","w":2,"h":0.5,"base":{"loc":[2,0,2],"rot":[90,0,0],"scl":[1,1,1],"opacity":1},"mat":{"color":"#526a7b","shadeless":true,"alpha":1},"style":{"shape":"Rectangle","physics.planar":true},"phys":{"enabled":true,"active":false,"mass":1,"friction":0.6,"bounce":0}},
+    {"id":"overhang-body","name":"Overhanging block · active","type":"Shape","w":1,"h":1,"base":{"loc":[3.2,0,4.5],"rot":[90,0,0],"scl":[1,1,1],"opacity":1},"mat":{"color":"#f6af4b","shadeless":true,"alpha":1},"style":{"shape":"Rectangle","physics.planar":true},"phys":{"enabled":true,"active":true,"mass":1,"friction":0.6,"bounce":0}}
+  ]
+}

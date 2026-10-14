@@ -13,10 +13,12 @@
 #include <QStringList>
 #include <QVector>
 #include <QVector3D>
+#include <memory>
 
 #include "Mesh.h"
 
 class QPainter;
+class RigidBodySimulation;
 
 // A custom screen element made in the Build workspace: a small 3D scene (meshes, text, images, lights and a
 // camera) with keyframed animation, modifiers, simple physics and a world. Scene units are metres, Z is up,
@@ -206,6 +208,7 @@ struct ElementDesign {
 
     static QMatrix4x4 matrixOf(const DProps &p);
     DProps propsAt(const DObject &o, qint64 ms) const;  // keys + physics
+    QMatrix4x4 physicsWorldMatrix(const DObject &o,qint64 ms) const;
     QMatrix4x4 worldMatrix(const DObject &o, qint64 ms) const;
     QMatrix4x4 parentMatrix(const DObject &o, qint64 ms) const;
     bool effectiveVisible(const DObject &o) const;
@@ -221,14 +224,10 @@ struct ElementDesign {
 
     mutable QHash<QString, QPair<quint64, Mesh>> m_evalCache;
     mutable QHash<QString, QPair<QString, QImage>> m_texCache;
-    struct PhysState { QVector3D pos, vel; };
-    mutable quint64 m_physSig = 0;
-    mutable qint64 m_physT = -1;
-    mutable QHash<QString, PhysState> m_phys;
+    mutable std::shared_ptr<RigidBodySimulation> m_physics;
     mutable int m_evalDepth = 0;
 
 private:
-    void stepPhysics(qint64 ms) const;
     void ensurePhysics(qint64 ms) const;
     quint64 physicsSignature() const;
 };

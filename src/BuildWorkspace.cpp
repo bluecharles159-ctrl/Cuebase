@@ -583,6 +583,8 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     pform->addRow("Mass", mass);
     pform->addRow("Friction", fric);
     pform->addRow("Bounciness", bounce);
+    auto *planarPhysics=new QCheckBox("Constrain to canvas plane");planarPhysics->setObjectName("physicsPlanar");planarPhysics->setToolTip("Keep depth fixed while allowing movement and rotation in the canvas plane.");pform->addRow(planarPhysics);
+    auto *collisionMargin=dspin(.0001,.2,.001,4," m"),*surfaceThickness=dspin(.002,10,.01,3," m");collisionMargin->setObjectName("physicsMargin");surfaceThickness->setObjectName("physicsThickness");pform->addRow("Contact margin",collisionMargin);pform->addRow("Flat surface depth",surfaceThickness);
     phl->addLayout(pform);
     auto *physHint = new QLabel("Gravity and the ground are set in the World tab. Press play to see bodies fall.");
     physHint->setWordWrap(true);
@@ -934,7 +936,9 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
             mass->setValue(o->phys.mass);
             fric->setValue(o->phys.friction);
             bounce->setValue(o->phys.bounce);
-            mass->setEnabled(o->phys.enabled);
+            planarPhysics->setChecked(o->style["physics.planar"].toBool(o->type!="Mesh"));planarPhysics->setEnabled(o->phys.enabled&&o->phys.active);
+            collisionMargin->setValue(o->style["physics.margin"].toDouble(.005));surfaceThickness->setValue(o->style["physics.thickness"].toDouble(.04));collisionMargin->setEnabled(o->phys.enabled);surfaceThickness->setEnabled(o->phys.enabled);
+            mass->setEnabled(o->phys.enabled&&o->phys.active);
             fric->setEnabled(o->phys.enabled);
             bounce->setEnabled(o->phys.enabled);
             physType->setEnabled(o->phys.enabled);
@@ -1217,6 +1221,9 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     connect(mass, &QDoubleSpinBox::valueChanged, this, [=, this](double v) { objEdit("pM", [&](DObject &o) { o.phys.mass = v; }); });
     connect(fric, &QDoubleSpinBox::valueChanged, this, [=, this](double v) { objEdit("pF", [&](DObject &o) { o.phys.friction = v; }); });
     connect(bounce, &QDoubleSpinBox::valueChanged, this, [=, this](double v) { objEdit("pB", [&](DObject &o) { o.phys.bounce = v; }); });
+    connect(planarPhysics,&QCheckBox::toggled,this,[=,this](bool value){objEdit("pPlane",[&](DObject &o){o.style["physics.planar"]=value;});});
+    connect(collisionMargin,&QDoubleSpinBox::valueChanged,this,[=,this](double value){objEdit("pMargin",[&](DObject &o){o.style["physics.margin"]=value;});});
+    connect(surfaceThickness,&QDoubleSpinBox::valueChanged,this,[=,this](double value){objEdit("pThickness",[&](DObject &o){o.style["physics.thickness"]=value;});});
 
     auto worldEdit = [=, this](const QString &tag, std::function<void(World &)> f) {
         if (*syncing) return;

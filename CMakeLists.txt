@@ -8,6 +8,7 @@ find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets Multimedia Network Svg)
 find_package(assimp CONFIG REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(AV REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil libswscale)
+pkg_check_modules(BULLET REQUIRED IMPORTED_TARGET bullet)
 
 # The application and regression suite share the editor and renderer objects.
 add_library(CuebaseBuildCore STATIC
@@ -21,6 +22,7 @@ add_library(CuebaseBuildCore STATIC
     src/FrameExport.h src/FrameExport.cpp
     src/Mesh.h src/Mesh.cpp src/MeshOps.cpp
     src/ElementDesign.h src/ElementDesign.cpp src/Animation.cpp src/DesignTexture.cpp src/Hierarchy.cpp
+    src/RigidBodySimulation.h src/RigidBodySimulation.cpp
     src/BuildModel.h src/BuildModel.cpp
     src/BuildCanvas.h src/BuildCanvas.cpp
     src/BuildWorkspace.h src/BuildWorkspace.cpp
@@ -30,7 +32,7 @@ add_library(CuebaseBuildCore STATIC
     src/PropertyInspector.h src/PropertyInspector.cpp
     src/LayerPanel.h src/LayerPanel.cpp)
 target_include_directories(CuebaseBuildCore PUBLIC src)
-target_link_libraries(CuebaseBuildCore PUBLIC Qt6::Widgets Qt6::Multimedia Qt6::Svg assimp::assimp PkgConfig::AV)
+target_link_libraries(CuebaseBuildCore PUBLIC Qt6::Widgets Qt6::Multimedia Qt6::Svg assimp::assimp PkgConfig::AV PkgConfig::BULLET)
 
 add_executable(CuebaseRender src/RenderMain.cpp)
 target_link_libraries(CuebaseRender PRIVATE CuebaseBuildCore)
@@ -65,6 +67,10 @@ target_compile_definitions(Cuebase PRIVATE "CUEBASE_VERSION=\"${PROJECT_VERSION}
 include(CTest)
 if(BUILD_TESTING)
     find_package(Qt6 REQUIRED COMPONENTS Test)
+    add_executable(CuebasePlanningTests tests/PlanningTests.cpp src/ProductionPlan.cpp src/ProductionPlan.h)
+    target_include_directories(CuebasePlanningTests PRIVATE src)
+    target_link_libraries(CuebasePlanningTests PRIVATE Qt6::Test Qt6::Gui)
+    add_test(NAME CuebasePlanning COMMAND CuebasePlanningTests)
     add_executable(CuebaseBuildTests tests/BuildTests.cpp)
     target_link_libraries(CuebaseBuildTests PRIVATE CuebaseBuildCore Qt6::Test)
     add_test(NAME CuebaseBuild COMMAND CuebaseBuildTests -platform offscreen

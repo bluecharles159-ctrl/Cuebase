@@ -39,6 +39,31 @@
 class BuildTests:public QObject {
     Q_OBJECT
 private slots:
+    void rigidBodySupportAndReplay(){
+        auto cube=[](QString id,QVector3D position,QVector3D scale,bool active){DObject o;o.id=id;o.type="Mesh";o.mesh=Mesh::primitive("Cube");o.base.loc=position;o.base.scl=scale;o.phys.enabled=true;o.phys.active=active;o.phys.bounce=0;o.phys.friction=.6;return o;};
+        ElementDesign stable;stable.objects={cube("support",{0,0,2},{1,1,.25f},false),cube("body",{0,0,4.5f},{.5f,.5f,.5f},true)};
+        auto supported=stable.worldMatrix(*stable.find("body"),4000);QVERIFY(qAbs(supported.column(3).z()-2.75)<.06);QVERIFY(qAbs(supported.column(3).x())<.08);
+        ElementDesign falling=stable;falling.find("body")->base.loc.setX(1.2f);const auto initial=falling.worldMatrix(*falling.find("body"),0);const auto tipping=falling.worldMatrix(*falling.find("body"),1600);
+        QVERIFY((tipping.column(0)-initial.column(0)).length()>.08);const auto landed=falling.worldMatrix(*falling.find("body"),4000);QVERIFY(landed.column(3).z()<1.1);QVERIFY(landed.column(3).x()>1.3);
+        const auto replay=falling.worldMatrix(*falling.find("body"),1600);for(int i=0;i<16;++i)QVERIFY(qAbs(replay.constData()[i]-tipping.constData()[i])<.00001);
+        ElementDesign independent=falling;independent.world.gravity=0;QVERIFY(qAbs(independent.worldMatrix(*independent.find("body"),4000).column(3).z()-4.5)<.001);QCOMPARE(falling.worldMatrix(*falling.find("body"),1600),replay);
+        ElementDesign parented;DObject parent;parent.id="parent";parent.type="Group";parent.base.loc={3,0,0};auto child=cube("child",{0,0,4},{.5f,.5f,.5f},true);child.parentId=parent.id;parented.objects={parent,child};const auto world=parented.worldMatrix(*parented.find("child"),4000);QVERIFY(qAbs(world.column(3).z()-.5)<.06);ElementDesign unparented;child.parentId.clear();child.base.loc.setX(3);unparented.objects={child};const auto expected=unparented.worldMatrix(*unparented.find("child"),4000);for(int i=0;i<16;++i)QVERIFY(qAbs(world.constData()[i]-expected.constData()[i])<.00001);QVERIFY(qAbs(parented.propsAt(*parented.find("child"),4000).loc.x()-(world.column(3).x()-3))<.00001);
+        ElementDesign flat;auto platform=cube("flat-support",{0,0,2},{1,1,1},false);platform.type="Shape";platform.w=2;platform.h=.5;platform.base.rot={90,0,0};auto tile=platform;tile.id="flat-body";tile.w=1;tile.h=1;tile.phys.active=true;tile.base.loc={1.2f,0,4.5f};flat.objects={platform,tile};const auto flatEnd=flat.worldMatrix(*flat.find(tile.id),4000);QVERIFY(qAbs(flatEnd.column(3).y())<.001);QVERIFY(flatEnd.column(3).z()<1.1);QVERIFY(flatEnd.column(3).x()>1.3);
+    }
+    void rigidBodyAnimatedSupport(){
+        ElementDesign scene;
+        DObject support;support.id="support";support.type="Mesh";support.mesh=Mesh::primitive("Cube");support.base.loc={0,0,2};support.base.scl={1,1,.25f};support.phys.enabled=true;support.phys.active=false;
+        support.tracks.append(PropertyTrack{"position.x",{{0,0,"Linear"},{1000,5,"Linear"}}});
+        DObject body=support;body.id="body";body.tracks.clear();body.base.loc={0,0,3};body.base.scl={.5f,.5f,.5f};body.phys.active=true;body.phys.bounce=0;
+        scene.objects={support,body};
+        const auto moved=scene.worldMatrix(*scene.find("body"),4000);
+        QVERIFY(moved.column(3).z()<1.1);
+        QCOMPARE(scene.worldMatrix(*scene.find("support"),4000).column(3).x(),5.f);
+        scene.world.floor=false;
+        QVERIFY(scene.worldMatrix(*scene.find("body"),4000).column(3).z()<-10);
+        scene.world.gravity=0;
+        QVERIFY(qAbs(scene.worldMatrix(*scene.find("body"),4000).column(3).z()-3)<.001);
+    }
     void sharedThemesAndIcons(){
         for(const auto &theme:QStringList{"Studio Blue","Current","Darker","Light"}){
             applyUiTheme(theme,false);QCOMPARE(currentUiTheme(),theme);QCOMPARE(qApp->palette().color(QPalette::Window).lightness()>128,theme=="Light");

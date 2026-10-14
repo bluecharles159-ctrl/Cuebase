@@ -4,9 +4,10 @@
 #include <algorithm>
 
 QMatrix4x4 ElementDesign::worldMatrix(const DObject &o,qint64 ms) const {
-    QMatrix4x4 result=o.parentInverse*matrixOf(propsAt(o,ms));
+    if(o.phys.enabled&&o.phys.active&&o.isRenderable())return physicsWorldMatrix(o,ms);
+    QMatrix4x4 result=o.parentInverse*matrixOf(o.at(ms));
     QSet<QString> visited{o.id};const DObject *p=find(o.parentId);
-    while(p&&!visited.contains(p->id)){visited.insert(p->id);result=p->parentInverse*matrixOf(propsAt(*p,ms))*result;p=find(p->parentId);}
+    while(p&&!visited.contains(p->id)){visited.insert(p->id);if(p->phys.enabled&&p->phys.active&&p->isRenderable()){result=physicsWorldMatrix(*p,ms)*result;break;}result=p->parentInverse*matrixOf(p->at(ms))*result;p=find(p->parentId);}
     return result;
 }
 QMatrix4x4 ElementDesign::parentMatrix(const DObject &o,qint64 ms) const {

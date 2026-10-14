@@ -6,7 +6,7 @@ This update uses `Cuebase-buildstudio-updated.zip` as its source baseline. Build
 
 Code::Blocks is not required. On this machine, double-click `Build-Cuebase.cmd` to configure, build with one compiler job, and launch the executable only when the build succeeds. The script also supplies the UCRT64 Qt runtime path when launched from Windows or a MINGW64 terminal. The default preset uses compact debug information and one compiler job for this 4 GB computer. Avoid building multiple copies simultaneously.
 
-Requirements: C++20, CMake 3.25+, Ninja, Qt 6.8+ Widgets/Multimedia/Network/Svg/Test, Assimp, pkg-config, FFmpeg development libraries (avformat, avcodec, avutil, swscale), and FFmpeg with libx264, AAC, RTMP and SRT support. The supplied presets use the installed MSYS2 UCRT64 toolchain. RTMP loopback tests also use MediaMTX at `tools/mediamtx/mediamtx.exe`. The bundled Lucide SVG icons and their license are in `assets/icons/lucide` and are embedded during compilation.
+Requirements: C++20, CMake 3.25+, Ninja, Qt 6.8+ Widgets/Multimedia/Network/Svg/Test, Assimp, Bullet 3.25, pkg-config, FFmpeg development libraries (avformat, avcodec, avutil, swscale), and FFmpeg with libx264, AAC, RTMP and SRT support. The supplied presets use the installed MSYS2 UCRT64 toolchain. Install Bullet with `pacman -S mingw-w64-ucrt-x86_64-bullet` in the UCRT64 shell; its runtime DLLs must also be available when launching Cuebase. RTMP loopback tests also use MediaMTX at `tools/mediamtx/mediamtx.exe`. The bundled Lucide SVG icons and their license are in `assets/icons/lucide` and are embedded during compilation.
 
 ```powershell
 $env:PATH = 'C:\msys64\ucrt64\bin;' + $env:PATH

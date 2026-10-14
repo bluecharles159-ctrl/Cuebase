@@ -1,5 +1,23 @@
 # Verification — 2026-10-14
 
+## Rigid-body and planning-model checkpoint
+
+Rebuilt Cuebase, CuebaseRender and CuebaseStreamTests successfully with one
+compiler job. **38 Build, 23 Studio and 6 planning-model cases passed**, including
+local RTMP/SRT. Results: `build-final/physics-full-results.txt`,
+`physics-studio-results.txt` and `planning-results.txt`.
+
+Physics checks cover centered support, an overhang tipping and falling, flat
+canvas-plane objects, deterministic backward scrubbing, scene-copy independence,
+parented/world-space equivalence, moving passive supports, and gravity/ground
+changes invalidating cached results. Five exported comparison frames were
+generated; frames at 0, 2 and 4 seconds were visually inspected. The centered
+block remains supported and the overhanging block lands on the ground.
+
+Planning tests cover the independent data model only. There is no interactive
+planning board yet. Native physics interaction, complex concave collisions and
+the wider feature/parity audit remain incomplete; this is not a release sign-off.
+
 ## Studio Blue / editor checkpoint
 
 Built `Cuebase`, `CuebaseBuildTests` and `CuebaseStreamTests` with one compiler job.

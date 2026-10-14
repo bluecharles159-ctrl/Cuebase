@@ -134,7 +134,14 @@ EXPANSION” document. CREATIVE-STUDIO-PLAN.md records implementation dependenci
   nodes. Do not promise physical haptics without device support.
 - Physics: investigate passive object contact, support, friction and tipping;
   arbitrary colliders must work beyond the existing ground-plane approximation.
-- These planner and physics items remain pending implementation/verification.
+- Physics now uses Bullet contacts/inertia and passes support, tipping, rewind,
+  parent and moving-support checks. The application/renderer rebuilt; 38 Build
+  and 23 Studio cases passed. A five-second exported motion study was inspected
+  at representative frames. Native interaction and the wider physics scope
+  remain pending. See `PLANNER-AND-PHYSICS-WORK.md`.
+- The planner document model passes 6 checks for sequence timing, reorder,
+  card locks, shared ports and transactional loading. Its interactive board is
+  still pending; do not count the planner as a completed user-facing feature.
 
 ## Release acceptance
 
