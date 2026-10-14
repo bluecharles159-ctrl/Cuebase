@@ -25,7 +25,7 @@
 PropertyInspector::PropertyInspector(BuildModel *model,Library *library,QWidget *parent):QWidget(parent),m(model),lib(library){
     layout=new QVBoxLayout(this);layout->setContentsMargins(4,4,4,4);layout->setSpacing(3);
     layout->setSizeConstraint(QLayout::SetMinimumSize);
-    setStyleSheet("QDoubleSpinBox,QComboBox,QLineEdit{min-height:18px;padding:1px 3px;} QToolButton{border:0;text-align:left;padding:3px;} QToolButton:checked{background:#383838;} QPushButton{padding:2px;border-radius:3px;} QLabel{font-size:10px;}");
+    setStyleSheet("QDoubleSpinBox,QComboBox,QLineEdit{min-height:18px;padding:1px 3px;} QToolButton{border:0;text-align:left;padding:3px;} QToolButton:checked{background:palette(button);} QPushButton{padding:2px;border-radius:3px;} QLabel{font-size:10px;}");
     connect(m,&BuildModel::selectionChanged,this,[this]{rebuild();});
     connect(m,&BuildModel::changed,this,[this]{rebuild();refresh();});
     connect(m,&BuildModel::timeChanged,this,[this]{refresh();});
@@ -37,7 +37,7 @@ QFormLayout *PropertyInspector::section(const QString &title,bool open){
     const bool defaultOpen=title=="TRANSFORM"||(title=="TYPOGRAPHY"&&object&&object->type=="Text");
     open=expanded.value(scope,QSettings().value("inspector/objects/"+scope,defaultOpen).toBool());
     auto *button=new QToolButton;button->setText(title);button->setCheckable(true);button->setChecked(open);button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);button->setIcon(uiIcon(open?"down":"right"));button->setIconSize(QSize(12,12));button->setToolTip("Expand / collapse "+title);
-    button->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);layout->addWidget(button);
+    button->setProperty("sectionHeader",true);button->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);layout->addWidget(button);
     auto *body=new QWidget;auto *form=new QFormLayout(body);form->setContentsMargins(18,2,5,8);form->setSpacing(4);form->setSizeConstraint(QLayout::SetMinimumSize);body->setSizePolicy(QSizePolicy::Preferred,QSizePolicy::Maximum);body->setVisible(open);layout->addWidget(body);
     connect(button,&QToolButton::toggled,body,[=, this](bool visible){expanded[scope]=visible;QSettings().setValue("inspector/objects/"+scope,visible);body->setVisible(visible);button->setIcon(uiIcon(visible?"down":"right"));});return form;
 }
@@ -68,6 +68,7 @@ void PropertyInspector::number(QFormLayout *form,const QString &label,const QStr
     sync.append([=, this]{
         auto *o=m->active();if(!o)return;
         auto displayed=[=, this](DObject *object){
+            if(object->type=="Text"&&object->style["text.autoFit"].toBool()&&(path=="layout.width"||path=="layout.height"))return object->evaluated(m->t).propertyBase(path);
             if(path=="position.x"||path=="position.z"){
                 QPointF pixel;const auto camera=m->design.sceneCamera(m->t,lib->display.aspect());
                 camera.toScreen(m->design.worldMatrix(*object,m->t).map(QVector3D()),QRectF(0,0,lib->display.resX(),lib->display.resY()),&pixel);
@@ -81,11 +82,12 @@ void PropertyInspector::number(QFormLayout *form,const QString &label,const QStr
         if(mixed){auto *line=spin->findChild<QLineEdit*>();line->clear();line->setPlaceholderText("Mixed");}
         const bool keyed=m->propertyIsKeyed(*o,path,m->t),animated=o->track(path)!=nullptr;
         const bool modified=keyed&&o->overrides.contains(path)&&qAbs(o->propertyValue(path,m->t)-o->track(path)->evaluate(m->t,o->propertyBase(path)))>.000001;
-        spin->setStyleSheet(QString("QDoubleSpinBox{background:%1;color:#eeeeee;border-radius:3px;}").arg(keyed?"#79722c":animated?"#426b29":"#454545"));
-        key->setText(keyed?"◆":"◇");key->setStyleSheet(keyed?"color:#fbbf24;":animated?"color:#60a5fa;":"color:#64748b;");
+        spin->setStyleSheet(QString("QDoubleSpinBox{background:%1;color:%2;border-radius:3px;}").arg(keyed?"#79722c":animated?"#426b29":"palette(base)",keyed||animated?"white":"palette(text)"));
+        key->setText(keyed?"◆":"◇");key->setStyleSheet(keyed?"color:#fbbf24;":animated?"color:#60a5fa;":"color:palette(placeholder-text);");
         if(modified){key->setText("◈");key->setStyleSheet("color:#ff9f43;");spin->setStyleSheet("QDoubleSpinBox{background:#87552c;color:white;border-radius:3px;}");}
-        key->setToolTip(modified?"Edited value differs from the key at this frame. Click to remove the key, then click again to record the edited value.":"Toggle this property's key at the playhead");
-        spin->setEnabled(!o->locked);key->setEnabled(!o->locked);reset->setEnabled(!o->locked);
+        key->setToolTip(modified?"Update this key with the edited value. Click an unchanged key to remove it.":"Toggle this property's key at the playhead");
+        const bool fitted=o->type=="Text"&&o->style["text.autoFit"].toBool()&&((path=="layout.width"&&o->style["text.autoFitX"].toBool(true))||(path=="layout.height"&&o->style["text.autoFitY"].toBool(true)));
+        spin->setEnabled(!o->locked&&!fitted);key->setEnabled(!o->locked&&!fitted);reset->setEnabled(!o->locked&&!fitted);
     });
 }
 void PropertyInspector::choice(QFormLayout *form,const QString &label,const QString &path,const QStringList &options,const QString &fallback){
@@ -140,6 +142,13 @@ void PropertyInspector::rebuild(){
     if(o->isRenderable() || multi){auto *appearance=section("APPEARANCE");number(appearance,"Opacity","opacity",0,1,.05);choice(appearance,"Blend mode","blend",{"Normal","Multiply","Screen","Overlay","Darken","Lighten","Color Dodge","Color Burn","Hard Light","Soft Light","Difference","Exclusion"},"Normal");}
     if(!multi && (o->type=="Text"||o->type=="Image"||o->type=="Shape")){
         auto *size=section("LAYOUT");number(size,"Width","layout.width",1,8192,1," px");number(size,"Height","layout.height",1,8192,1," px");
+        if(o->type=="Text"){
+            auto *fit=new QCheckBox("Fit background to text");fit->setObjectName("textAutoFit");size->addRow(fit);
+            auto *axes=new QWidget;auto *row=new QHBoxLayout(axes);row->setContentsMargins(0,0,0,0);auto *x=new QCheckBox("X"),*y=new QCheckBox("Y");row->addWidget(x);row->addWidget(y);row->addStretch();size->addRow("Adapt axes",axes);
+            for(auto pair:{qMakePair(fit,QString("text.autoFit")),qMakePair(x,QString("text.autoFitX")),qMakePair(y,QString("text.autoFitY"))})connect(pair.first,&QCheckBox::toggled,this,[=,this](bool value){apply([&]{if(auto *object=m->active())object->style[pair.second]=value;});});
+            sync.append([=,this]{if(auto *object=m->active()){QSignalBlocker a(fit),b(x),c(y);fit->setChecked(object->style["text.autoFit"].toBool());x->setChecked(object->style["text.autoFitX"].toBool(true));y->setChecked(object->style["text.autoFitY"].toBool(true));axes->setVisible(fit->isChecked());}});
+            number(size,"Text padding","text.padding",0,512,1," px");
+        }
         if(o->type=="Shape")choice(size,"Shape","shape",{"Rectangle","Ellipse","Triangle"},"Rectangle");
         auto *aspectLock=new QCheckBox("Maintain aspect ratio");size->addRow(aspectLock);
         auto *unlit=new QCheckBox("Ignore lighting");size->addRow(unlit);connect(unlit,&QCheckBox::toggled,this,[=,this](bool value){apply([&]{if(auto *object=m->active())object->mat.shadeless=value;});});sync.append([=,this]{if(auto *object=m->active())unlit->setChecked(object->mat.shadeless);});
@@ -188,10 +197,20 @@ void PropertyInspector::rebuild(){
         connect(on,&QCheckBox::toggled,this,[=, this](bool v){apply([&]{if(auto *x=m->active())x->style["shadow.enabled"]=v;});});
         sync.append([=, this]{if(auto *x=m->active())on->setChecked(x->style["shadow.enabled"].toBool());});
         number(shadow,"X","shadow.x",-1000,1000,1," px");number(shadow,"Y","shadow.y",-1000,1000,1," px");number(shadow,"Blur","shadow.blur",0,80,1," px");color(shadow,"Color","shadow.color","#99000000");
+        if(o->type=="Text"){
+            auto *body=new QWidget;auto *form=new QFormLayout(body);form->setContentsMargins(8,4,0,0);shadow->addRow(body);
+            auto *enabled=new QCheckBox("Text shadow");form->addRow(enabled);
+            connect(enabled,&QCheckBox::toggled,this,[=,this](bool value){apply([&]{if(auto *object=m->active())object->style["textShadow.enabled"]=value;});});
+            sync.append([=,this]{if(auto *object=m->active()){QSignalBlocker block(enabled);enabled->setChecked(object->style["textShadow.enabled"].toBool());body->setVisible(object->style["text.background"].toBool());}});
+            number(form,"X","textShadow.x",-1000,1000,1," px");number(form,"Y","textShadow.y",-1000,1000,1," px");number(form,"Blur","textShadow.blur",0,80,1," px");color(form,"Color","textShadow.color","#99000000");
+        }
         auto *effects=section("EFFECTS",false);
         number(effects,"Backdrop blur","backdrop.blur",0,80,1," px");number(effects,"Backdrop brightness","backdrop.brightness",0,3,.05);
         number(effects,"Blur","effects.blur",0,80,1," px");
         number(effects,"Reveal","effects.reveal",0,1,.01);
+        choice(effects,"Reveal style","effects.revealStyle",{"Wipe","Pixels","Blocks","Liquid","Assemble"},"Wipe");
+        choice(effects,"Reveal timing","effects.revealTiming",{"Linear","Smooth","Constant","Steps","Flicker"},"Linear");
+        number(effects,"Block size","effects.revealBlock",2,512,1," px");number(effects,"Scatter distance","effects.revealSpread",0,4,.05);number(effects,"Timing steps","effects.revealSteps",2,100,1);number(effects,"Reveal seed","effects.revealSeed",0,10000,1);
         choice(effects,"Reveal mode","effects.revealMode",{"Linear","Radial"},"Linear");
         number(effects,"Reveal roughness","effects.revealRoughness",0,1,.01);
         number(effects,"Reveal softness","effects.revealSoftness",0,.2,.005);

@@ -8,14 +8,20 @@ namespace {
 bool manualHold(const QJsonObject &cue){return cue["hold"].toBool(true)&&cue["holdManual"].toBool(!cue.contains("holdMs"));}
 qint64 holdTime(const QJsonObject &cue){return cue["hold"].toBool(false)?qBound(qint64(0), qint64(cue["holdMs"].toDouble()),qint64(86400000)):0;}
 int repetitions(const QJsonObject &cue){return qBound(1,cue["repeat"].toInt(1),100);}
+QJsonObject playSettings(QJsonObject cue,int index){
+    const auto plays=cue["plays"].toArray();
+    if(index>=0&&index<plays.size()){const auto play=plays[index].toObject();for(const auto &key:QStringList{"start","end","hold","holdMs","holdManual"})if(play.contains(key))cue[key]=play[key];}
+    cue.remove("plays");return cue;
+}
 void appendCue(CuePlan &plan,const ElementDesign &source,const QJsonObject &cue,const QString &entry,int iteration,const QString &json){
     if(cue["disabled"].toBool())return;
     const int first=plan.steps.size();
-    const qint64 start=qBound(qint64(0),qint64(cue["start"].toDouble()),qint64(qMax(0,source.durationMs-1)));
-    const qint64 end=qBound<qint64>(start+1,qint64(cue["end"].toDouble(source.durationMs)),qMax<qint64>(start+1,source.durationMs));
     for(int n=0;n<repetitions(cue);++n){
+        const auto play=playSettings(cue,n);
+        const qint64 start=qBound(qint64(0),qint64(play["start"].toDouble()),qint64(qMax(0,source.durationMs-1)));
+        const qint64 end=qBound<qint64>(start+1,qint64(play["end"].toDouble(source.durationMs)),qMax<qint64>(start+1,source.durationMs));
         if(plan.steps.size()>=10000){plan.error="This board exceeds 10,000 playback sections. Reduce its repeat counts.";return;}
-        plan.steps.append({entry,cue["id"].toString(),cue["name"].toString("Animation"),json,iteration,start,end,holdTime(cue),manualHold(cue),-1});
+        plan.steps.append({entry,cue["id"].toString(),cue["name"].toString("Animation"),json,entry.isEmpty()?n:iteration,start,end,holdTime(play),manualHold(play),-1});
     }
     if(cue["loop"].toBool()&&plan.steps.size()>first)plan.steps.last().loopTo=first;
 }
@@ -54,9 +60,10 @@ CuePlan compileCueBoard(const ElementDesign &source,const QJsonArray &board,cons
         const auto entry=value.toObject();if(entry["disabled"].toBool())continue;
         QJsonObject cue;for(const auto &c:source.animationCues)if(c.toObject()["id"]==entry["cue"]){cue=c.toObject();break;}
         if(cue.isEmpty()){plan.error="A cue used by this board no longer exists. Remove or replace that board entry.";return plan;}
-        for(const auto &key:QStringList{"repeat","loop","hold","holdMs","holdManual"})if(entry.contains(key))cue[key]=entry[key];
+        for(const auto &key:QStringList{"repeat","loop","hold","holdMs","holdManual","plays"})if(entry.contains(key))cue[key]=entry[key];
         const auto sections=entry["sections"].toArray();const int first=plan.steps.size();
         for(int n=0;n<repetitions(cue);++n){
+            const auto timing=playSettings(cue,n);
             const auto section=n<sections.size()?sections[n].toObject():QJsonObject{};if(section["disabled"].toBool())continue;
             auto design=section["design"].toString().isEmpty()?source:ElementDesign::fromJson(section["design"].toString());
             const auto fields=section["fields"].toObject();for(auto it=fields.begin();it!=fields.end();++it){QString reason;if(!setStudioField(design,it.key(),it.value().toString(),&reason)){plan.error=reason;return plan;}}
@@ -67,9 +74,9 @@ CuePlan compileCueBoard(const ElementDesign &source,const QJsonArray &board,cons
                 QJsonArray childBoard=section["board"].toArray();if(!section.contains("board"))for(const auto &child:children)childBoard.append(newCueBoardEntry(child));
                 auto nested=compileCueBoard(design,childBoard,section["boardSettings"].toObject(),depth+1);if(!nested.error.isEmpty()){plan.error=nested.error;return plan;}
                 const int childFirst=plan.steps.size();for(auto step:nested.steps){step.entryId=entry["id"].toString();step.iteration=n;if(step.loopTo>=0)step.loopTo+=childFirst;plan.steps.append(step);}
-                if(plan.steps.size()>childFirst){auto &last=plan.steps.last();last.holdMs+=holdTime(cue);last.manualHold=last.manualHold||manualHold(cue);}
+                if(plan.steps.size()>childFirst){auto &last=plan.steps.last();last.holdMs+=holdTime(timing);last.manualHold=last.manualHold||manualHold(timing);}
             }else{
-                auto once=cue;once["repeat"]=1;once["loop"]=false;
+                auto once=timing;once["repeat"]=1;once["loop"]=false;
                 if(!section["design"].toString().isEmpty()){once["start"]=design.startMs;once["end"]=design.durationMs;}
                 appendCue(plan,design,once,entry["id"].toString(),n,json);
             }
@@ -86,7 +93,8 @@ CuePlan compileCueBoard(const ElementDesign &source,const QJsonArray &board,cons
 }
 QString cueTimingLabel(const QJsonObject &cue){
     QString label=QString("%1 s · %2 plays").arg(qMax(1.,cue["end"].toDouble()-cue["start"].toDouble())/1000.,0,'g',4).arg(repetitions(cue));if(cue["loop"].toBool())label+=" · Loop until stopped";
-    if(manualHold(cue))label+=" · Manual hold";else if(holdTime(cue)>0)label+=QString(" · Hold %1 s each").arg(holdTime(cue)/1000.,0,'g',4);
+    if(!cue["plays"].toArray().isEmpty())label+=" · Per-play timing";
+    else if(manualHold(cue))label+=" · Manual hold";else if(holdTime(cue)>0)label+=QString(" · Hold %1 s each").arg(holdTime(cue)/1000.,0,'g',4);
     return label;
 }
 

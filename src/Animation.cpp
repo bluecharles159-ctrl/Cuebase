@@ -107,6 +107,9 @@ void DObject::refreshLegacyKeys() {
 }
 
 double DObject::propertyBase(const QString &path) const {
+    if(path=="effects.revealBlock")return style[path].toDouble(32);
+    if(path=="effects.revealSpread")return style[path].toDouble(1);
+    if(path=="effects.revealSteps")return style[path].toDouble(8);
     if(path=="media.speed"||path=="media.volume"||path=="audio.volume"||path=="audio.speed")return style[path].toDouble(1);
     if (transformChannels().contains(path)) return channelValue(base, path);
     if (path == "layout.width") return w * kPxPerUnit;
@@ -154,6 +157,7 @@ DObject DObject::evaluated(qint64 ms) const {
     if(style["media.kind"].toString()=="Video")result.style["media.time"]=double(ms);
     for (const auto &tr : tracks) result.setPropertyBase(tr.property, propertyValue(tr.property, ms));
     for (auto it = overrides.begin(); it != overrides.end(); ++it) result.setPropertyBase(it.key(), it.value());
+    result.fitTextLayout();
     return result;
 }
 

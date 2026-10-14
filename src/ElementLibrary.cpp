@@ -69,7 +69,7 @@ void ElementPreview::mouseMoveEvent(QMouseEvent *e){if(!cropping||!(e->buttons()
 void ElementPreview::mouseReleaseEvent(QMouseEvent*){if(crop.width()<.01||crop.height()<.01)crop={0,0,1,1};update();}
 bool editElementPresentation(Element &element,QWidget *parent){
     QDialog dialog(parent);dialog.setWindowTitle("Screen element preview");dialog.setWindowFlag(Qt::FramelessWindowHint);dialog.setAttribute(Qt::WA_TranslucentBackground);dialog.resize(640,560);dialog.setObjectName("elementPreviewDialog");
-    dialog.setStyleSheet("QWidget{background:transparent;font-size:11px;color:#dedee3;}QFrame#previewCard{background:#2b2c30;border:1px solid #55575d;border-radius:12px;}QLineEdit,QPlainTextEdit,QComboBox{background:#404248;border:0;border-radius:4px;padding:5px;}QPushButton{background:#474b54;border:0;border-radius:5px;padding:6px 12px;}");
+    dialog.setStyleSheet("QWidget{background:transparent;font-size:10px;color:palette(text);}QFrame#previewCard{background:#2b2c30;border:1px solid #55575d;border-radius:12px;}QLineEdit,QPlainTextEdit,QComboBox{background:#404248;border:0;border-radius:4px;padding:5px;}QPushButton{background:#474b54;border:0;border-radius:5px;padding:6px 12px;}");
     auto *outer=new QVBoxLayout(&dialog);outer->setContentsMargins(0,0,0,0);auto *card=new QFrame;card->setObjectName("previewCard");outer->addWidget(card);
     auto *layout=new QVBoxLayout(card);layout->setContentsMargins(16,16,16,16);auto *title=new QLabel("Choose how this element appears in the library");layout->addWidget(title);
     auto *preview=new ElementPreview;preview->setElement(element);preview->time=element.previewMs;preview->cropping=true;preview->crop={element.previewX,element.previewY,element.previewW,element.previewH};layout->addWidget(preview,1);

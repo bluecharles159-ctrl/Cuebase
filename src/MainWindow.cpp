@@ -1,3 +1,4 @@
+#include "UiTheme.h"
 #include "MainWindow.h"
 #include "StudioCueBoard.h"
 #include "CueSequence.h"
@@ -45,6 +46,9 @@
 #include <QStatusBar>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include <QWindow>
+#include <QStyle>
+#include <QMouseEvent>
 
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
@@ -89,74 +93,16 @@ protected:void closeEvent(QCloseEvent *event)override{if(!approveClose()){event-
 private:bool approveClose(){auto *board=findChild<QWidget*>("studioCueBoard");if(!board||!board->property("dirty").toBool())return true;const auto choice=QMessageBox::question(this,"Cue board draft","Save this cue board before closing?",QMessageBox::Save|QMessageBox::Discard|QMessageBox::Cancel,QMessageBox::Save);if(choice==QMessageBox::Cancel)return false;if(choice==QMessageBox::Discard){board->setProperty("dirty",false);return true;}if(auto *save=board->findChild<QPushButton*>("saveCueBoard"))save->click();return !board->property("dirty").toBool();}
 };
 
+class WindowHeader final:public QFrame{
+public:using QFrame::QFrame;
+protected:
+    void mousePressEvent(QMouseEvent *event)override{if(event->button()==Qt::LeftButton&&window()->windowHandle()){window()->windowHandle()->startSystemMove();event->accept();return;}QFrame::mousePressEvent(event);}
+    void mouseDoubleClickEvent(QMouseEvent *event)override{if(event->button()==Qt::LeftButton){if(window()->isMaximized())window()->showNormal();else window()->showMaximized();event->accept();return;}QFrame::mouseDoubleClickEvent(event);}
+};
+
 namespace {
 
-const char *kStyle = R"(
-* { color:#e5e9f0; font-size:11px; }
-QMainWindow, QDialog, QMessageBox { background:#0b1220; }
-QFrame#header { background:#0f172a; border:none; border-bottom:1px solid #1e293b; border-radius:0; }
-QMenuBar#headerBar { background:transparent; }
-QMenuBar#headerBar::item { background:#020617; border-radius:6px; padding:4px 12px; margin:2px 3px; font-weight:600; }
-QMenuBar#headerBar::item:selected { background:#1e293b; }
-QMenu { background:#1c1c1e; border:1px solid #3a3a3c; border-radius:10px; padding:8px; }
-QMenu::item { padding:7px 28px 7px 14px; border-radius:6px; }
-QMenu::item:selected { background:#2563eb; }
-QMenu::separator { height:1px; background:#3a3a3c; margin:6px 8px; }
 
-QFrame#panel { background:#111a2b; border:1px solid #243044; border-radius:10px; }
-QFrame#editorBg { background:#0c1322; border:1px solid #1b2740; border-radius:10px; }
-QFrame#editorFg { background:#131c2f; border:1px solid #243044; border-radius:10px; }
-QFrame#qcard { background:#0f172a; border:1px solid #243044; border-radius:8px; }
-QFrame#qcard[state="now"] { border:2px solid #2563eb; background:#13213d; }
-QFrame#qcard[state="next"] { border:1px solid #475569; }
-QLabel { background:transparent; border:none; }
-
-QLineEdit, QComboBox, QDoubleSpinBox, QSpinBox { background:#1f2937; border:1px solid #334155; border-radius:6px; padding:5px 8px; }
-QLineEdit:disabled, QComboBox:disabled, QDoubleSpinBox:disabled, QSpinBox:disabled { color:#64748b; background:#182131; }
-QComboBox QAbstractItemView { background:#1f2937; selection-background-color:#2563eb; }
-QPlainTextEdit { background:#1f2937; border:1px solid #334155; border-radius:6px; padding:5px 8px; }
-QFrame#tlBox { background:#070c18; border:1px solid #243044; border-radius:12px; }
-QListWidget { background:#0f1729; border:1px solid #243044; border-radius:8px; padding:4px; }
-QListWidget::item { padding:6px; border-radius:6px; }
-QListWidget::item:selected { background:#1d4ed8; }
-QCheckBox { spacing:8px; }
-
-QPushButton { background:#1e293b; border:1px solid #334155; border-radius:6px; padding:7px 14px; font-weight:600; }
-QPushButton:hover { background:#2b3a55; }
-QPushButton:disabled { color:#64748b; background:#141d2e; }
-QPushButton#save { background:#454545; border:none; }
-QPushButton#save:hover { background:#565656; }
-QPushButton#broadcast { background:#426387; border:none; font-size:11px; padding:5px; }
-QPushButton#broadcast[live="true"] { background:#dc2626; }
-QPushButton#broadcast:disabled { background:#393c42; color:#777d87; }
-QToolButton { background:transparent; border:none; color:#94a3b8; }
-QToolButton#rail { font-size:20px; border-radius:10px; }
-QToolButton#rail:hover { background:#16213a; }
-QToolButton#rail:checked { background:#131c2f; border:1px solid #243044; }
-QToolButton#addBtn { background:#2563eb; color:white; border-radius:6px; font-size:14px; font-weight:700; }
-QToolButton#addBtn:hover { background:#1d4ed8; }
-
-QSlider::groove:horizontal { height:4px; background:#334155; border-radius:2px; }
-QSlider::handle:horizontal { background:#60a5fa; width:14px; margin:-6px 0; border-radius:7px; }
-QScrollArea, QScrollArea > QWidget > QWidget { background:transparent; border:none; }
-QScrollBar:horizontal { height:12px; background:rgba(255,255,255,8); margin:2px 6px; border-radius:4px; }
-QScrollBar::handle:horizontal { background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #46567a,stop:1 #34425f); border-radius:4px; min-width:44px; }
-QScrollBar::handle:horizontal:hover { background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #5b7bb8,stop:1 #4663a0); }
-QScrollBar::handle:horizontal:pressed { background:#2563eb; }
-QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width:0; height:0; }
-QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background:transparent; }
-QScrollBar:vertical { width:12px; background:rgba(255,255,255,8); margin:6px 2px; border-radius:4px; }
-QScrollBar::handle:vertical { background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #46567a,stop:1 #34425f); border-radius:4px; min-height:44px; }
-QScrollBar::handle:vertical:hover { background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #5b7bb8,stop:1 #4663a0); }
-QScrollBar::handle:vertical:pressed { background:#2563eb; }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { width:0; height:0; }
-QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background:transparent; }
-QSplitter::handle { background:transparent; }
-QSplitter::handle:hover { background:#1e40af; border-radius:2px; }
-QStatusBar { background:#0f172a; border-top:1px solid #1e293b; }
-QStatusBar::item { border:none; }
-QToolTip { background:#1c1c1e; color:#e5e9f0; border:1px solid #3a3a3c; padding:4px; }
-)";
 
 QPixmap makeLogo(int size) {
     QPixmap pm(size, size);
@@ -203,7 +149,7 @@ QString clockText(qint64 ms) {
 
 QLabel *caption(const QString &t) {
     auto *l = new QLabel(t);
-    l->setStyleSheet("color:#94a3b8; font-weight:700; font-size:11px;");
+    l->setStyleSheet("color:palette(placeholder-text); font-weight:700; font-size:10px;");
     return l;
 }
 
@@ -212,25 +158,9 @@ QLabel *caption(const QString &t) {
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     setAcceptDrops(true);
     setWindowTitle("Cuebase");
+    setWindowFlag(Qt::FramelessWindowHint);
     resize(1400, 860);
-    qApp->setStyleSheet(QString::fromUtf8(kStyle)+R"(
-QWidget { font-size:11px; }
-QMainWindow { background:#242528; }
-QFrame#panel,QFrame#editorFg,QFrame#qcard { background:#303135; border:1px solid #414247; border-radius:6px; }
-QFrame#editorBg,QFrame#tlBox { background:#28292c; border:1px solid #414247; border-radius:6px; }
-QLineEdit,QComboBox,QDoubleSpinBox,QSpinBox,QPlainTextEdit { background:#45464b; border:1px solid #515359; border-radius:3px; padding:2px 5px; }
-QPushButton { background:#424449; border:1px solid #53555b; border-radius:4px; padding:4px 8px; font-weight:400; }
-QPushButton:hover { background:#51545b; }
-QToolButton#rail { font-size:10px; border-radius:4px; padding:2px; }
-QToolButton#addBtn { background:#494b50; font-size:12px; }
-QListWidget { background:#2c2d31; border:1px solid #414247; padding:2px; }
-QListWidget::item { padding:3px; }
-QMenu::item { padding:4px 22px 4px 10px; }
-QScrollBar:vertical { width:6px; margin:0; }
-QScrollBar:horizontal { height:6px; margin:0; }
-QScrollBar::handle:vertical,QScrollBar::handle:horizontal { background:#64666d; border-radius:3px; }
-QCheckBox { spacing:4px; }
-)");
+    applyUiTheme(currentUiTheme(),false);
     setWindowIcon(QIcon(makeLogo(64)));
 
     buildUi();
@@ -243,16 +173,16 @@ QCheckBox { spacing:4px; }
 // --------------------------------------------------------------- header
 
 void MainWindow::buildMenus() {
-    auto *header = new QFrame;
+    auto *header = new WindowHeader;
     header->setObjectName("header");
     auto *hl = new QHBoxLayout(header);
-    hl->setContentsMargins(10, 4, 10, 4);
-    hl->setSpacing(8);
+    hl->setContentsMargins(6, 2, 4, 2);
+    hl->setSpacing(4);
 
-    auto *logo = new QToolButton;logo->setObjectName("channelProfile");logo->setIcon(QIcon(makeLogo(26)));logo->setIconSize({26,26});logo->setStyleSheet("QToolButton{border-radius:17px;padding:4px;background:#263640;}");logo->setToolTip("Channel profile");
+    auto *logo = new QToolButton;logo->setObjectName("channelProfile");logo->setIcon(QIcon(makeLogo(26)));logo->setIconSize({26,26});logo->setStyleSheet("QToolButton{border-radius:17px;padding:4px;background:palette(window);}");logo->setToolTip("Channel profile");
     auto refreshLogo=[this,logo]{QPixmap image(m_lib->display.channelLogo);if(const auto *element=m_lib->element(m_lib->display.channelLogoElement))image=QPixmap::fromImage(elementThumbnail(*element));if(image.isNull())logo->setIcon(QIcon(makeLogo(26)));else{QPixmap circle(26,26);circle.fill(Qt::transparent);QPainter painter(&circle);painter.setRenderHint(QPainter::Antialiasing);painter.setRenderHint(QPainter::SmoothPixmapTransform);painter.setPen(Qt::NoPen);painter.setBrush(QColor("#263640"));painter.drawEllipse(circle.rect());QPainterPath mask;mask.addEllipse(QRectF(circle.rect()));painter.setClipPath(mask);const auto fitted=image.scaled(22,22,Qt::KeepAspectRatio,Qt::SmoothTransformation);painter.drawPixmap((26-fitted.width())/2,(26-fitted.height())/2,fitted);painter.end();logo->setIcon(QIcon(circle));}logo->setToolTip(m_lib->display.channel+" / Channel profile");};refreshLogo();connect(m_lib,&Library::elementsChanged,logo,refreshLogo);
     connect(logo,&QToolButton::clicked,this,[this,refreshLogo]{
-        QDialog dialog(this);dialog.setWindowTitle("Channel profile");dialog.setMinimumWidth(390);dialog.setStyleSheet("QDialog{background:#26313b;border-radius:12px;}QLabel{font-size:11px;}QLineEdit,QPlainTextEdit,QComboBox{border-radius:5px;padding:5px;}");auto *form=new QFormLayout(&dialog);form->setContentsMargins(18,18,18,18);
+        QDialog dialog(this);dialog.setWindowTitle("Channel profile");dialog.setMinimumWidth(390);dialog.setStyleSheet("QDialog{background:palette(window);border-radius:12px;}QLabel{font-size:10px;}QLineEdit,QPlainTextEdit,QComboBox{border-radius:5px;padding:5px;}");auto *form=new QFormLayout(&dialog);form->setContentsMargins(18,18,18,18);
         auto *name=new QLineEdit(m_lib->display.channel);auto *description=new QPlainTextEdit(m_lib->display.channelDescription);description->setMaximumHeight(80);auto *image=new QLineEdit(m_lib->display.channelLogo);auto *browse=new QPushButton(uiIcon("image"),"Import logo");auto *element=new QComboBox;element->addItem("Use imported image",QString());for(const auto &e:m_lib->elements)element->addItem(e.name,e.id);element->setCurrentIndex(qMax(0,element->findData(m_lib->display.channelLogoElement)));
         form->addRow("Channel",name);form->addRow("About / focus",description);form->addRow("Logo image",image);form->addRow(browse);form->addRow("Build screen element",element);auto *error=new QLabel;error->setWordWrap(true);form->addRow(error);auto *buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);form->addRow(buttons);
         connect(browse,&QPushButton::clicked,&dialog,[&]{const auto file=QFileDialog::getOpenFileName(&dialog,"Channel logo",{},"Images (*.png *.jpg *.jpeg *.webp *.svg)");if(!file.isEmpty()){image->setText(file);element->setCurrentIndex(0);}});connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);connect(buttons,&QDialogButtonBox::accepted,&dialog,[&]{if(name->text().trimmed().isEmpty()){error->setText("Enter a channel name.");return;}if(element->currentData().toString().isEmpty()&&!image->text().isEmpty()&&QImage(image->text()).isNull()){error->setText("Choose a readable logo image.");return;}const auto before=m_lib->display;m_lib->display.channel=name->text().trimmed();m_lib->display.channelDescription=description->toPlainText();m_lib->display.channelLogo=image->text();m_lib->display.channelLogoElement=element->currentData().toString();QString reason;if(!m_lib->saveChecked(&reason)){m_lib->display=before;error->setText(reason);return;}refreshLogo();dialog.accept();});dialog.exec();
@@ -263,14 +193,18 @@ void MainWindow::buildMenus() {
     auto *bar = new QMenuBar;
     bar->setObjectName("headerBar");
     hl->addWidget(logo);
+    auto *titleLabel = new QLabel("Cuebase — Studio");titleLabel->setObjectName("workspaceWindowTitle");titleLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+    titleLabel->setStyleSheet("font-weight:600;background:transparent;padding:0 8px;");
+    hl->addWidget(titleLabel);
     hl->addWidget(divider);
     hl->addWidget(bar);
     hl->addStretch();
-    auto *titleLabel = new QLabel("Cuebase");
-    titleLabel->setStyleSheet("color:#94a3b8; font-weight:600;");
-    hl->addWidget(titleLabel);
-    hl->addStretch();
-    hl->addSpacing(230);
+    auto control=[&](QString name,QString icon,QString label){auto *button=new QToolButton;button->setObjectName(name);button->setIcon(uiIcon(icon));button->setIconSize({13,13});button->setFixedSize(30,26);button->setToolTip(label);button->setAccessibleName(label);hl->addWidget(button);return button;};
+    auto *settings=control("windowSettings","settings","Settings");connect(settings,&QToolButton::clicked,this,[this]{showUiSettings(this);});
+    auto *minimize=control("windowMinimize","remove","Minimize");minimize->setIcon(style()->standardIcon(QStyle::SP_TitleBarMinButton));connect(minimize,&QToolButton::clicked,this,&QWidget::showMinimized);
+    auto *maximize=control("windowMaximize","square","Maximize / restore");connect(maximize,&QToolButton::clicked,this,[this]{isMaximized()?showNormal():showMaximized();});
+    auto *closeButton=control("windowClose","close","Close");connect(closeButton,&QToolButton::clicked,this,&QWidget::close);
+    connect(m_stack,&QStackedWidget::currentChanged,titleLabel,[=,this]{titleLabel->setText(m_stack->currentWidget()==m_build?"Cuebase — Build":"Cuebase — Studio");});
     setMenuWidget(header);
 
     auto newMenu = [bar](const QString &title) {
@@ -310,6 +244,7 @@ void MainWindow::buildMenus() {
     auto *edit = newMenu("Edit");
     add(edit, "Undo", QKeySequence("Ctrl+Z"), [this, focusCall] { if (m_build && m_stack->currentWidget() == m_build) m_build->undoEdit(); else focusCall("undo")(); });
     add(edit, "Redo", QKeySequence("Ctrl+Shift+Z"), [this, focusCall] { if (m_build && m_stack->currentWidget() == m_build) m_build->redoEdit(); else focusCall("redo")(); });
+    add(edit, "Settings…", QKeySequence("Ctrl+,"), [this] { showUiSettings(this); });
     edit->addSeparator();
     add(edit, "Cut", QKeySequence("Ctrl+X"), focusCall("cut"));
     add(edit, "Copy", QKeySequence("Ctrl+C"), focusCall("copy"));
@@ -388,6 +323,8 @@ QList<QPair<QString, QString>> MainWindow::shortcutRows() const {
     rows.append(QPair<QString,QString>{"Build: duplicate independently", "Ctrl+D / Shift+D"});
     rows.append(QPair<QString,QString>{"Build: parent to last-selected layer (keep transform)", "Ctrl+P"});
     rows.append(QPair<QString,QString>{"Build: clear parent (keep transform)", "Alt+P"});
+    rows.append(QPair<QString,QString>{"Build viewport: apply first modifier", "Ctrl+Shift+M"});
+    rows.append(QPair<QString,QString>{"Build viewport: select all / deselect", "A or Ctrl+A / Alt+A"});
     rows.append(QPair<QString,QString>{"Build: frame selected / fit artboard", "F / Home"});
     rows.append(QPair<QString,QString>{"Build: play / pause", "Space"});
     rows.append(QPair<QString,QString>{"Build: insert transform keys / remove current keys", "K / Alt+K"});
@@ -589,7 +526,7 @@ QWidget *MainWindow::buildPreview() {
     auto *fixed=new QToolButton;fixed->setObjectName("fixedTimelinePlayhead");fixed->setIcon(uiIcon("camera"));fixed->setCheckable(true);fixed->setFixedSize(24,22);row->addWidget(fixed);
     auto updateFollow=[=]{fixed->setChecked(tl->fixedPlayhead());fixed->setToolTip(tl->followingPlayhead()?"Fixed-center playhead · pan to inspect, F to resume following":tl->fixedPlayhead()?"Following paused · F to center on the broadcast playhead":"Enable fixed-center playhead");};
     connect(fixed,&QToolButton::clicked,tl,&TimelineWidget::setFixedPlayhead);connect(tl,&TimelineWidget::navigationChanged,fixed,updateFollow);updateFollow();
-    auto *timeLabel=new QLabel;auto showTime=[=,this]{timeLabel->setText(QString("%1 s").arg(m_play->playheadMs()/1000.,0,'f',2));};connect(m_play,&Playout::ticked,timeLabel,showTime);showTime();row->addWidget(timeLabel);row->addStretch();auto *navHint=new QLabel("Wheel zoom · Middle drag pan · Alt wheel step");navHint->setStyleSheet("color:#969ca5;font-size:10px;");row->addWidget(navHint);
+    auto *timeLabel=new QLabel;auto showTime=[=,this]{timeLabel->setText(QString("%1 s").arg(m_play->playheadMs()/1000.,0,'f',2));};connect(m_play,&Playout::ticked,timeLabel,showTime);showTime();row->addWidget(timeLabel);row->addStretch();auto *navHint=new QLabel("Wheel zoom · Middle drag pan · Alt wheel step");navHint->setStyleSheet("color:palette(placeholder-text);font-size:10px;");row->addWidget(navHint);
 
     navHint->hide();
     l->addWidget(caption("TIMELINE"));
@@ -656,7 +593,7 @@ void MainWindow::importFiles(const QStringList &paths){
 
 void MainWindow::importVideo(const QString &path){
     QDialog dialog(this);dialog.setWindowTitle("Import video");dialog.setMinimumWidth(370);
-    dialog.setStyleSheet("QDialog{background:#303030;border-radius:12px;} QLabel{font-size:11px;color:#ddd;} QLineEdit,QComboBox{background:#474747;border:0;border-radius:4px;padding:5px;color:white;} QPushButton{border:0;border-radius:4px;padding:6px 14px;background:#4c70a0;color:white;}");
+    dialog.setStyleSheet("QDialog{background:palette(window);border-radius:12px;} QLabel{font-size:10px;color:palette(text);} QLineEdit,QComboBox{background:palette(base);border:0;border-radius:4px;padding:5px;color:white;} QPushButton{border:0;border-radius:4px;padding:6px 14px;background:#4c70a0;color:white;}");
     auto *layout=new QVBoxLayout(&dialog);layout->setContentsMargins(20,18,20,18);auto *form=new QFormLayout;
     auto *name=new QLineEdit(QFileInfo(path).completeBaseName());form->addRow("Name",name);
     auto *format=new QLabel(QFileInfo(path).suffix().toUpper()+" · reading media…");form->addRow("Format",format);
@@ -735,16 +672,16 @@ void MainWindow::buildStatusBar() {
     ll->setContentsMargins(10, 0, 0, 0);
     ll->setSpacing(8);
     m_keyChip = new QLabel;
-    m_keyChip->setStyleSheet("color:#c2cedc;padding:1px 5px;font-size:10px;");
+    m_keyChip->setStyleSheet("color:palette(placeholder-text);padding:1px 5px;font-size:10px;");
     m_keyChip->hide();
     m_msg = new QLabel("Wheel zoom · Middle drag pan · Right drag replay range");
-    m_msg->setStyleSheet("color:#94a3b8; font-size:10px;");
+    m_msg->setStyleSheet("color:palette(placeholder-text); font-size:10px;");
     ll->addWidget(m_keyChip);
     ll->addWidget(m_msg, 1);
     sb->addWidget(left, 1);
 
     auto stat = [sb](QLabel *l) {
-        l->setStyleSheet("color:#a3adba; font-size:10px; padding:0 7px;");
+        l->setStyleSheet("color:palette(placeholder-text); font-size:10px; padding:0 7px;");
         sb->addPermanentWidget(l);
     };
     m_stState = new QLabel;
@@ -766,7 +703,7 @@ void MainWindow::buildStatusBar() {
     m_msgTimer.setSingleShot(true);
     connect(&m_msgTimer, &QTimer::timeout, this, [this] {
         m_msg->setText("Wheel zoom · Middle drag pan · Right drag replay range");
-        m_msg->setStyleSheet("color:#94a3b8; font-size:10px;");
+        m_msg->setStyleSheet("color:palette(placeholder-text); font-size:10px;");
     });
     m_statTimer.setInterval(500);
     connect(&m_statTimer, &QTimer::timeout, this, &MainWindow::updateStats);
@@ -808,7 +745,7 @@ void MainWindow::updateStats() {
 void MainWindow::showResult(const QString &text) {
     ++m_reportSeq;
     m_msg->setText(text);
-    m_msg->setStyleSheet("color:#e2e8f0; font-size:12px; font-weight:600;");
+    m_msg->setStyleSheet("color:palette(text); font-size:12px; font-weight:600;");
     m_msgTimer.start(4000);
     log(text);
 }
@@ -844,6 +781,7 @@ QString MainWindow::comboText(QKeyEvent *k) {
 bool MainWindow::eventFilter(QObject *obj, QEvent *e) {
     auto *widget=qobject_cast<QWidget*>(obj);
     if(widget&&(widget==this||isAncestorOf(widget))){
+        if(e->type()==QEvent::MouseButtonPress&&!isMaximized()&&!isFullScreen()&&widget->window()==this){auto *mouse=static_cast<QMouseEvent*>(e);const auto at=mapFromGlobal(mouse->globalPosition().toPoint());Qt::Edges edges;if(at.x()<4)edges|=Qt::LeftEdge;if(at.x()>=width()-4)edges|=Qt::RightEdge;if(at.y()<4)edges|=Qt::TopEdge;if(at.y()>=height()-4)edges|=Qt::BottomEdge;if(mouse->button()==Qt::LeftButton&&edges&&windowHandle()&&windowHandle()->startSystemResize(edges)){e->accept();return true;}}
         auto supportedFiles=[](const QMimeData *mime){QStringList files;for(const auto &url:mime->urls()){if(!url.isLocalFile())continue;QFileInfo file(url.toLocalFile());if(file.isFile()&&QStringList{"png","jpg","jpeg","bmp","gif","webp","tif","tiff","svg","ico","mp4","mov","mkv","avi","webm","m4v","mpeg","mpg","ts","wav","mp3","flac","ogg","aac","m4a","opus","aiff","fbx","obj","gltf","glb","dae","stl","ply","cuebuild","json"}.contains(file.suffix().toLower()))files.append(file.absoluteFilePath());}return files;};
         if(e->type()==QEvent::DragEnter||e->type()==QEvent::DragMove){auto *drop=static_cast<QDropEvent*>(e);if(!supportedFiles(drop->mimeData()).isEmpty()){drop->acceptProposedAction();if(!m_fileOverlay)m_fileOverlay=new FileDropOverlay(this);return true;}}
         if(e->type()==QEvent::DragLeave){if(m_fileOverlay){delete m_fileOverlay;m_fileOverlay=nullptr;}}
@@ -884,7 +822,7 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *e) {
         m_keyChip->hide();
         if (m_pendingResult.isEmpty()) {
             m_msg->setText("Ready");
-            m_msg->setStyleSheet("color:#94a3b8; font-size:12px;");
+            m_msg->setStyleSheet("color:palette(placeholder-text); font-size:12px;");
         } else {
             showResult(m_pendingResult);
         }

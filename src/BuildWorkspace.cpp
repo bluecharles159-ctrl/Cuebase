@@ -29,6 +29,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QShortcut>
+#include <QPointer>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QStackedWidget>
@@ -89,7 +90,7 @@ QString clock(qint64 ms) {
 
 QLabel *caption(const QString &t) {
     auto *l = new QLabel(t);
-    l->setStyleSheet("color:#94a3b8; font-weight:700; font-size:11px; padding-top:4px;");
+    l->setStyleSheet("color:palette(placeholder-text); font-weight:700; font-size:10px; padding-top:4px;");
     return l;
 }
 
@@ -123,17 +124,18 @@ void paintColorButton(QPushButton *b, const QColor &c) {
 QFrame *box(const QString &title, QVBoxLayout **inner) {
     auto *f = new QFrame;
     f->setObjectName("bBox");
-    f->setStyleSheet("QFrame#bBox { background:#0f172a; border:1px solid #243044; border-radius:2px; }");
+    f->setStyleSheet("QFrame#bBox { background:transparent; border:0; }");
     auto *l = new QVBoxLayout(f);
-    l->setContentsMargins(10, 8, 10, 10);
-    l->setSpacing(6);
+    l->setContentsMargins(4, 4, 4, 4);
+    l->setSpacing(3);
     auto *c = new QToolButton;
+    c->setProperty("sectionHeader",true);c->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
     const QString expansionKey="build/sections/"+title;const bool expanded=QSettings().value(expansionKey,title=="TRANSFORM").toBool();
     c->setText(title); c->setCheckable(true); c->setChecked(expanded);
     c->setToolButtonStyle(Qt::ToolButtonTextBesideIcon); c->setIcon(uiIcon(expanded?"down":"right"));c->setIconSize(QSize(12,12));
     l->addWidget(c);
     auto *content = new QWidget;
-    auto *contents = new QVBoxLayout(content); contents->setContentsMargins(0,0,0,0); contents->setSpacing(4);
+    auto *contents = new QVBoxLayout(content); contents->setContentsMargins(18,2,5,8); contents->setSpacing(4);
     l->addWidget(content);
     content->setVisible(expanded);
     QObject::connect(c, &QToolButton::toggled, content, [c, content,expansionKey](bool on) {content->setVisible(on);c->setIcon(uiIcon(on ? "down" : "right"));QSettings().setValue(expansionKey,on);});
@@ -155,7 +157,7 @@ QWidget *scrollPage(QWidget *content) {
 // ============================================================ the workspace
 
 BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent), m_lib(lib) {
-    setStyleSheet("BuildWorkspace{background:#252525;} QWidget{font-size:11px;background:#303030;color:#dddddd;} QFrame#panel{background:#303030;border:1px solid #414141;border-radius:7px;} QLineEdit,QComboBox,QSpinBox,QDoubleSpinBox{background:#454545;color:#e5e5e5;border:0;border-radius:3px;padding:1px 4px;} QPushButton,QToolButton{background:#414141;border:0;border-radius:4px;padding:3px;color:#ddd;} QPushButton:hover,QToolButton:hover{background:#565656;} QPushButton:checked,QToolButton:checked{background:#496d9a;} QScrollBar:vertical{width:6px;background:#292929;} QScrollBar:horizontal{height:6px;background:#292929;} QScrollBar::handle{background:#626262;border-radius:3px;min-height:18px;min-width:18px;} QScrollBar::add-line,QScrollBar::sub-line{width:0;height:0;} QSplitter::handle{background:#202020;} QToolButton::menu-indicator{image:none;} QPushButton::menu-indicator{image:none;}");
+    setStyleSheet("BuildWorkspace{background:palette(window);}");
     m_model = new BuildModel;
     m_model->setParent(this);
     BuildModel *m = m_model;
@@ -181,7 +183,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     m_name->setPlaceholderText("Element name");
     m_name->setMinimumWidth(220);
     m_msg = new QLabel;
-    m_msg->setStyleSheet("color:#94a3b8;");
+    m_msg->setStyleSheet("color:palette(placeholder-text);");
     auto *undoBtn = new QPushButton("↶");
     auto *redoBtn = new QPushButton("↷");
     undoBtn->setToolTip("Undo (Ctrl+Z)");
@@ -263,6 +265,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
         connect(action,&QAction::toggled,canvas,[canvas,value](bool on){*value=on;canvas->update();});
     };
     overlay("Title safe",&canvas->showTitleSafe);overlay("Action safe",&canvas->showActionSafe);
+    overlay("Object origins",&canvas->showOrigins);
     overlay("All overlays",&canvas->showOverlays);overlay("Placement cursor",&canvas->showCursor);overlay("Lights",&canvas->showLights);overlay("Camera",&canvas->showCamera);
     overlay("Center guides",&canvas->showAxes);overlay("Grid",&canvas->showGrid);overlay("Rulers · drag to create guides",&canvas->showRulers);
     overlay("Snap · Alt temporarily bypasses",&canvas->snapping);
@@ -408,7 +411,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     connect(newScene,&QPushButton::clicked,this,[this]{if(hasUnsavedChanges()||m_editingId.isEmpty()){save();if(hasUnsavedChanges()||m_editingId.isEmpty())return;}newElement();});
     auto *presets=new QToolButton;presets->setText("Presets");presets->setIcon(uiIcon("composition"));presets->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);presets->setPopupMode(QToolButton::InstantPopup);auto *presetMenu=new QMenu(presets);
     for(const auto &name:elementPresetNames()){auto *action=presetMenu->addAction(name);connect(action,&QAction::triggered,this,[this,name]{if(hasUnsavedChanges()){save();if(hasUnsavedChanges())return;}newElement();m_name->setText(name);m_draftName=name;m_model->reset(elementPreset(name));m_canvas->frameAll();});}presets->setMenu(presetMenu);sceneBar->addWidget(presets);sceneBar->addStretch();root->addLayout(sceneBar);
-    auto *hints=new QLabel;hints->setStyleSheet("color:#a8a8a8;font-size:10px;padding:2px;");root->addWidget(hints);
+    auto *hints=new QLabel;hints->setStyleSheet("color:palette(placeholder-text);font-size:10px;padding:2px;");root->addWidget(hints);
     connect(canvas,&BuildCanvas::shortcutHint,hints,&QLabel::setText);
 
     auto syncing = std::make_shared<bool>(false);
@@ -499,7 +502,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     tfl->addLayout(tform);
     auto *keyHint = new QLabel("Keys are explicit. Click ◆ beside a property to key it. Auto Key is OFF by default.");
     keyHint->setWordWrap(true);
-    keyHint->setStyleSheet("color:#64748b; font-size:11px;");
+    keyHint->setStyleSheet("color:palette(placeholder-text); font-size:10px;");
     tfl->addWidget(keyHint);
     auto *advTransform = new QToolButton;
     advTransform->setText("▸  Advanced Position & Layout");
@@ -583,7 +586,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     phl->addLayout(pform);
     auto *physHint = new QLabel("Gravity and the ground are set in the World tab. Press play to see bodies fall.");
     physHint->setWordWrap(true);
-    physHint->setStyleSheet("color:#64748b; font-size:11px;");
+    physHint->setStyleSheet("color:palette(placeholder-text); font-size:10px;");
     phl->addWidget(physHint);
     ml->addWidget(physBox);
     ml->addStretch();
@@ -595,7 +598,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     tl2->setContentsMargins(4, 4, 8, 8);
     tl2->setSpacing(8);
     auto *noObj = new QLabel("Select an object to edit its material.");
-    noObj->setStyleSheet("color:#64748b;");
+    noObj->setStyleSheet("color:palette(placeholder-text);");
     tl2->addWidget(noObj);
     QVBoxLayout *mtl;
     auto *matBox = box("SURFACE", &mtl);
@@ -700,7 +703,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     wl->addWidget(viewBox);
     auto *dispHint = new QLabel("Resolution, aspect ratio, frame rate, motion blur, colour management and render region are in the Display tab of the Studio.");
     dispHint->setWordWrap(true);
-    dispHint->setStyleSheet("color:#64748b; font-size:11px;");
+    dispHint->setStyleSheet("color:palette(placeholder-text); font-size:10px;");
     wl->addWidget(dispHint);
     wl->addStretch();
     stack->addWidget(scrollPage(worldPage));
@@ -942,10 +945,11 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     std::function<void()> rebuildMods = [=, this] {
         DObject *o = m->active();
         QString sig = o ? o->id : QString();
+        sig+=QString("|edit:%1|locked:%2").arg(m->editMode).arg(o&&o->locked);
         if (o)
             for (const Modifier &md : o->mods) sig += "|" + md.type;
         if (o)
-            for (const DObject &x : m->design.objects) sig += x.type == "Mesh" ? x.id + x.name : QString();
+            for (const DObject &x : m->design.objects) sig += x.id + x.name;
         if (sig == *modSig) return;
         *modSig = sig;
         while (QLayoutItem *it = modLay->takeAt(0)) {
@@ -955,7 +959,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
         addMod->setEnabled(o && o->type == "Mesh");
         if (!o || o->type != "Mesh") {
             auto *none = new QLabel(o ? "Modifiers work on mesh objects." : "Select a mesh object to add modifiers.");
-            none->setStyleSheet("color:#64748b;");
+            none->setStyleSheet("color:palette(placeholder-text);");
             modLay->addWidget(none);
             return;
         }
@@ -970,6 +974,8 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
             auto *up = new QPushButton("↑"), *dn = new QPushButton("↓"), *rm = new QPushButton("✕");
             for (QPushButton *b : {up, dn, rm}) b->setFixedWidth(30);
             head->addWidget(on, 1);
+            auto *apply=new QPushButton(uiIcon("apply"),"");apply->setObjectName("applyModifier");apply->setFixedWidth(26);apply->setToolTip(i==0?"Apply modifier · Ctrl+Shift+M":"Apply this modifier and the preceding stack to the mesh");apply->setEnabled(!m->editMode&&!o->locked);head->addWidget(apply);
+            connect(apply,&QPushButton::clicked,this,[=,this]{say(m->applyModifier(oid,i)?"Modifier applied to mesh":"Exit Edit Mode and select an unlocked mesh",false);});
             head->addWidget(up);
             head->addWidget(dn);
             head->addWidget(rm);
@@ -1006,7 +1012,9 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
                 for(const QString &axis:QStringList{"x","y","z"}){const QString path="offset."+axis;numField("Offset "+axis.toUpper(),-10000,10000,.01,3,md.options[path].toDouble(),[path](Modifier &x,double value){x.options[path]=value;});}
                 auto *mirrorObject=new QComboBox;mirrorObject->addItem("Object origin",QString());
                 for(const auto &object:m->design.objects)if(object.id!=oid)mirrorObject->addItem(object.name,object.id);
-                mirrorObject->setCurrentIndex(qMax(0,mirrorObject->findData(md.target)));form->addRow("Mirror object",mirrorObject);
+                mirrorObject->setCurrentIndex(qMax(0,mirrorObject->findData(md.target)));
+                auto *pick=new QPushButton(uiIcon("picker"),"");pick->setObjectName("pickMirrorObject");pick->setFixedWidth(26);pick->setToolTip("Pick mirror reference in the viewport · Escape cancels");form->addRow("Mirror object",rowOf({mirrorObject,pick}));
+                connect(pick,&QPushButton::clicked,this,[=,this]{QPointer<QComboBox> control=mirrorObject;canvas->pickSceneObject([=,this](QString target){if(!control)return;if(target==oid){say("Choose a different object as the mirror reference",true);return;}if(auto *x=mod();x&&m->byId(target)){m->pushUndo();x->target=target;control->setCurrentIndex(control->findData(target));m->notify();say("Mirror reference selected");}});});
                 connect(mirrorObject,&QComboBox::activated,this,[=]{if(auto *x=mod()){touch("mirrorObject");x->target=mirrorObject->currentData().toString();m->notify();}});
                 for(const QString &name:QStringList{"clipping","merge"}){auto *toggle=new QCheckBox(name=="clipping"?"Clipping":"Merge");toggle->setChecked(md.options[name].toBool(name=="merge"));form->addRow(toggle);connect(toggle,&QCheckBox::toggled,this,[=](bool value){if(auto *x=mod()){touch(name);x->options[name]=value;m->notify();}});}
                 numField("Merge distance",.000001,10,.001,6,md.options["mergeDistance"].toDouble(.001),[](Modifier &x,double value){x.options["mergeDistance"]=value;});
@@ -1056,7 +1064,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
                 connect(tgt, &QComboBox::activated, this, [=, this](int idx) { if (Modifier *x = mod()) { touch("booltgt"); x->target = tgt->itemData(idx).toString(); m->notify(); } });
                 form->addRow("Object", tgt);
                 auto *hint = new QLabel("Hide the cutting object (select it, press H).");
-                hint->setStyleSheet("color:#64748b; font-size:11px;");
+                hint->setStyleSheet("color:palette(placeholder-text); font-size:10px;");
                 form->addRow(hint);
             }
             inner->addLayout(form);
@@ -1263,7 +1271,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     connect(ticker, &QTimer::timeout, this, [=, this] {
         if(!m->playing){ticker->stop();return;}
         const qint64 dt = clockT->restart();
-        if(!m->previewCueId.isEmpty()){for(auto v:m->design.animationCues){const auto cue=v.toObject();if(cue["id"].toString()!=m->previewCueId)continue;m->previewCueElapsed+=dt;const auto sample=compileAnimationCue(m->design,cue).sample(m->previewCueElapsed);if(sample.visible)m->setTime(sample.frame);else{m->setTime(cue["end"].toDouble());m->playing=false;ticker->stop();}return;}}
+        if(!m->previewCueId.isEmpty()){for(auto v:m->design.animationCues){const auto cue=v.toObject();if(cue["id"].toString()!=m->previewCueId)continue;m->previewCueElapsed+=dt;const auto sample=compileAnimationCue(m->design,cue).sample(m->previewCueElapsed,m->previewCueStep);if(sample.visible)m->setTime(sample.frame);else{m->setTime(cue["end"].toDouble());m->playing=false;ticker->stop();}return;}}
         qint64 t = m->t + dt;
         if (t >= m->design.durationMs) {
             if (m->design.loop) {
@@ -1279,7 +1287,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     auto togglePlay = [=, this] {
         m->playing = !m->playing;
         if (m->playing) {
-            if(!m->previewCueId.isEmpty()){m->previewCueElapsed=0;for(auto v:m->design.animationCues)if(v.toObject()["id"].toString()==m->previewCueId)m->t=v.toObject()["start"].toDouble();}
+            if(!m->previewCueId.isEmpty()){m->previewCueElapsed=0;m->previewCueStep=0;for(auto v:m->design.animationCues)if(v.toObject()["id"].toString()==m->previewCueId)m->t=v.toObject()["start"].toDouble();}
             if (m->previewCueId.isEmpty()&&(m->t >= m->design.durationMs || m->t < m->design.startMs)) m->t = m->design.startMs;
             clockT->start();
             ticker->start();
@@ -1354,7 +1362,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
 }
 
 void BuildWorkspace::say(const QString &text, bool error) {
-    m_msg->setStyleSheet(error ? "color:#f87171;" : "color:#94a3b8;");
+    m_msg->setStyleSheet(error ? "color:#f87171;" : "color:palette(placeholder-text);");
     m_msg->setText("   " + text);
     QTimer::singleShot(4500, this, [this, text] { if (m_msg->text().trimmed() == text) m_msg->clear(); });
 }

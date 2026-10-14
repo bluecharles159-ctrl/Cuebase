@@ -219,7 +219,7 @@ void QueueStrip::rebuild() {
 
     if (m_lib->programs.isEmpty()) {
         auto *empty = new QLabel("No programs queued. Add some in the Programs tab.");
-        empty->setStyleSheet("color:#64748b; padding:20px;");
+        empty->setStyleSheet("color:palette(placeholder-text); padding:20px;");
         m_lay->addWidget(empty);
         m_empty = empty;
     }

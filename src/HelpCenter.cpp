@@ -26,7 +26,7 @@ QDialog *makeDialog(QWidget *parent, const QString &title, int w, int h) {
     d->setAttribute(Qt::WA_DeleteOnClose);
     d->setWindowTitle(title);
     d->resize(w, h);
-    d->setStyleSheet("QDialog{background:#303030;border-radius:10px;} QWidget{font-size:11px;} QPushButton{background:#484848;border:0;border-radius:4px;padding:5px 12px;} QScrollBar:vertical{width:6px;}");
+    d->setStyleSheet("QDialog{background:palette(window);border-radius:10px;} QWidget{font-size:10px;} QPushButton{background:#484848;border:0;border-radius:4px;padding:5px 12px;} QScrollBar:vertical{width:4px;}");
     return d;
 }
 

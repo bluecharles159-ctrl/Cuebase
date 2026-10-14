@@ -130,6 +130,7 @@ struct DObject {
     double propertyValue(const QString &path, qint64 ms) const;
     void setPropertyBase(const QString &path, double value);
     DObject evaluated(qint64 ms) const;
+    void fitTextLayout();
     // Unkeyed edits override evaluation until the playhead moves; they never alter animation keys.
     QHash<QString, double> overrides;
     const PropertyTrack *track(const QString &property) const;

@@ -3,7 +3,8 @@ project(Cuebase VERSION 0.5.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
-find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets Multimedia Network)
+set(CMAKE_AUTORCC ON)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets Multimedia Network Svg)
 find_package(assimp CONFIG REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(AV REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil libswscale)
@@ -14,6 +15,7 @@ add_library(CuebaseBuildCore STATIC
     src/ElementLibrary.h src/ElementLibrary.cpp
     src/SceneEffects.h src/SceneEffects.cpp
     src/UiControls.h src/UiControls.cpp
+    src/UiIcons.cpp src/UiTheme.h src/UiTheme.cpp assets/icons.qrc
     src/AssetImport.h src/AssetImport.cpp
     src/MediaFrames.h src/MediaFrames.cpp
     src/FrameExport.h src/FrameExport.cpp
@@ -28,7 +30,7 @@ add_library(CuebaseBuildCore STATIC
     src/PropertyInspector.h src/PropertyInspector.cpp
     src/LayerPanel.h src/LayerPanel.cpp)
 target_include_directories(CuebaseBuildCore PUBLIC src)
-target_link_libraries(CuebaseBuildCore PUBLIC Qt6::Widgets Qt6::Multimedia assimp::assimp PkgConfig::AV)
+target_link_libraries(CuebaseBuildCore PUBLIC Qt6::Widgets Qt6::Multimedia Qt6::Svg assimp::assimp PkgConfig::AV)
 
 add_executable(CuebaseRender src/RenderMain.cpp)
 target_link_libraries(CuebaseRender PRIVATE CuebaseBuildCore)

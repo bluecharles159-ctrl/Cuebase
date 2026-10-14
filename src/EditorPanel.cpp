@@ -214,12 +214,12 @@ struct FxBox : QFrame {
     QSpinBox *inMs, *outMs;
     explicit FxBox(QWidget *parent = nullptr) : QFrame(parent) {
         setObjectName("fxBox");
-        setStyleSheet("QFrame#fxBox { background:#0f172a; border:1px solid #243044; border-radius:8px; }");
+        setStyleSheet("QFrame#fxBox { background:palette(window); border:1px solid palette(mid); border-radius:8px; }");
         auto *l = new QVBoxLayout(this);
         l->setContentsMargins(10, 8, 10, 10);
         l->setSpacing(6);
         auto *cap = new QLabel("TRANSITION");
-        cap->setStyleSheet("color:#94a3b8; font-weight:700; font-size:11px;");
+        cap->setStyleSheet("color:palette(placeholder-text); font-weight:700; font-size:10px;");
         l->addWidget(cap);
         auto make = [this](QComboBox *&box, QSpinBox *&ms) {
             box = new QComboBox;
@@ -271,7 +271,7 @@ QWidget *makeDisplayPage(Library *lib, Playout *play) {
 
     auto section = [&](const QString &name) {
         auto *cap = new QLabel(name);
-        cap->setStyleSheet("color:#94a3b8; font-weight:700; font-size:11px; padding-top:8px;");
+        cap->setStyleSheet("color:palette(placeholder-text); font-weight:700; font-size:10px; padding-top:8px;");
         l->addWidget(cap);
     };
     auto dsp = [](double lo, double hi, double step, int dec, const QString &suffix = QString()) {
@@ -311,7 +311,7 @@ QWidget *makeDisplayPage(Library *lib, Playout *play) {
     auto *ratio = new QComboBox;
     ratio->addItems({"Custom", "16:9", "4:3", "21:9", "1:1", "9:16", "3:2"});
     auto *aspectLabel = new QLabel;
-    aspectLabel->setStyleSheet("color:#94a3b8;");
+    aspectLabel->setStyleSheet("color:palette(placeholder-text);");
     auto *fps = new QComboBox;
     fps->addItems({"24", "25", "30", "50", "60"});
     auto *adv = new QToolButton;
@@ -319,7 +319,7 @@ QWidget *makeDisplayPage(Library *lib, Playout *play) {
     adv->setCheckable(true);
     adv->setArrowType(Qt::RightArrow);
     adv->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    adv->setStyleSheet("QToolButton { border:none; color:#94a3b8; font-weight:600; padding:2px 0; }");
+    adv->setStyleSheet("QToolButton { border:none; color:palette(placeholder-text); font-weight:600; padding:2px 0; }");
     auto *advBox = new QWidget;
     auto *advForm = new QFormLayout(advBox);
     advForm->setContentsMargins(0, 0, 0, 0);
@@ -696,7 +696,7 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
     auto *list = new QListWidget;
     list->setMinimumHeight(210);
     list->setObjectName("programLibrary");list->setSpacing(8);list->setIconSize(QSize(104,60));
-    list->setStyleSheet("QListWidget{background:#202830;border:1px solid #40505f;border-radius:10px;padding:8px;} QListWidget::item{padding:10px;border:1px solid #364857;border-radius:8px;} QListWidget::item:selected{background:#344c61;border-color:#719aca;} QListWidget::item:hover{background:#2c3d4c;}");
+    list->setStyleSheet("QListWidget{background:palette(window);border:1px solid palette(mid);border-radius:10px;padding:8px;} QListWidget::item{padding:10px;border:1px solid palette(mid);border-radius:8px;} QListWidget::item:selected{background:#344c61;border-color:#719aca;} QListWidget::item:hover{background:#2c3d4c;}");
     auto *browseRow=new QHBoxLayout;auto *search=new QLineEdit;search->setPlaceholderText("Search programs…");auto *viewMode=new QComboBox;viewMode->addItems({"List","Grid"});browseRow->addWidget(search,1);browseRow->addWidget(viewMode);l->addLayout(browseRow);
     QObject::connect(viewMode,&QComboBox::currentIndexChanged,page,[=](int mode){list->setViewMode(mode?QListView::IconMode:QListView::ListMode);list->setFlow(mode?QListView::LeftToRight:QListView::TopToBottom);list->setWrapping(mode);list->setResizeMode(QListView::Adjust);list->setGridSize(mode?QSize(220,140):QSize());list->setIconSize(mode?QSize(180,90):QSize(104,60));});
     QObject::connect(search,&QLineEdit::textChanged,page,[=](QString term){for(int i=0;i<list->count();++i)list->item(i)->setHidden(!list->item(i)->text().contains(term,Qt::CaseInsensitive));});

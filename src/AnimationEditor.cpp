@@ -53,14 +53,22 @@ public:
         connect(m,&BuildModel::changed,this,[this]{publishView();update();if(selectionChanged)selectionChanged();});
         connect(m,&BuildModel::timeChanged,this,qOverload<>(&QWidget::update));
     }
-    ~CurveView(){saveView();}
+    ~CurveView(){QSettings().setValue(settingsKey(),QVariantList{t0,t1,v0,v1});}
     QString settingsKey()const{return graph?"animation/graphView":"animation/timelineView";}
     void saveView(){QSettings().setValue(settingsKey(),QVariantList{t0,t1,v0,v1});publishView();}
-    void publishView(){setProperty("viewRange",QVariantList{t0,t1,v0,v1});}
+    void publishView(){setProperty("viewRange",QVariantList{t0,t1,v0,v1});QStringList visible;for(auto ref:tracks())visible<<channelId(ref.object->id,ref.track->property);setProperty("visibleChannels",visible);setProperty("activeChannel",primary);}
     bool visibleObject(const DObject &o)const{return !selectedOnly||m->sel.contains(o.id)||(m->sel.isEmpty()&&m->activeId==o.id);}
-    QVector<TrackRef> tracks(bool chosen=false)const{
+    QVector<TrackRef> allTracks()const{
         QVector<TrackRef> result;for(auto &o:m->design.objects)if(visibleObject(o))for(auto &track:o.tracks)
-            if(!chosen||channels.contains(channelId(o.id,track.property)))result.append({&o,&track});return result;
+            result.append({&o,&track});return result;
+    }
+    QVector<TrackRef> tracks(bool chosen=false)const{
+        auto result=allTracks();if(graph||chosen)result.removeIf([&](const auto &ref){return !channels.contains(channelId(ref.object->id,ref.track->property));});return result;
+    }
+    void activateChannel(const QString &id,const QString &path){
+        primary=channelId(id,path);m->selChannel=path;
+        if(tree){QSignalBlocker block(tree);for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->data(0,Qt::UserRole).toString()==id&&(*it)->data(0,Qt::UserRole+1).toString()==path){tree->setCurrentItem(*it,0,QItemSelectionModel::NoUpdate);break;}}
+        publishView();update();
     }
     QVector<KeyRef> keys(bool onlySelected=true)const{
         QVector<KeyRef> refs;for(auto ref:tracks())for(auto &key:ref.track->keys)
@@ -77,8 +85,9 @@ public:
         const auto previous=channels;
         channels.clear();for(auto *item:tree->selectedItems()){auto id=item->data(0,Qt::UserRole).toString(),path=item->data(0,Qt::UserRole+1).toString();
             if(!path.isEmpty()&&path!="*"&&!path.startsWith("group:"))channels.insert(channelId(id,path));
-            for(auto ref:tracks())if(matches(id,path,ref))channels.insert(channelId(ref.object->id,ref.track->property));}
+            for(auto ref:allTracks())if(matches(id,path,ref))channels.insert(channelId(ref.object->id,ref.track->property));}
         if(auto *current=tree->currentItem()){primary=channelId(current->data(0,Qt::UserRole).toString(),current->data(0,Qt::UserRole+1).toString());m->selChannel=current->data(0,Qt::UserRole+1).toString();}
+        if(!channels.contains(primary))primary=channels.isEmpty()?QString():*channels.begin();
         if(previous!=channels)selected.clear();if(!initialized)frame(false);changedSelection();
     }
     void frame(bool selectedFrame){
@@ -100,7 +109,7 @@ public:
     void selectAll(){selected.clear();for(auto ref:tracks(graph&&!channels.isEmpty()))for(auto &k:ref.track->keys)selected.insert(keyId(ref.object->id,ref.track->property,k.ms));changedSelection();}
     void cueFrames(){const auto refs=keys();if(refs.isEmpty())return;qint64 first=refs.first().time,last=first;for(const auto &ref:refs){first=qMin(first,qint64(ref.time));last=qMax(last,qint64(ref.time));}emit m->cueFramesRequested(first,qMax(first+m->frameMs(),last));}
     void setNormalized(bool on){double first=t0,last=t1;normalized=on;QSettings().setValue("animation/normalized",on);frame(false);t0=first;t1=last;saveView();update();}
-    void changedSelection(){update();if(selectionChanged)selectionChanged();}
+    void changedSelection(){publishView();update();if(selectionChanged)selectionChanged();}
     QString interpolationLabel()const{QSet<QString> values;auto refs=keys();if(refs.isEmpty()){for(auto ref:tracks(true))for(const auto &key:ref.track->keys)values.insert(key.interpolation);}else for(auto ref:refs){auto *tr=track(ref);int i=tr?tr->indexAt(ref.time):-1;if(i>=0)values.insert(tr->keys[i].interpolation);}return values.isEmpty()?defaultInterpolation:values.size()==1?*values.begin():"Mixed";}
     void interpolation(const QString &kind){defaultInterpolation=kind;auto refs=keys();if(refs.isEmpty()){for(auto ref:tracks(true))for(auto &k:ref.track->keys)refs.append({ref.object->id,ref.track->property,k.ms});}
         if(refs.isEmpty()){changedSelection();return;}m->pushUndo();for(auto ref:refs)if(auto *o=m->byId(ref.object);o&&!o->locked)if(auto *tr=o->track(ref.path)){auto &key=tr->keys[tr->indexAt(ref.time)];key.interpolation=kind;}finishEdit();}
@@ -130,14 +139,14 @@ public:
     void scaleKeys(){beginTransform(ScaleKeys,false);}
 protected:
     void paintEvent(QPaintEvent*)override{
-        QPainter p(this);p.setRenderHint(QPainter::Antialiasing);p.fillRect(rect(),QColor("#28292c"));auto r=area();p.fillRect(r,QColor("#303135"));QFont f=font();f.setPixelSize(10);p.setFont(f);
+        QPainter p(this);p.setRenderHint(QPainter::Antialiasing);p.fillRect(rect(),palette().color(QPalette::Window));auto r=area();p.fillRect(r,palette().color(QPalette::AlternateBase));QFont f=font();f.setPixelSize(10);p.setFont(f);
         double frames0=t0/m->frameMs(),frames1=t1/m->frameMs(),step=qMax(1.,niceStep(frames1-frames0,r.width()));step=qCeil(step);
         for(double frame=std::ceil(frames0/step)*step;frame<=frames1;frame+=step){double x=r.left()+(frame*m->frameMs()-t0)/(t1-t0)*r.width();p.setPen(QColor("#414247"));p.drawLine(QPointF(x,r.top()),QPointF(x,r.bottom()));p.setPen(QColor("#a7a9b0"));p.drawText(QRectF(x+3,1,62,17),tickText(frame));}
         if(m->cueRangeStart>=0){const double a=r.left()+(m->cueRangeStart-t0)/(t1-t0)*r.width(),b=r.left()+(m->cueRangeEnd-t0)/(t1-t0)*r.width();p.save();p.setClipRect(r);p.fillRect(QRectF(a,r.top(),qMax(1.,b-a),r.height()),QColor(82,207,151,48));p.setPen(QPen(QColor("#7ee5b1"),2));p.drawLine(QPointF(a,r.top()),QPointF(a,r.bottom()));p.drawLine(QPointF(b,r.top()),QPointF(b,r.bottom()));p.restore();}
         if(graph){double stepY=niceStep(v1-v0,r.height());for(double value=std::ceil(v0/stepY)*stepY;value<=v1;value+=stepY){double y=r.bottom()-(value-v0)/(v1-v0)*r.height();p.setPen(QColor(qAbs(value)<1e-8?"#73767e":"#414247"));p.drawLine(QPointF(r.left(),y),QPointF(r.right(),y));p.setPen(QColor("#b8bac2"));p.drawText(QRectF(0,y-7,55,16),Qt::AlignRight,tickText(value));}}
         p.save();p.setClipRect(r.adjusted(-5,0,5,0));
         if(graph)for(auto ref:tracks()){
-            const auto &tr=*ref.track;bool chosen=channels.contains(channelId(ref.object->id,tr.property));QColor color=channelColor(tr.property);color.setAlpha(chosen?240:90);QPainterPath curve;
+            const auto &tr=*ref.track;bool chosen=primary==channelId(ref.object->id,tr.property);QColor color=channelColor(tr.property);color.setAlpha(chosen?255:95);QPainterPath curve;
             for(int x=0;x<=r.width();++x){auto pos=point(tr,t0+x/r.width()*(t1-t0),tr.evaluate(qRound64(t0+x/r.width()*(t1-t0)),0));if(!x)curve.moveTo(pos);else curve.lineTo(pos);}p.setPen(QPen(color,chosen?1.6:1));p.setBrush(Qt::NoBrush);p.drawPath(curve);
             for(int i=0;i<tr.keys.size();++i){const auto &k=tr.keys[i];auto c=point(tr,k.ms,k.value);bool sel=selected.contains(keyId(ref.object->id,tr.property,k.ms));
                 if(sel&&(k.interpolation=="Bezier"||(i&&tr.keys[i-1].interpolation=="Bezier")))for(bool right:{false,true}){auto handle=tr.handle(i,right),h=point(tr,handle.x(),handle.y());p.setPen(QPen(QColor("#cdb68a"),1));p.drawLine(c,h);p.setBrush(QColor("#303135"));p.drawEllipse(h,3.5,3.5);}
@@ -147,7 +156,7 @@ protected:
                 bool active=id==m->activeId||m->sel.contains(id);p.fillRect(QRectF(r.left(),y-9,r.width(),18),active?QColor(90,135,195,25):QColor(255,255,255,3));
                 for(auto ref:tracks())if(matches(id,path,ref)){auto &tr=*ref.track;for(int k=0;k<tr.keys.size();++k){auto key=tr.keys[k];times[key.ms].append({ref.object->id,tr.property,key.ms});if(k+1<tr.keys.size()&&qAbs(key.value-tr.keys[k+1].value)<1e-8){double a=r.left()+(key.ms-t0)/(t1-t0)*r.width(),b=r.left()+(tr.keys[k+1].ms-t0)/(t1-t0)*r.width();p.fillRect(QRectF(a,y-3,b-a,6),QColor(214,176,88,42));}}}
                 for(auto time=times.begin();time!=times.end();++time){bool sel=false,dirty=false;for(auto key:time.value()){sel|=selected.contains(keyId(key.object,key.path,key.time));if(auto *o=m->byId(key.object))if(auto *tr=o->track(key.path))dirty|=edited(*o,*tr,tr->keys[tr->indexAt(key.time)]);}
-                    QPointF c(r.left()+(time.key()-t0)/(t1-t0)*r.width(),y);p.setPen(QColor("#292a2e"));p.setBrush(sel?QColor("#f1c66b"):active?QColor("#81b7ed"):QColor("#8b8e96"));p.drawPolygon(QPolygonF{{c.x(),c.y()-4},{c.x()+4,c.y()},{c.x(),c.y()+4},{c.x()-4,c.y()}});if(dirty){p.setPen(QPen(QColor("#ff9d53"),1.5));p.setBrush(Qt::NoBrush);p.drawEllipse(c,6,6);}}
+                    QPointF c(r.left()+(time.key()-t0)/(t1-t0)*r.width(),y);p.setPen(QColor("#292a2e"));p.setBrush(sel?palette().color(QPalette::Highlight):active?palette().color(QPalette::Highlight).lighter(130):QColor("#8b8e96"));p.drawPolygon(QPolygonF{{c.x(),c.y()-4},{c.x()+4,c.y()},{c.x(),c.y()+4},{c.x()-4,c.y()}});if(dirty){p.setPen(QPen(QColor("#ff9d53"),1.5));p.setBrush(Qt::NoBrush);p.drawEllipse(c,6,6);}}
             }
         }
         if(drag==Box){p.setPen(QColor("#74d6a3"));p.setBrush(QColor(75,190,135,38));p.drawRect(QRectF(press,last).normalized());}p.restore();
@@ -169,9 +178,10 @@ protected:
         if(press.y()<area().top()){drag=Scrub;m->setTime(timeAt(press.x()));return;}
         if(graph)for(auto ref:keys())if(auto *tr=track(ref)){int index=tr->indexAt(ref.time);if(index<0)continue;if(tr->keys[index].interpolation!="Bezier"&&!(index&&tr->keys[index-1].interpolation=="Bezier"))continue;
             if(m->byId(ref.object)->locked)continue;for(bool right:{false,true}){auto h=tr->handle(index,right);if(QLineF(point(*tr,h.x(),h.y()),press).length()<7){handleKey=ref;handleRight=right;drag=Handle;pushed=false;originalSelected=selected;return;}}}
-        auto refs=hit(press);if(!refs.isEmpty()){bool all=true;for(auto ref:refs)all&=selected.contains(keyId(ref.object,ref.path,ref.time));if(!(e->modifiers()&Qt::ShiftModifier)&&!all)selected.clear();
+        auto refs=hit(press);if(!refs.isEmpty()){if(graph)activateChannel(refs.first().object,refs.first().path);bool all=true;for(auto ref:refs)all&=selected.contains(keyId(ref.object,ref.path,ref.time));if(!(e->modifiers()&Qt::ShiftModifier)&&!all)selected.clear();
             for(auto ref:refs){auto key=keyId(ref.object,ref.path,ref.time);if((e->modifiers()&Qt::ShiftModifier)&&all)selected.remove(key);else selected.insert(key);}
             changedSelection();beginTransform(ScaleMove,true);press=last=e->position();return;}
+        if(graph){double nearest=7;QString object,path;for(auto ref:tracks())for(int dx=-5;dx<=5;++dx){const double time=t0+(press.x()+dx-area().left())/area().width()*(t1-t0);const auto at=point(*ref.track,time,ref.track->evaluate(qRound64(time),0));const double distance=QLineF(at,press).length();if(distance<nearest){nearest=distance;object=ref.object->id;path=ref.track->property;}}if(!object.isEmpty()){activateChannel(object,path);return;}}
         if(!(e->modifiers()&Qt::ShiftModifier))selected.clear();originalSelected=selected;drag=Box;changedSelection();
     }
     void transform(QPointF pos){
@@ -245,7 +255,7 @@ AnimationEditor::AnimationEditor(BuildModel *model,bool graph,QWidget *parent):Q
     if(graph){auto *handle=new QToolButton;handle->setText("Handles");handle->setPopupMode(QToolButton::InstantPopup);handle->setToolTip("Handle type for selected keys");auto *menu=new QMenu(handle);for(auto kind:QStringList{"Auto","Auto Clamped","Aligned","Vector","Free"}){auto *a=menu->addAction(kind);connect(a,&QAction::triggered,this,[this,kind]{m_curve->handles(kind);});}handle->setMenu(menu);bar->addWidget(handle);}
     m_curve->selectionChanged=[this,interp]{interp->setText(m_curve->interpolationLabel());};m_curve->selectionChanged();bar->addStretch();layout->addLayout(bar);
     auto *split=new QSplitter;m_channels=new QTreeWidget;m_channels->setHeaderLabel("Animated channels");m_channels->setMinimumWidth(150);m_channels->setMaximumWidth(280);m_channels->setSelectionMode(QAbstractItemView::ExtendedSelection);m_channels->setIndentation(12);
-    m_channels->setStyleSheet("QTreeWidget{background:#292a2e;color:#c4c6ce;border:0;font-size:10px;}QTreeWidget::item{height:19px;}QTreeWidget::item:selected{background:#3c5878;}QHeaderView::section{background:#33353a;color:#b9bcc4;border:0;padding:4px;}");
+    m_channels->setStyleSheet("QTreeWidget{background:palette(window);color:palette(text);border:0;font-size:10px;}QTreeWidget::item{height:19px;}QTreeWidget::item:selected{background:#3c5878;}QHeaderView::section{background:palette(button);color:palette(text);border:0;padding:4px;}");
     m_curve->tree=m_channels;connect(m_channels,&QTreeWidget::itemSelectionChanged,this,[this]{m_curve->chooseRows();});connect(m_channels,&QTreeWidget::itemExpanded,m_curve,[this]{m_curve->update();});connect(m_channels,&QTreeWidget::itemCollapsed,m_curve,[this]{m_curve->update();});connect(m_channels->verticalScrollBar(),&QScrollBar::valueChanged,m_curve,[this]{m_curve->update();});
     split->addWidget(m_channels);split->addWidget(m_curve);split->setStretchFactor(1,1);layout->addWidget(split);
     connect(model,&BuildModel::changed,this,[this]{rebuild();});connect(model,&BuildModel::selectionChanged,this,[this]{rebuild();});rebuild();
@@ -259,8 +269,8 @@ void AnimationEditor::rebuild(){
     QTreeWidgetItem *root=nullptr;if(!m_curve->graph)root=add(nullptr,"Summary","@all","*",true);
     QTreeWidgetItem *first=nullptr;for(const auto &o:m_model->design.objects){if(!m_curve->visibleObject(o))continue;if(o.tracks.isEmpty()&&!m_model->sel.contains(o.id))continue;auto *object=add(root,o.name,o.id,"*",m_curve->graph);if(m_model->sel.contains(o.id))object->setForeground(0,QColor("#9fc7ef"));QHash<QString,QTreeWidgetItem*> groups;QStringList paths;for(auto &tr:o.tracks)paths<<tr.property;
         if(m_model->sel.contains(o.id))for(auto path:transformChannels())if(!paths.contains(path))paths<<path;
-        for(auto path:paths){auto group=path.section('.',0,0);if(!groups.contains(group))groups[group]=add(object,group,o.id,"group:"+group,false);auto *item=add(groups[group],path.section('.',1),o.id,path,false);if(!first&&o.id==m_model->activeId)first=item;if(m_curve->primary==channelId(o.id,path))m_channels->setCurrentItem(object,0,QItemSelectionModel::NoUpdate);}}
-    if(m_curve->channels.isEmpty()&&first){first->setSelected(true);m_channels->setCurrentItem(first->parent()->parent(),0,QItemSelectionModel::NoUpdate);m_curve->channels.insert(channelId(first->data(0,Qt::UserRole).toString(),first->data(0,Qt::UserRole+1).toString()));m_curve->primary=*m_curve->channels.begin();}
+        for(auto path:paths){auto group=path.section('.',0,0);if(!groups.contains(group))groups[group]=add(object,group=="position"?QString("Translation"):group,o.id,"group:"+group,false);auto *item=add(groups[group],path.section('.',1),o.id,path,false);if(!first&&o.id==m_model->activeId)first=item;if(m_curve->primary==channelId(o.id,path))m_channels->setCurrentItem(item->parent()->isExpanded()?item:item->parent(),0,QItemSelectionModel::NoUpdate);}}
+    if(m_curve->channels.isEmpty()&&first){first->setSelected(true);m_channels->setCurrentItem(first->parent(),0,QItemSelectionModel::NoUpdate);m_curve->channels.insert(channelId(first->data(0,Qt::UserRole).toString(),first->data(0,Qt::UserRole+1).toString()));m_curve->primary=*m_curve->channels.begin();}
     for(QTreeWidgetItemIterator it(m_channels);*it;++it)if((*it)->data(0,Qt::UserRole+1).toString().startsWith("group:"))(*it)->setExpanded(m_expanded.value(channelId((*it)->data(0,Qt::UserRole).toString(),(*it)->data(0,Qt::UserRole+1).toString()),false));
     m_curve->ensureFrame();m_curve->changedSelection();
 }

@@ -7,7 +7,7 @@
 
 LayerPanel::LayerPanel(BuildModel *model,QWidget *parent):QTreeWidget(parent),m(model){
     setColumnCount(3);setHeaderLabels({"Layers","", ""});setRootIsDecorated(true);setIndentation(13);
-    setStyleSheet("QTreeWidget{background:#292929;color:#b8c5d6;border:0;font-size:11px;} QTreeWidget::item{height:23px;} QTreeWidget::item:selected{background:#28466a;} QHeaderView::section{background:#343434;color:#8392a6;border:0;padding:4px;font-size:10px;}");
+    setStyleSheet("QTreeWidget{background:palette(window);color:#b8c5d6;border:0;font-size:10px;} QTreeWidget::item{height:23px;} QTreeWidget::item:selected{background:#28466a;} QHeaderView::section{background:#343434;color:#8392a6;border:0;padding:4px;font-size:10px;}");
     setSelectionMode(QAbstractItemView::ExtendedSelection);setDragDropMode(QAbstractItemView::InternalMove);
     setDefaultDropAction(Qt::MoveAction);setEditTriggers(QAbstractItemView::EditKeyPressed);
     setMinimumWidth(175);setMaximumWidth(260);header()->setSectionResizeMode(0,QHeaderView::Stretch);setColumnWidth(1,26);setColumnWidth(2,26);

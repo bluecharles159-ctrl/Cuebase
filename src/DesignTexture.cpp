@@ -1,6 +1,7 @@
 #include "ElementDesign.h"
 #include "MediaFrames.h"
 #include "SurfaceEffects.h"
+#include "RevealEffects.h"
 #include <QPainter>
 #include <QPainterPath>
 #include <QTextDocument>
@@ -11,6 +12,20 @@
 #include <QtMath>
 
 namespace {
+void prepareText(QTextDocument &doc,const DObject &o,double width){
+    QFont font(o.style["text.family"].toString("Segoe UI"));font.setPixelSize(qBound(1,o.fontPx,1000));
+    font.setWeight(QFont::Weight(o.style["text.weight"].toInt(600)));font.setItalic(o.style["text.italic"].toBool());
+    font.setUnderline(o.style["text.decoration"].toString()=="Underline");font.setStrikeOut(o.style["text.decoration"].toString()=="Line Through");
+    font.setLetterSpacing(QFont::AbsoluteSpacing,o.propertyBase("text.tracking"));font.setWordSpacing(o.propertyBase("text.wordSpacing"));
+    QString text=o.text,transform=o.style["text.transform"].toString();
+    if(transform=="Uppercase")text=text.toUpper();else if(transform=="Lowercase")text=text.toLower();
+    else if(transform=="Capitalize")for(int i=0;i<text.size();++i)if(i==0||text[i-1].isSpace())text[i]=text[i].toUpper();
+    doc.setDocumentMargin(0);doc.setDefaultFont(font);
+    if(o.style["text.format"].toString()=="Markdown")doc.setMarkdown(text,QTextDocument::MarkdownFeatures(QTextDocument::MarkdownDialectGitHub)|QTextDocument::MarkdownNoHTML);else doc.setPlainText(text);
+    QTextCursor cursor(&doc);cursor.select(QTextCursor::Document);QTextBlockFormat block;
+    const auto align=o.style["text.align"].toString("Center");block.setAlignment(align=="Left"?Qt::AlignLeft:align=="Right"?Qt::AlignRight:align=="Justify"?Qt::AlignJustify:Qt::AlignHCenter);
+    block.setLineHeight(o.propertyBase("text.lineHeight")*100,QTextBlockFormat::ProportionalHeight);cursor.mergeBlockFormat(block);doc.setTextWidth(width);
+}
 QImage blurImage(const QImage &source, int radius) {
     if (radius <= 0) return source;
     QImage a=source.convertToFormat(QImage::Format_ARGB32_Premultiplied), b(a.size(),a.format());
@@ -48,14 +63,24 @@ QPainterPath roundedPath(QRectF r,const DObject &o) {
     path.lineTo(r.left(),r.top()+a);path.quadTo(r.topLeft(),r.topLeft()+QPointF(a,0));path.closeSubpath();return path;
 }
 }
-QImage ElementDesign::textureFor(const DObject &o) const {
+void DObject::fitTextLayout(){
+    if(type!="Text"||!style["text.autoFit"].toBool())return;
+    const double inset=qBound(0.,propertyBase("text.padding"),512.);
+    QTextDocument doc;prepareText(doc,*this,style["text.autoFitX"].toBool(true)?-1:qMax(1.,w*kPxPerUnit-2*inset));
+    if(style["text.autoFitX"].toBool(true)){w=qBound(1.,qCeil(doc.idealWidth()+2*inset)*1.,4096.)/kPxPerUnit;doc.setTextWidth(qMax(1.,w*kPxPerUnit-2*inset));}
+    if(style["text.autoFitY"].toBool(true))h=qBound(1.,qCeil(doc.size().height()+2*inset)*1.,4096.)/kPxPerUnit;
+}
+QImage ElementDesign::textureFor(const DObject &source) const {
+    DObject o=source;o.fitTextLayout();
     const QString signature=QString::fromUtf8(QJsonDocument(o.style).toJson(QJsonDocument::Compact))+
         QString("|%1|%2|%3|%4|%5|%6|%7").arg(o.type,o.text).arg(o.fontPx).arg(o.mat.color.name(QColor::HexArgb)).arg(o.w).arg(o.h).arg(o.image);
     auto cache=m_texCache.constFind(o.id);
     if(cache!=m_texCache.constEnd() && cache->first==signature)return cache->second;
     const int w=qBound(1,qRound(o.w*kPxPerUnit),4096),h=qBound(1,qRound(o.h*kPxPerUnit),4096);
     const bool shadowEnabled=o.style["shadow.enabled"].toBool();
-    const int padding=qBound(0,qCeil(qBound(0.0,o.propertyBase("effects.blur"),80.0)*2+(shadowEnabled?qBound(0.0,o.propertyBase("shadow.blur"),80.0)*2+qMax(qAbs(o.propertyBase("shadow.x")),qAbs(o.propertyBase("shadow.y"))):0)),512);
+    const bool textShadow=o.type=="Text"&&o.style["text.background"].toBool()&&o.style["textShadow.enabled"].toBool();
+    const double textPad=textShadow?qBound(0.,o.propertyBase("textShadow.blur"),80.)*2+qMax(qAbs(o.propertyBase("textShadow.x")),qAbs(o.propertyBase("textShadow.y"))):0;
+    const int padding=qBound(0,qCeil(textPad+qBound(0.0,o.propertyBase("effects.blur"),80.0)*2+(shadowEnabled?qBound(0.0,o.propertyBase("shadow.blur"),80.0)*2+qMax(qAbs(o.propertyBase("shadow.x")),qAbs(o.propertyBase("shadow.y"))):0)),512);
     QImage image(w+padding*2,h+padding*2,QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);
     QPainter p(&image);p.setRenderHint(QPainter::Antialiasing);p.setRenderHint(QPainter::SmoothPixmapTransform);
     p.translate(padding,padding);
@@ -94,25 +119,23 @@ QImage ElementDesign::textureFor(const DObject &o) const {
     }
     if(o.type=="Text") {
         if(o.style["text.background"].toBool())p.fillPath(outline,QColor(o.style["text.backgroundColor"].toString("#cc202020")));
-        QFont font(o.style["text.family"].toString("Segoe UI"));font.setPixelSize(qBound(1,o.fontPx,1000));
-        font.setWeight(QFont::Weight(o.style["text.weight"].toInt(600)));font.setItalic(o.style["text.italic"].toBool());
-        font.setUnderline(o.style["text.decoration"].toString()=="Underline");font.setStrikeOut(o.style["text.decoration"].toString()=="Line Through");
-        font.setLetterSpacing(QFont::AbsoluteSpacing,o.propertyBase("text.tracking"));font.setWordSpacing(o.propertyBase("text.wordSpacing"));
-        QString text=o.text, transform=o.style["text.transform"].toString();
-        if(transform=="Uppercase")text=text.toUpper();else if(transform=="Lowercase")text=text.toLower();
-        else if(transform=="Capitalize")for(int i=0;i<text.size();++i)if(i==0||text[i-1].isSpace())text[i]=text[i].toUpper();
-        QTextDocument doc;doc.setDocumentMargin(0);doc.setDefaultFont(font);if(o.style["text.format"].toString()=="Markdown")doc.setMarkdown(text,QTextDocument::MarkdownFeatures(QTextDocument::MarkdownDialectGitHub)|QTextDocument::MarkdownNoHTML);else doc.setPlainText(text);doc.setTextWidth(w);
+        const double inset=qBound(0.,o.propertyBase("text.padding"),512.),contentWidth=qMax(1.,w-2*inset),contentHeight=qMax(1.,h-2*inset);
+        QTextDocument doc;prepareText(doc,o,contentWidth);QFont font=doc.defaultFont();
         QTextCursor cursor(&doc);cursor.select(QTextCursor::Document);
         QTextCharFormat chars;chars.setForeground(brush);cursor.mergeCharFormat(chars);
-        QTextBlockFormat block;
-        QString align=o.style["text.align"].toString("Center");
-        block.setAlignment(align=="Left"?Qt::AlignLeft:align=="Right"?Qt::AlignRight:align=="Justify"?Qt::AlignJustify:Qt::AlignHCenter);
-        block.setLineHeight(o.propertyBase("text.lineHeight")*100,QTextBlockFormat::ProportionalHeight);cursor.mergeBlockFormat(block);
-        if(o.style["studio.editable"].toBool()&&o.style["studio.fit"].toBool(true)){
-            int px=font.pixelSize();while(doc.size().height()>h&&px>6){font.setPixelSize(--px);doc.setDefaultFont(font);doc.setTextWidth(w);}
+        if(!o.style["text.autoFit"].toBool()&&o.style["studio.editable"].toBool()&&o.style["studio.fit"].toBool(true)){
+            int px=font.pixelSize();while(doc.size().height()>contentHeight&&px>6){font.setPixelSize(--px);doc.setDefaultFont(font);doc.setTextWidth(contentWidth);}
         }
-        QString vertical=o.style["text.vertical"].toString("Center");double y=vertical=="Top"?0:vertical=="Bottom"?h-doc.size().height():(h-doc.size().height())/2;
-        p.save();p.setClipRect(image.rect());p.translate(0,y);doc.drawContents(&p);p.restore();
+        QString vertical=o.style["text.vertical"].toString("Center");double y=inset+(vertical=="Top"?0:vertical=="Bottom"?contentHeight-doc.size().height():(contentHeight-doc.size().height())/2);
+        QImage glyphs(image.size(),QImage::Format_ARGB32_Premultiplied);glyphs.fill(Qt::transparent);
+        QPainter gp(&glyphs);gp.translate(padding+inset,padding+y);doc.drawContents(&gp);gp.end();
+        if(textShadow){
+            QImage shadow(glyphs.size(),glyphs.format());shadow.fill(Qt::transparent);QPainter sp(&shadow);
+            sp.drawImage(QPointF(o.propertyBase("textShadow.x"),o.propertyBase("textShadow.y")),glyphs);sp.setCompositionMode(QPainter::CompositionMode_SourceIn);
+            sp.fillRect(shadow.rect(),QColor(o.style["textShadow.color"].toString("#99000000")));sp.end();
+            p.drawImage(-padding,-padding,blurImage(shadow,qRound(o.propertyBase("textShadow.blur"))));
+        }
+        p.drawImage(-padding,-padding,glyphs);
     }
     if(sw>0 && (o.type!="Text"||o.style["text.background"].toBool())) {
         QPen pen(QColor(o.style["stroke.color"].toString("#ffffff")),sw);
@@ -138,8 +161,9 @@ QImage ElementDesign::textureFor(const DObject &o) const {
         line[x]=c.rgba();
     }}
     // A stable object-space threshold makes a keyed reveal reversible and deterministic.
-    const double reveal=qBound(0.,o.propertyBase("effects.reveal"),1.);
-    if(reveal<1){
+    const double reveal=RevealEffects::progress(o);
+    const bool revealHandled=RevealEffects::apply(pixels,o,padding,w,h,reveal);
+    if(!revealHandled&&reveal<1){
         const double rough=qBound(0.,o.propertyBase("effects.revealRoughness"),1.),soft=qMax(.00001,o.propertyBase("effects.revealSoftness"));
         const double angle=qDegreesToRadians(o.propertyBase("effects.revealAngle")),dx=qCos(angle),dy=qSin(angle),span=qMax(.00001,qAbs(dx)+qAbs(dy));
         const bool radial=o.style["effects.revealMode"].toString()=="Radial";

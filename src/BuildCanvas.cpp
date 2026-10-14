@@ -78,7 +78,7 @@ QRectF BuildCanvas::cameraFrame() const {
 ViewCam BuildCanvas::activeCam(QRectF *r) const {
     QRectF base = cameraFrame();
     const QPointF c = base.center() + m_editorPan;
-    const double z = qBound(0.15, m_editorZoom, 8.0);
+    const double z = qBound(0.02, m_editorZoom, 64.0);
     *r = QRectF(c.x() - base.width() * z / 2, c.y() - base.height() * z / 2, base.width() * z, base.height() * z);
     // The real broadcast camera is always used. Editor zoom/pan only changes
     // the screen rectangle used to display that camera's composition.
@@ -133,11 +133,11 @@ void BuildCanvas::frameSelected() {
     QRectF frame;auto cam=activeCam(&frame);auto bounds=selectionBounds(cam,frame);
     if(bounds.isEmpty())return;
     double factor=qMin((width()-140)/qMax(1.0,bounds.width()),(height()-140)/qMax(1.0,bounds.height()));
-    const double zoom=qBound(.15,m_editorZoom*factor,8.0);factor=zoom/m_editorZoom;
+    const double zoom=qBound(.02,m_editorZoom*factor,64.0);factor=zoom/m_editorZoom;
     m_editorPan=(frame.center()-bounds.center())*factor;
     m_editorZoom=zoom;update();
 }
-void BuildCanvas::actualSize(){m_editorZoom=qBound(.15,double(m_lib->display.resX())/cameraFrame().width(),8.0);m_editorPan={};update();}
+void BuildCanvas::actualSize(){m_editorZoom=qBound(.02,double(m_lib->display.resX())/cameraFrame().width(),64.0);m_editorPan={};update();}
 
 void BuildCanvas::alignSelection(const QString &operation){
     auto objects=m_m->selected();objects.removeIf([](auto *o){return o->locked||!o->isRenderable();});
@@ -288,7 +288,7 @@ void BuildCanvas::drawSelection(QPainter &p,const ViewCam &cam,const QRectF &r){
 
 QMatrix4x4 BuildCanvas::editWorld() const {
     DObject *o = const_cast<BuildModel *>(m_m)->active();
-    return o ? ElementDesign::matrixOf(o->at(m_m->t)) : QMatrix4x4();
+    return o ? m_m->design.worldMatrix(*o,m_m->t) : QMatrix4x4();
 }
 
 void BuildCanvas::drawEdit(QPainter &p, const ViewCam &cam, const QRectF &r) {
@@ -415,15 +415,29 @@ void BuildCanvas::paintEvent(QPaintEvent *) {
     for(double guide:m_horizontalGuides){double y=r.top()+guide/m_lib->display.resY()*r.height();p.drawLine(QPointF(r.left(),y),QPointF(r.right(),y));}
     p.restore();
     if(showRulers){
-        p.fillRect(QRectF(0,0,width(),20),QColor("#303030"));p.fillRect(QRectF(0,0,20,height()),QColor("#303030"));
-        QFont f=font();f.setPixelSize(9);p.setFont(f);p.setPen(QColor("#94a3b8"));
-        for(int px=0;px<=m_lib->display.resX();px+=100){double x=r.left()+double(px)/m_lib->display.resX()*r.width();p.drawLine(QPointF(x,14),QPointF(x,20));p.drawText(QPointF(x+2,11),QString::number(px));}
-        for(int px=0;px<=m_lib->display.resY();px+=100){double y=r.top()+double(px)/m_lib->display.resY()*r.height();p.drawLine(QPointF(14,y),QPointF(20,y));p.save();p.translate(10,y-2);p.rotate(-90);p.drawText(0,0,QString::number(px));p.restore();}
+        p.fillRect(QRectF(0,0,width(),20),palette().color(QPalette::Window));p.fillRect(QRectF(0,0,20,height()),palette().color(QPalette::Window));
+        QFont f=font();f.setPixelSize(9);p.setFont(f);p.setPen(palette().color(QPalette::PlaceholderText));
+        const double sx=r.width()/qMax(1,m_lib->display.resX()),sy=r.height()/qMax(1,m_lib->display.resY());
+        auto stepFor=[](double scale){const double raw=72./qMax(.0001,scale),base=qPow(10.,qFloor(qLn(raw)/qLn(10.)));for(double multiple:{1.,2.,5.,10.})if(base*multiple>=raw)return base*multiple;return base*10.;};
+        const double stepX=stepFor(sx),stepY=stepFor(sy);setProperty("rulerSpacing",QPointF(stepX*sx,stepY*sy));
+        p.save();p.setClipRect(QRectF(20,0,qMax(0,width()-20),20));
+        for(double value=qCeil((20-r.left())/sx/stepX)*stepX;value<=(width()-r.left())/sx;value+=stepX){double x=r.left()+value*sx;p.drawLine(QPointF(x,14),QPointF(x,20));p.drawText(QPointF(x+3,11),QString::number(qRound64(value)));for(int n=1;n<5;++n){const double tick=x+n*stepX*sx/5;p.drawLine(QPointF(tick,17),QPointF(tick,20));}}
+        p.restore();p.save();p.setClipRect(QRectF(0,20,20,qMax(0,height()-20)));
+        for(double value=qCeil((20-r.top())/sy/stepY)*stepY;value<=(height()-r.top())/sy;value+=stepY){double y=r.top()+value*sy;p.drawLine(QPointF(14,y),QPointF(20,y));p.save();p.translate(10,y-3);p.rotate(-90);p.drawText(0,0,QString::number(qRound64(value)));p.restore();for(int n=1;n<5;++n){const double tick=y+n*stepY*sy/5;p.drawLine(QPointF(17,tick),QPointF(20,tick));}}
+        p.restore();
     }
+    setProperty("compositionFrame",r);
     if(m_modal.kind==Modal::Move){
         p.setPen(QPen(QColor("#c084fc"),1,Qt::DashLine));
         if(m_modal.snapX)p.drawLine(QPointF(m_modal.snapPoint.x(),r.top()),QPointF(m_modal.snapPoint.x(),r.bottom()));
         if(m_modal.snapY)p.drawLine(QPointF(r.left(),m_modal.snapPoint.y()),QPointF(r.right(),m_modal.snapPoint.y()));
+    }
+    if(showOrigins){
+        for(const auto &object:d.objects){
+            if(!object.isRenderable()||!d.effectiveVisible(object))continue;
+            QPointF at;if(!cam.toScreen(d.worldMatrix(object,m_m->t).map(QVector3D()),r,&at))continue;
+            p.setPen(QPen(QColor("#20242a"),1));p.setBrush(object.id==m_m->activeId?QColor("#ffc46b"):m_m->isSelected(object.id)?QColor("#e29657"):QColor("#939ba6"));p.drawEllipse(at,3,3);
+        }
     }
     if (m_m->editMode) drawEdit(p, cam, r);
     else drawSelection(p, cam, r);
@@ -989,7 +1003,15 @@ void BuildCanvas::pan(const QPointF &d) {
     update();
 }
 
+void BuildCanvas::pickSceneObject(std::function<void(QString)> picked){
+    cancelModal();m_objectPicker=std::move(picked);setCursor(Qt::CrossCursor);setFocus();emit message("Pick a mirror reference object · Escape or right-click cancels");
+}
+
 void BuildCanvas::mousePressEvent(QMouseEvent *e) {
+    if(m_objectPicker){
+        if(e->button()==Qt::RightButton){m_objectPicker={};unsetCursor();emit message("Object picking cancelled");return;}
+        if(e->button()==Qt::LeftButton){const auto id=pickObject(e->position(),true);if(!id.isEmpty()){auto callback=std::move(m_objectPicker);m_objectPicker={};unsetCursor();callback(id);}else emit message("No object here · click a visible object or Escape to cancel");return;}
+    }
     setFocus();
     const QPointF pos = e->position();
     m_press = m_last = m_hover = pos;
@@ -1067,6 +1089,7 @@ void BuildCanvas::mousePressEvent(QMouseEvent *e) {
 }
 
 void BuildCanvas::mouseMoveEvent(QMouseEvent *e) {
+    if(m_objectPicker){setCursor(Qt::CrossCursor);return;}
     const QPointF pos = e->position();
     const QPointF d = pos - m_last;
     m_last = m_hover = pos;
@@ -1147,9 +1170,10 @@ void BuildCanvas::wheelEvent(QWheelEvent *e) {
         e->accept();
         return;
     }
-    const double factor = qPow(1.12, e->angleDelta().y() / 120.0);
+    const double delta=e->angleDelta().y()?e->angleDelta().y()/120.:e->pixelDelta().y()/100.;
+    const double factor = qPow(1.12, delta);
     QRectF oldFrame;activeCam(&oldFrame);
-    double oldZoom=m_editorZoom;m_editorZoom=qBound(.15,m_editorZoom*factor,8.0);
+    double oldZoom=m_editorZoom;m_editorZoom=qBound(.02,m_editorZoom*factor,64.0);
     const QPointF center=e->position()+(oldFrame.center()-e->position())*(m_editorZoom/oldZoom);
     m_editorPan=center-cameraFrame().center();
     update();
@@ -1163,6 +1187,8 @@ void BuildCanvas::keyPressEvent(QKeyEvent *e) {
     const Qt::KeyboardModifiers mod = e->modifiers();
     const bool ctrl = mod & Qt::ControlModifier, shift = mod & Qt::ShiftModifier, alt = mod & Qt::AltModifier, keypad = mod & Qt::KeypadModifier;
     const bool edit = m_m->editMode;
+
+    if(m_objectPicker){if(k==Qt::Key_Escape){m_objectPicker={};unsetCursor();emit message("Object picking cancelled");}return;}
 
     // ---- while a tool is running
     if (m_modal.kind != Modal::None) {
@@ -1205,15 +1231,23 @@ void BuildCanvas::keyPressEvent(QKeyEvent *e) {
     if (ctrl && k == Qt::Key_Y) { m_m->redo(); return; }
     if (k == Qt::Key_Home) { frameAll(); return; }
 
+    if(ctrl&&shift&&k==Qt::Key_M){auto *object=m_m->active();emit message(object&&m_m->applyModifier(object->id,0)?"Applied first modifier":"Select an unlocked mesh in Object Mode with a modifier");return;}
     if (k == Qt::Key_A) {
         if (shift) { emit addMenuRequested(mapToGlobal(m_hasHover ? m_hover.toPoint() : QPoint(width() / 2, height() / 2))); return; }
         if (alt) { edit ? m_m->editSelectAll(false) : m_m->deselectAll(); }
-        else { edit ? m_m->editSelectAll(true) : m_m->selectAll(); }
+        else if(edit)m_m->editSelectAll(true);
+        else {
+            QSet<QString> ids;
+            for(const auto &object:m_m->design.objects)if(!object.locked&&m_m->design.effectiveVisible(object)&&
+                (object.isRenderable()||(showOverlays&&showGizmos&&((object.type=="Light"&&showLights)||(object.type=="Camera"&&showCamera&&!m_cameraView)))))ids.insert(object.id);
+            m_m->setSelection(ids,m_m->activeId);
+        }
+        emit message(alt?"Selection cleared":edit?QString("Selected %1 vertices · handles use the selection center").arg(m_m->esel.v.size()):QString("Selected %1 objects · handles use the selection center").arg(m_m->sel.size()));
         return;
     }
     if (k == Qt::Key_Tab) {
         m_m->toggleEdit();
-        if (!m_m->editMode && !m_m->active()) emit message("Select an object, then Tab");
+        emit message(m_m->editMode?"Edit Mode · select vertices, edges or faces · A selects all · Tab returns to Object Mode":edit?"Object Mode":"Select an unlocked mesh or shape to enter Edit Mode");
         return;
     }
     if (edit) {

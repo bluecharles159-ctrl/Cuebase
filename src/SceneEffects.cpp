@@ -13,6 +13,7 @@
 #include <QCheckBox>
 #include <QFileDialog>
 #include <QSignalBlocker>
+#include <QSettings>
 #include <cmath>
 #include <memory>
 
@@ -106,7 +107,7 @@ QImage blendSceneEffect(const QImage &from,const QImage &to,const ElementDesign 
     if(from.isNull())return applySceneEffect(to,design,time);QImage result=from.convertToFormat(QImage::Format_ARGB32);QPainter p(&result);p.setOpacity(qBound(0.,sceneEffectValue(design,"scene.mix",qMin<qint64>(time,design.durationMs),design.durationMs?double(time)/design.durationMs:1),1.));p.drawImage(result.rect(),to);p.end();return applySceneEffect(result,design,time);
 }
 QWidget *sceneEffectEditor(BuildModel *model){
-    auto *page=new QWidget;auto *layout=new QVBoxLayout(page);layout->setContentsMargins(8,8,8,8);
+    auto *page=new QWidget;page->setObjectName("screenEffectsInspector");auto *layout=new QVBoxLayout(page);layout->setContentsMargins(4,4,4,4);layout->setSpacing(3);
     auto *heading=new QLabel("SCREEN EFFECTS");layout->addWidget(heading);auto *hint=new QLabel("Effects transform the program picture. Add optional graphics with Shift+A. Diamonds animate any control in the graph.");hint->setWordWrap(true);layout->addWidget(hint);
     auto *preset=new QComboBox;preset->addItems(sceneEffectPresets());auto *apply=new QPushButton(uiIcon("composition"),"Apply preset");layout->addWidget(preset);layout->addWidget(apply);
     QObject::connect(apply,&QPushButton::clicked,page,[=]{model->pushUndo();auto next=sceneEffectPreset(preset->currentText());const auto controller=*sceneEffect(next);model->design.objects.removeIf([](const DObject &o){return o.type=="Effect";});model->design.objects.append(controller);model->design.durationMs=next.durationMs;model->design.loop=next.loop;model->select(controller.id);model->notify();});
@@ -115,8 +116,14 @@ QWidget *sceneEffectEditor(BuildModel *model){
     auto *loop=new QCheckBox("Repeat motion while replay is on screen");layout->addWidget(loop);QObject::connect(loop,&QCheckBox::toggled,page,[=](bool value){if(model->design.loop==value)return;model->pushUndo();model->design.loop=value;model->notify();});
     struct Row{SceneEffectControl control;ValueInput *input;QToolButton *key;};auto rows=std::make_shared<QVector<Row>>();QString group;QFormLayout *form=nullptr;
     for(const auto &control:sceneEffectControls()){
-        if(group!=control.group){group=control.group;auto *label=new QLabel(group);label->setStyleSheet("font-weight:600;margin-top:8px;");layout->addWidget(label);form=new QFormLayout;form->setContentsMargins(10,0,0,0);layout->addLayout(form);}
-        auto *row=new QWidget;auto *line=new QHBoxLayout(row);line->setContentsMargins(0,0,0,0);auto *input=new ValueInput;input->setRange(control.minimum,control.maximum);input->setDecimals(3);input->setSingleStep(control.step);input->setToolTip(control.label);input->setObjectName(control.key);auto *key=new QToolButton;key->setIcon(uiIcon("key"));key->setToolTip("Insert / remove key at current frame");auto *reset=new QToolButton;reset->setIcon(uiIcon("reset"));reset->setToolTip("Reset "+control.label);line->addWidget(input,1);line->addWidget(key);line->addWidget(reset);form->addRow(control.label,row);rows->append({control,input,key});
+        if(group!=control.group){
+            group=control.group;const QString settingsKey="build/effectSections/"+group;
+            const bool expanded=QSettings().value(settingsKey,group=="Transform").toBool();
+            auto *header=new QToolButton;header->setText(group.toUpper());header->setObjectName("effectSection_"+group);header->setProperty("sectionHeader",true);header->setCheckable(true);header->setChecked(expanded);header->setIcon(uiIcon(expanded?"down":"right"));header->setIconSize({12,12});header->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);header->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);layout->addWidget(header);
+            auto *body=new QWidget;form=new QFormLayout(body);form->setContentsMargins(18,2,5,8);form->setSpacing(4);body->setVisible(expanded);layout->addWidget(body);
+            QObject::connect(header,&QToolButton::toggled,body,[=](bool open){body->setVisible(open);header->setIcon(uiIcon(open?"down":"right"));QSettings().setValue(settingsKey,open);});
+        }
+        auto *row=new QWidget;auto *line=new QHBoxLayout(row);line->setContentsMargins(0,0,0,0);line->setSpacing(2);auto *input=new ValueInput;input->setRange(control.minimum,control.maximum);input->setDecimals(3);input->setSingleStep(control.step);input->setToolTip(control.label);input->setObjectName(control.key);auto *key=new QToolButton;key->setIcon(uiIcon("key"));key->setIconSize({12,12});key->setFixedWidth(23);key->setToolTip("Insert / update / remove key at current frame");auto *reset=new QToolButton;reset->setIcon(uiIcon("reset"));reset->setIconSize({12,12});reset->setFixedWidth(20);reset->setToolTip("Reset "+control.label);line->addWidget(input,1);line->addWidget(key);line->addWidget(reset);form->addRow(control.label,row);rows->append({control,input,key});
         QObject::connect(input,qOverload<double>(&QDoubleSpinBox::valueChanged),page,[=](double value){if(auto *o=sceneEffect(model->design))model->editProperty(o->id,control.key,value);});
         QObject::connect(key,&QToolButton::clicked,page,[=]{if(auto *o=sceneEffect(model->design)){model->select(o->id);model->togglePropertyKey(o->id,control.key);}});
         QObject::connect(reset,&QToolButton::clicked,page,[=]{if(auto *o=sceneEffect(model->design))model->resetProperty(o->id,control.key);});

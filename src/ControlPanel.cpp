@@ -24,7 +24,7 @@
 namespace {
 QLabel *caption(const QString &t) {
     auto *l = new QLabel(t);
-    l->setStyleSheet("color:#94a3b8; font-weight:700; font-size:11px;");
+    l->setStyleSheet("color:palette(placeholder-text); font-weight:700; font-size:10px;");
     return l;
 }
 } // namespace
@@ -53,10 +53,10 @@ ControlPanel::ControlPanel(Library *lib, Playout *play, QWidget *parent, Network
     l->addWidget(caption("NOW"));
     m_now = new QLabel;
     m_now->setWordWrap(true);
-    m_now->setStyleSheet("font-weight:700; font-size:11px;");
+    m_now->setStyleSheet("font-weight:700; font-size:10px;");
     l->addWidget(m_now);
     m_left = new QLabel;
-    m_left->setStyleSheet("color:#94a3b8;");
+    m_left->setStyleSheet("color:palette(placeholder-text);");
     l->addWidget(m_left);
 
     l->addWidget(caption("UP NEXT"));
@@ -65,7 +65,7 @@ ControlPanel::ControlPanel(Library *lib, Playout *play, QWidget *parent, Network
     l->addWidget(m_next);
     m_info = new QLabel;
     m_info->setWordWrap(true);
-    m_info->setStyleSheet("color:#64748b; font-size:11px;");
+    m_info->setStyleSheet("color:palette(placeholder-text); font-size:10px;");
     l->addWidget(m_info);
 
     m_start = new QPushButton;
@@ -192,7 +192,7 @@ void ControlPanel::rebuildElements() {
     if (!any) {
         auto *none = new QLabel("No elements yet. Create some in Screen Elements.");
         none->setWordWrap(true);
-        none->setStyleSheet("color:#64748b;");
+        none->setStyleSheet("color:palette(placeholder-text);");
         m_elementsLay->addWidget(none);
     }
 }
@@ -201,7 +201,7 @@ void ControlPanel::refresh() {
     const bool live = m_play->isLive();
     const bool paused = m_play->state() == Playout::Paused;
     m_chip->setText(paused ? "● PAUSED" : live ? "● ON AIR" : "● OFF AIR");
-    m_chip->setStyleSheet(paused ? "color:#f59e0b; font-weight:700; font-size:11px;"
+    m_chip->setStyleSheet(paused ? "color:#f59e0b; font-weight:700; font-size:10px;"
                           : live ? "color:#ef4444; font-weight:700; font-size:11px;"
                                  : "color:#64748b; font-weight:700; font-size:11px;");
 

@@ -35,7 +35,7 @@ public:
     bool modalActive() const { return m_modal.kind != Modal::None || m_loopCut; }
 
     bool showGrid = true, showAxes = true, showGizmos = true, placeCursor = false;
-    bool showOverlays=true,showCursor=true,showLights=true,showCamera=true;
+    bool showOverlays=true,showCursor=true,showLights=true,showCamera=true,showOrigins=true;
     bool showTitleSafe = true, showActionSafe = true, showRulers = true, snapping = true;
 
     void startMove() { startModal(Modal::Move); }
@@ -45,6 +45,7 @@ public:
     void startInset();
     void startLoopCut();
     void cancelModal();
+    void pickSceneObject(std::function<void(QString)> picked);
 
 signals:
     void addMenuRequested(const QPoint &globalPos);
@@ -98,6 +99,7 @@ private:
     QString pickObject(const QPointF &pos, bool cycle = false);
     QPointF m_lastPick{-10000,-10000};
     QString m_lastPicked;
+    std::function<void(QString)> m_objectPicker;
     bool pickEditElement(const QPointF &pos, bool additive);
     void boxSelect(const QRectF &box, bool additive);
     bool projectWorld(const ViewCam &cam, const QRectF &r, const QVector3D &w, QPointF *out, double *depth = nullptr) const;

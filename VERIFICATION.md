@@ -1,4 +1,29 @@
-# Verification — 2026-10-12
+# Verification — 2026-10-14
+
+## Studio Blue / editor checkpoint
+
+Built `Cuebase`, `CuebaseBuildTests` and `CuebaseStreamTests` with one compiler job.
+The complete CTest run passed: **36 Build cases and 23 Studio cases**, including
+localhost RTMP/SRT. Total CTest time: 149.14 seconds. Reports are in
+`build-final/studio-blue-ctest.log`, `test-results.txt/xml` and `stream-results.txt/xml`.
+
+New checks cover orange-key replacement, text fitting by axis and glyph shadows,
+deterministic surface reveals, channel isolation, pointer-anchored canvas zoom,
+four theme presets and distinct icons, Settings/window-control ordering and
+maximize/restore. The complete run also verifies the earlier modifier, picker,
+per-play cue timing and Enter-focus repairs. A graph teardown use-after-free
+found by GDB during this pass was fixed before the passing run.
+
+Offscreen Qt screenshots were visually inspected for the Inspector, option lists
+and Studio Blue workspace. These do not constitute native Windows window-manager,
+high-DPI, clean-install or complete production-readiness verification. Native edge
+resize, system dragging and snapping still require an interactive check.
+
+The planning board, upgraded rigid-body solver, particle/mesh reveal sources and
+the remaining expansion requirements are not complete. Supabase remains deferred
+at the user's request. No final release archive has been produced.
+
+## Previous checkpoint — 2026-10-12
 
 ## Build
 

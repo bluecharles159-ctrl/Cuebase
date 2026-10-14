@@ -20,6 +20,9 @@ public:
     qint64 t = 0;
     bool playing = false;
     QString previewCueId;
+    int previewCueStep=0;
+    bool cuePreviewWaiting() const;
+    bool continueCuePreview();
     qint64 previewCueElapsed=0, cueRangeStart=-1, cueRangeEnd=-1;
     bool autoKey = false;              // OFF by default; explicit property key buttons are the normal workflow
     QString selChannel;
@@ -52,6 +55,7 @@ public:
     bool joinSelected();
     bool setOrigin(const QString &kind);  // Geometry, World, Bottom, Selected
     bool separateLooseParts();
+    bool applyModifier(const QString &objectId, int index);
     void rename(const QString &id, const QString &name);
     void hideSelected(bool hide);
     void showAll();

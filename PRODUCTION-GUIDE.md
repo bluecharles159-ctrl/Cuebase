@@ -1,5 +1,19 @@
 # Graphics, animation cues and Studio
 
+## Build interaction and independent cue plays
+
+**View / Align → Object origins** toggles the small object-origin dots. These are editor overlays and do not appear in exports or program output. **All overlays** also hides them.
+
+Each modifier card has an **Apply** icon. Applying a modifier bakes its evaluated geometry at the current frame. Applying a later stack entry also bakes the preceding entries, because their order affects the result; later entries remain editable. Undo restores the original mesh and stack. In the viewport, **Ctrl+Shift+M** applies the first modifier. Applying is available for unlocked meshes in Object Mode.
+
+The **Mirror object** picker lets you click a visible reference in the viewport without changing the selected object. Escape or right-click cancels. The dropdown remains available for references that are not currently visible. An object cannot be its own mirror reference.
+
+Numeric inputs commit on Enter and release focus. Click again to edit a value. Cue repeat counts use the same compact horizontal-scrub fields as the inspector instead of small stacked native arrow buttons.
+
+**Cue selected frames** opens a rounded modal. Enable **Loop** to edit the **Number of plays**. Choose **Play 1**, **Play 2**, and so on under Playback settings; each has its own optional timed hold or manual Continue. A two-second animation played twice with holds of 0.5 seconds and 2 seconds lasts 6.5 seconds. The frame range belongs to the cue; hold settings belong to individual plays. Saving adds no infinite loop. Existing legacy infinite loops continue playing as before until their behavior is edited.
+
+In Studio's cue board, **Customize play** selects which play's hold and reusable content you are editing. Different board copies retain independent settings. A manual hold has no fixed duration until an operator continues it.
+
 ## Reusable text and media
 
 In Build, select a text object and enable **Studio Field → Editable in Studio**. Give the field a useful name such as Sponsor. You can also type `{{studio:Sponsor}}Sponsored by NVIDIA` into Typography. The prefix is removed from the visible text and creates the Sponsor field. Ordinary text stays fixed in Studio.

@@ -1,5 +1,7 @@
 #include "BuildModel.h"
 #include "UiControls.h"
+#include "SurfaceEffects.h"
+#include "CueSequence.h"
 
 #include <QUuid>
 #include <QtMath>
@@ -28,7 +30,7 @@ void BuildModel::reset(const ElementDesign &d) {
     selChannel.clear();
     t = 0;
     playing = false;
-    previewCueId.clear();previewCueElapsed=0;cueRangeStart=cueRangeEnd=-1;
+    previewCueId.clear();previewCueElapsed=0;previewCueStep=0;cueRangeStart=cueRangeEnd=-1;
     autoKey = false;
     editMode = false;
     esel.clear();
@@ -358,6 +360,30 @@ void BuildModel::deselectAll() {
 
 // ------------------------------------------------------------------ time and keys
 
+bool BuildModel::cuePreviewWaiting() const {
+    if(!playing)return false;
+    for(const auto &value:design.animationCues){
+        const auto cue=value.toObject();if(cue["id"].toString()!=previewCueId)continue;
+        const auto plan=compileAnimationCue(design,cue);
+        const auto sample=plan.sample(previewCueElapsed,previewCueStep);
+        return sample.visible&&!sample.advancing&&sample.step>=0&&plan.steps[sample.step].manualHold;
+    }
+    return false;
+}
+
+bool BuildModel::continueCuePreview() {
+    if(!cuePreviewWaiting())return false;
+    for(const auto &value:design.animationCues){
+        const auto cue=value.toObject();if(cue["id"].toString()!=previewCueId)continue;
+        const auto plan=compileAnimationCue(design,cue);
+        const auto sample=plan.sample(previewCueElapsed,previewCueStep);
+        const int next=plan.next(sample.step);
+        if(next<0){playing=false;notify();return true;}
+        previewCueStep=next;previewCueElapsed=0;setTime(plan.steps[next].start);notify();return true;
+    }
+    return false;
+}
+
 void BuildModel::setTime(qint64 ms) {
     for (auto &o : design.objects) o.overrides.clear();
     t = qBound<qint64>(0, ms, qint64(design.durationMs));
@@ -404,6 +430,7 @@ void BuildModel::togglePropertyKey(const QString &id,const QString &property){
     auto *o=byId(id);if(!o||o->locked)return;
     auto *track=o->track(property);int index=track?track->indexAt(t):-1;
     if(index<0){keyProperty(id,property);return;}
+    if(o->overrides.contains(property)&&qAbs(o->propertyValue(property,t)-track->keys[index].value)>1e-6){keyProperty(id,property);return;}
     const double value=o->propertyValue(property,t);pushUndo();track->keys.removeAt(index);
     o->tracks.removeIf([](const auto &tr){return tr.keys.isEmpty();});
     o->setPropertyBase(property,value);if(o->track(property))o->overrides[property]=value;else o->overrides.remove(property);o->refreshLegacyKeys();selChannel=property;selKey=-1;emit changed();
@@ -674,15 +701,24 @@ Mesh *BuildModel::editMesh() {
     return (editMode && o && o->type == "Mesh") ? &o->mesh : nullptr;
 }
 
+bool BuildModel::applyModifier(const QString &objectId,int index){
+    auto *object=byId(objectId);
+    if(editMode||!object||object->locked||object->type!="Mesh"||index<0||index>=object->mods.size())return false;
+    // Bake the ordered prefix: later modifiers depend on the geometry before them.
+    auto snapshot=design;auto *copy=snapshot.find(objectId);copy->mods.resize(index+1);
+    const Mesh baked=snapshot.evalMesh(*copy,t);
+    pushUndo();object->mesh=baked;object->mods.remove(0,index+1);notify();return true;
+}
+
 bool BuildModel::enterEdit() {
     DObject *o = active();
     if(o&&o->type=="Shape"&&!o->locked){
-        pushUndo();QPainterPath path;const QRectF bounds(-o->w/2,-o->h/2,o->w,o->h);
-        if(o->style["shape"].toString()=="Ellipse")path.addEllipse(bounds);
-        else {const double radius=o->style["corner.radius"].toDouble()/kPxPerUnit;path.addRoundedRect(bounds,radius,radius);}
+        pushUndo();const QRectF bounds(-o->w/2,-o->h/2,o->w,o->h);
+        auto outline=*o;if(outline.style["corner.unit"].toString()!="%")for(const auto &key:QStringList{"corner.radius","corner.tl","corner.tr","corner.br","corner.bl"})outline.style[key]=o->propertyBase(key)/kPxPerUnit;
+        const QPainterPath path=surfaceOutline(bounds,outline);
         const auto polygon=path.toFillPolygon();Mesh mesh;QVector<int> face;
         for(int i=0;i<polygon.size();++i){if(i==polygon.size()-1&&polygon[i]==polygon[0])break;face.append(mesh.v.size());mesh.v.append({float(polygon[i].x()),float(polygon[i].y()),0});}
-        mesh.f.append(face);if(mesh.faceNormal(0).z()<0)mesh.flipNormals();o->mesh=mesh;o->type="Mesh";o->mat.shadeless=false;
+        mesh.f.append(face);if(mesh.faceNormal(0).z()<0)mesh.flipNormals();o->mesh=mesh;o->type="Mesh";
     }
     if (!o || o->type != "Mesh" || o->locked) return false;
     editMode = true;
@@ -788,7 +824,7 @@ bool BuildModel::opExtrude(QVector3D *dirWorld) {
     QVector3D dir;
     if (!m->extrude(esel, selMode, &dir)) EDIT_OP_FAIL
     if (dirWorld) {
-        const QMatrix4x4 W = ElementDesign::matrixOf(active()->at(t));
+        const QMatrix4x4 W = design.worldMatrix(*active(),t);
         *dirWorld = dir.isNull() ? QVector3D() : W.mapVector(dir).normalized();
     }
     reconcile();
