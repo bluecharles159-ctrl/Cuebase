@@ -1,4 +1,4 @@
-# Verification — 2026-10-14
+# Verification — 2026-10-15
 
 ## Rigid-body and planning-model checkpoint
 
@@ -14,9 +14,29 @@ changes invalidating cached results. Five exported comparison frames were
 generated; frames at 0, 2 and 4 seconds were visually inspected. The centered
 block remains supported and the overhanging block lands on the ground.
 
-Planning tests cover the independent data model only. There is no interactive
-planning board yet. Native physics interaction, complex concave collisions and
+This earlier checkpoint covered the independent planning model only; see the
+interactive planner checkpoint below. Native physics interaction, complex concave collisions and
 the wider feature/parity audit remain incomplete; this is not a release sign-off.
+
+## Interactive planner checkpoint — 2026-10-15
+
+The full Studio suite passes **27 cases**, including RTMP/SRT loopback and four
+new planner checks. Results: `build-final/planning-studio-results.txt` and XML.
+Focused checks also passed (`planning-ui-results.txt`). After the final add-menu,
+window-geometry and bounded-image-cache refinements, Cuebase and its test target
+rebuilt successfully; all 6 focused cases passed (`planning-ui-final-results.txt`). They exercise first-use
+creation, mixed-source timing, private/live playback isolation, note edits during
+playback, undo/redo, persistence, card drag/link gestures, crew-setting preservation,
+and invalid-plan recovery while retaining the original data.
+
+Inspected `build-final/artifacts/production-board.png` and `planning-canvas.png`.
+These are automated offscreen captures, not native desktop interaction evidence.
+A native check was attempted on October 15; the computer-use runtime failed with
+"failed to write kernel assets: The system cannot find the path specified."
+The board supports private preview, mixed-source sequencing, rich-text/image cards,
+connections and checked saves. Native interaction, representative media coverage,
+plan-to-broadcast promotion and broader release acceptance
+remain pending. This is a development checkpoint, not a finished release.
 
 ## Studio Blue / editor checkpoint
 

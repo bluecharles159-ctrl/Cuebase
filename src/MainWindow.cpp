@@ -1,5 +1,6 @@
 #include "UiTheme.h"
 #include "MainWindow.h"
+#include "ProductionBoard.h"
 #include "StudioCueBoard.h"
 #include "CueSequence.h"
 #include "ElementLibrary.h"
@@ -200,6 +201,7 @@ void MainWindow::buildMenus() {
     hl->addWidget(bar);
     hl->addStretch();
     auto control=[&](QString name,QString icon,QString label){auto *button=new QToolButton;button->setObjectName(name);button->setIcon(uiIcon(icon));button->setIconSize({13,13});button->setFixedSize(30,26);button->setToolTip(label);button->setAccessibleName(label);hl->addWidget(button);return button;};
+    auto *planner=control("windowPlanner","workflow","Production plan");connect(planner,&QToolButton::clicked,this,[this]{auto *board=findChild<ProductionBoard*>("productionBoard",Qt::FindDirectChildrenOnly);if(!board)board=new ProductionBoard(m_lib,this);board->show();board->raise();board->activateWindow();});
     auto *settings=control("windowSettings","settings","Settings");connect(settings,&QToolButton::clicked,this,[this]{showUiSettings(this);});
     auto *minimize=control("windowMinimize","remove","Minimize");minimize->setIcon(style()->standardIcon(QStyle::SP_TitleBarMinButton));connect(minimize,&QToolButton::clicked,this,&QWidget::showMinimized);
     auto *maximize=control("windowMaximize","square","Maximize / restore");connect(maximize,&QToolButton::clicked,this,[this]{isMaximized()?showNormal():showMaximized();});
@@ -650,6 +652,7 @@ void MainWindow::closeEvent(QCloseEvent *event) {
     confirmation.setInformativeText(m_build&&m_build->hasUnsavedChanges()?"The current Build composition has unsaved changes.":"Your library is saved automatically. Close Cuebase?");
     const int choice=confirmation.exec();
     if(choice==QMessageBox::Cancel){event->ignore();return;}
+    if(choice==QMessageBox::Save)if(auto *board=findChild<ProductionBoard*>("productionBoard");board&&board->isVisible()){board->done(QDialog::Accepted);if(board->isVisible()){event->ignore();return;}}
     if(choice==QMessageBox::Save)for(auto *board:findChildren<QWidget*>("studioCueBoard"))if(board->property("dirty").toBool()){if(auto *save=board->findChild<QPushButton*>("saveCueBoard"))save->click();if(board->property("dirty").toBool()){event->ignore();return;}}
     if(choice==QMessageBox::Save&&m_build&&m_build->hasUnsavedChanges()&&!m_build->saveForClose()){event->ignore();return;}
     if(m_network)m_network->stop();

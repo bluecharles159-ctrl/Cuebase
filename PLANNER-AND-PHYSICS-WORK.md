@@ -48,14 +48,21 @@ Primary references:
   https://github.com/bulletphysics/bullet3
   https://github.com/bulletphysics/bullet3/blob/master/LICENSE.txt
 
-## Planning board (not implemented yet)
+## Planning board — interactive checkpoint
 
-`ProductionPlan.h/.cpp` now define the independent mixed sequence, card and
-connection document. `PlanningTests.cpp` covers timing, reorder, shared ports,
-connection cleanup, card locks and transactional JSON loading. All 6 test cases
-passed. These files are not yet connected to an interactive board. The CMake test
-target is `CuebasePlanningTests`. Do not describe the planner as available in the app.
+The interactive board is wired to the top-right workflow icon. It has a separate
+Library/Playout preview, source filters, a mixed sequence, reorderable list, moving
+playhead, rich-text/image cards, four-sided connections, undo/redo and checked
+persistence. Unreadable saved plans remain untouched until explicit recovery,
+which keeps the original data. Crew-setting edits preserve planner data.
 
+All 27 Studio cases pass, including four planner tests; the independent model's
+six cases passed at the previous checkpoint. Offscreen board/canvas screenshots
+were inspected. Native interaction, real-media coverage and explicit promotion to broadcast remain
+pending. Window geometry is saved, the empty-card plus opens its content menu, and the
+note-image cache is bounded to 32 MiB. The app rebuilt and all 6 focused cases
+passed after those refinements. Native computer-use initialization failed with
+a missing-path error. The overall request and release checklist remain incomplete.
 Blender's official node-editor and reroute documentation was consulted for
 socket/link behavior. Cuebase's user-requested many-to-one note links intentionally
 allow more connections than a Blender reroute input. No reference video has been

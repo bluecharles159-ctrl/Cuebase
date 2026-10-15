@@ -1,5 +1,8 @@
 <RCC>
   <qresource prefix="/icons">
+    <file alias="workflow.svg">icons/lucide/workflow.svg</file>
+    <file alias="sticky-note.svg">icons/lucide/sticky-note.svg</file>
+    <file alias="ellipsis.svg">icons/lucide/ellipsis.svg</file>
     <file alias="sliders-horizontal.svg">icons/lucide/sliders-horizontal.svg</file>
     <file alias="align-horizontal-justify-start.svg">icons/lucide/align-horizontal-justify-start.svg</file>
     <file alias="chart-spline.svg">icons/lucide/chart-spline.svg</file>

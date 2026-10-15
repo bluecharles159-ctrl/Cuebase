@@ -204,6 +204,11 @@ void Playout::rebuild() {
     }
 
     m_segs.clear();
+    // Only the board's private, unsaved library opts in to millisecond plan
+    // durations. Imported channel data cannot enable this QObject property.
+    const bool planning=m_lib->property("planningPreview").toBool();
+    const auto planDurations=m_lib->property("planningDurations").toMap();
+    auto length=[&](const ProgramItem &item){return planning&&planDurations.contains(item.id)?int(qBound<qint64>(qint64(1),planDurations.value(item.id).toLongLong(),qint64(2147483647))):item.seconds*1000;};
     const auto &progs = m_lib->programs;
     for (int i = 0; i < progs.size(); ++i) {
         const ProgramItem &p = progs[i];
@@ -217,7 +222,7 @@ void Playout::rebuild() {
             a.title = spotAd ? spotAd->name : p.title;
             a.kind = "Ad";
             a.file = spotAd ? spotAd->file : QString();
-            a.ms = p.seconds * 1000;
+            a.ms = length(p);
             a.offsetMs=p.offsetMs;
             a.fx = spotAd ? spotAd->fx : Transition();
             m_segs << a;
@@ -231,8 +236,11 @@ void Playout::rebuild() {
         s.kind = p.kind;
         s.file = p.file;
         s.offsetMs = p.offsetMs;
-        s.ms = p.seconds * 1000;
+        s.ms = length(p);
         s.fx = p.fx;
+        if(planning&&p.kind=="Plan element")if(const auto *element=m_lib->element(p.breakIn);element&&element->type=="Break"){
+            s.type=Segment::Break;s.color=element->color;s.text=element->text;
+        }
         m_segs << s;
 
         const Ad *ad = m_lib->ad(p.adId);

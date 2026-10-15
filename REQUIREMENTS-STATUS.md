@@ -140,8 +140,7 @@ EXPANSION” document. CREATIVE-STUDIO-PLAN.md records implementation dependenci
   at representative frames. Native interaction and the wider physics scope
   remain pending. See `PLANNER-AND-PHYSICS-WORK.md`.
 - The planner document model passes 6 checks for sequence timing, reorder,
-  card locks, shared ports and transactional loading. Its interactive board is
-  still pending; do not count the planner as a completed user-facing feature.
+  card locks, shared ports and transactional loading. The interactive board is now wired into the app, with four planner tests in the passing 27-case Studio suite. Native interaction, representative media checks and broadcast promotion remain pending.
 
 ## Release acceptance
 

@@ -35,6 +35,13 @@
 #include "StudioCueBoard.h"
 #include "StudioDashboard.h"
 #include "MainWindow.h"
+#include "ProductionBoard.h"
+#include "PlanningCanvas.h"
+#include <QTextEdit>
+#include <QMenu>
+#include <QTimer>
+#include <QGraphicsProxyWidget>
+#include <QGraphicsScene>
 #include "UiControls.h"
 #include <QTcpSocket>
 #include <QLabel>
@@ -48,6 +55,38 @@
 class StreamTests:public QObject{
     Q_OBJECT
 private slots:
+    void planningPreviewIsolation(){
+        struct Profile {QString previous=qApp->applicationName();Profile(){qApp->setApplicationName(previous+"-planning");}~Profile(){qApp->setApplicationName(previous);}} profile;
+        applyUiTheme("Studio Blue",false);
+        Library library;ProgramItem program;program.id="plan-program";program.title="Morning programme";program.kind="Lifestyle";program.seconds=60;library.programs={program};Ad ad;ad.id="plan-ad";ad.name="Sponsor spot";ad.seconds=15;library.ads={ad};Element element;element.id="plan-element";element.name="Coming next";element.type="Custom";element.design=elementPreset("News lower third").toJson();library.elements={element};library.production["sentinel"]="keep";
+        Playout live(&library);live.start();live.togglePause();const auto livePosition=live.timelinePosMs();
+        ProductionBoard board(&library);QVERIFY(board.previewLibrary()!=&library);QVERIFY(board.previewPlayout()!=&live);QVERIFY(board.appendSource("Program",program.id));QVERIFY(board.appendSource("Ad",ad.id));QVERIFY(board.appendSource("Element",element.id));
+        auto plan=board.document();plan.entries.last().durationMs=1337;QVERIFY(board.applyDocument(plan));QCOMPARE(board.previewPlayout()->totalMs(),qint64(76337));QCOMPARE(library.programs.size(),1);QCOMPARE(library.placements.size(),0);QCOMPARE(library.programs.first().seconds,60);
+        board.previewAt(60005,true);QCOMPARE(board.previewPlayout()->current()->type,Segment::Ad);QCOMPARE(board.previewPlayout()->segmentElapsed(),qint64(5));QCOMPARE(live.state(),Playout::Paused);QCOMPARE(live.timelinePosMs(),livePosition);
+        PlanCard card;card.id="plan-note";card.html="<b>Check sponsor approval</b>";card.rect={70,190,260,150};plan.cards.append(card);QVERIFY(plan.addLink({"plan-link",{card.id,1},{plan.entries[1].id,3},"Dashed"}));QVERIFY(board.applyDocument(plan));QCOMPARE(board.previewPlayout()->state(),Playout::Playing);board.undoPlan();QCOMPARE(board.previewPlayout()->state(),Playout::Playing);QVERIFY(board.document().cards.isEmpty());board.redoPlan();QCOMPARE(board.document().cards.size(),1);
+        QString error;QVERIFY2(board.savePlan(&error),qPrintable(error));QCOMPARE(library.production["sentinel"].toString(),QString("keep"));QCOMPARE(library.production["planningBoard"].toObject(),board.document().toJson());
+        Library reloaded;reloaded.load();ProductionBoard restored(&reloaded);QCOMPARE(restored.document().toJson(),board.document().toJson());
+        board.resize(1100,760);board.show();QTest::qWait(230);QVERIFY(board.grab().save("artifacts/production-board.png"));board.done(QDialog::Accepted);QCOMPARE(board.previewPlayout()->state(),Playout::Stopped);QCOMPARE(live.state(),Playout::Paused);
+    }
+    void planningCanvasGestures(){
+        PlanningCanvas canvas;canvas.resize(1000,620);ProductionPlan latest;connect(&canvas,&PlanningCanvas::documentEdited,&canvas,[&](const ProductionPlan &plan){latest=plan;});canvas.show();QTest::qWait(20);
+        auto drag=[&](QPointF from,QPointF to){QTest::mousePress(canvas.viewport(),Qt::LeftButton,Qt::NoModifier,canvas.mapFromScene(from));QTest::mouseMove(canvas.viewport(),canvas.mapFromScene(to),30);QTest::mouseRelease(canvas.viewport(),Qt::LeftButton,Qt::NoModifier,canvas.mapFromScene(to));};
+        drag({80,190},{330,350});QCOMPARE(latest.cards.size(),1);QTextEdit *editor=nullptr;for(auto *item:canvas.scene()->items())if(auto *proxy=qgraphicsitem_cast<QGraphicsProxyWidget*>(item))editor=proxy->widget()->findChild<QTextEdit*>("planNoteText");QVERIFY(editor);QTest::keyClicks(editor,"Production note");canvas.finishEditing();QVERIFY(latest.cards.first().html.contains("Production note"));
+        drag({100,200},{160,260});QCOMPARE(latest.cards.first().rect.topLeft(),QPointF(140,250));
+        PlanCard next;next.id="second-note";next.rect={500,190,250,160};latest.cards.append(next);canvas.setDocument(latest);const auto first=latest.cards.first();drag({first.rect.right(),first.rect.center().y()},{500,270});QCOMPARE(latest.links.size(),1);QCOMPARE(latest.links.first().from.id,first.id);QCOMPARE(latest.links.first().to.id,next.id);
+        drag({first.rect.left()+20,first.rect.top()+10},{first.rect.left()+20,40});QVERIFY(latest.cards.first().rect.top()>=ProductionPlan::cardTop);QVERIFY(latest.validate());QVERIFY(canvas.grab().save("artifacts/planning-canvas.png"));
+        bool opened=false;QTimer::singleShot(0,&canvas,[&]{auto *menu=qobject_cast<QMenu*>(qApp->activePopupWidget());if(!menu)return;opened=true;QTest::mouseClick(menu,Qt::LeftButton,Qt::NoModifier,menu->actionGeometry(menu->actions().first()).center());});
+        QTest::mouseClick(canvas.viewport(),Qt::LeftButton,Qt::NoModifier,canvas.mapFromScene(next.rect.center()-QPointF(0,8)));QVERIFY(opened);
+        editor=nullptr;for(auto *item:canvas.scene()->items())if(auto *proxy=qgraphicsitem_cast<QGraphicsProxyWidget*>(item))editor=proxy->widget()->findChild<QTextEdit*>("planNoteText");QVERIFY(editor);QTest::keyClicks(editor,"Second note");canvas.finishEditing();QVERIFY(latest.cards.last().html.contains("Second note"));
+    }
+    void planningSurvivesCrewEdit(){
+        struct Profile {QString previous=qApp->applicationName();Profile(){qApp->setApplicationName(previous+"-planning-crew");}~Profile(){qApp->setApplicationName(previous);}} profile;
+        Library library;ProductionPlan plan;PlanCard card;card.id="protected-note";plan.cards={card};library.production["planningBoard"]=plan.toJson();CrewSession session(&library);const auto snapshot=session.snapshot();QString error;QVERIFY2(session.apply(snapshot,"Editor","Test editor",&error),qPrintable(error));QCOMPARE(library.production["planningBoard"].toObject(),plan.toJson());
+    }
+    void planningRecoveryPreservesOriginal(){
+        struct Profile {QString previous=qApp->applicationName();Profile(){qApp->setApplicationName(previous+"-planning-recovery");}~Profile(){qApp->setApplicationName(previous);}} profile;
+        Library library;ProgramItem program;program.id="recover-program";program.title="Programme";library.programs={program};const QJsonObject damaged{{"version",999},{"unrecognized","Keep this data"}};library.production["planningBoard"]=damaged;ProductionBoard board(&library);QString error;QVERIFY(!board.savePlan(&error));QVERIFY(!error.isEmpty());QVERIFY(!board.appendSource("Program",program.id));QCOMPARE(library.production["planningBoard"].toObject(),damaged);auto *recover=board.findChild<QPushButton*>("planRecover");QVERIFY(recover);recover->click();QCOMPARE(library.production["planningBoardRecovery"].toObject(),damaged);QVERIFY(board.appendSource("Program",program.id));QVERIFY(board.savePlan(&error));QVERIFY(board.document().validate());
+    }
     void fixedCenterTimeline(){
         QSettings().setValue("studio/timelineScale",14.);QSettings().setValue("studio/fixedPlayhead",true);
         Library lib;ProgramItem program;program.id="center-show";program.title="Centered playhead";program.seconds=120;lib.programs={program};Playout play(&lib);

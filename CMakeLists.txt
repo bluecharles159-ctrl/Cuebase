@@ -34,6 +34,12 @@ add_library(CuebaseBuildCore STATIC
 target_include_directories(CuebaseBuildCore PUBLIC src)
 target_link_libraries(CuebaseBuildCore PUBLIC Qt6::Widgets Qt6::Multimedia Qt6::Svg assimp::assimp PkgConfig::AV PkgConfig::BULLET)
 
+add_library(CuebasePlanningUi STATIC
+    src/ProductionPlan.h src/ProductionPlan.cpp
+    src/PlanningCanvas.h src/PlanningCanvas.cpp
+    src/ProductionBoard.h src/ProductionBoard.cpp)
+target_link_libraries(CuebasePlanningUi PUBLIC CuebaseBuildCore)
+
 add_executable(CuebaseRender src/RenderMain.cpp)
 target_link_libraries(CuebaseRender PRIVATE CuebaseBuildCore)
 
@@ -58,7 +64,7 @@ add_executable(Cuebase WIN32
 add_library(CuebaseStreaming STATIC src/NetworkOutput.h src/NetworkOutput.cpp)
 target_include_directories(CuebaseStreaming PUBLIC src)
 target_link_libraries(CuebaseStreaming PUBLIC Qt6::Gui Qt6::Multimedia Qt6::Network)
-target_link_libraries(Cuebase PRIVATE CuebaseBuildCore CuebaseStreaming Qt6::Multimedia)
+target_link_libraries(Cuebase PRIVATE CuebaseBuildCore CuebaseStreaming CuebasePlanningUi Qt6::Multimedia)
 if(WIN32)
     target_link_libraries(Cuebase PRIVATE psapi)
 endif()
@@ -88,7 +94,7 @@ if(BUILD_TESTING)
         src/TimelineWidget.h src/TimelineWidget.cpp src/DragDrop.h src/DragDrop.cpp
         src/Playout.h src/Playout.cpp src/ViewportWidget.h src/ViewportWidget.cpp
         src/ColorManagement.h src/ColorManagement.cpp)
-    target_link_libraries(CuebaseStreamTests PRIVATE CuebaseStreaming CuebaseBuildCore Qt6::Test Qt6::Widgets)
+    target_link_libraries(CuebaseStreamTests PRIVATE CuebaseStreaming CuebaseBuildCore CuebasePlanningUi Qt6::Test Qt6::Widgets)
     if(WIN32)
         target_link_libraries(CuebaseStreamTests PRIVATE psapi)
     endif()

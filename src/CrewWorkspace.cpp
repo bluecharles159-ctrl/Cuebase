@@ -49,7 +49,7 @@ bool CrewSession::apply(const QJsonObject &document,const QString &role,const QS
     if(role!="Editor")return fail("This session has view-only permission.");
     if(document["revision"].toDouble()!=double(version))return fail("Someone changed this production. Refresh before saving; your changes have not overwritten theirs.");
     if(!document["production"].isObject()||!document["fields"].isArray())return fail("Invalid production document.");
-    auto production=document["production"].toObject();QJsonObject clean;
+    auto production=document["production"].toObject();QJsonObject clean=lib->production;
     const QMap<QString,int> columns{{"crew",5},{"tasks",6},{"schedule",6},{"script",4}};
     for(auto it=columns.cbegin();it!=columns.cend();++it){const auto rows=production[it.key()].toArray();if(rows.size()>500)return fail("Each table supports up to 500 rows.");QJsonArray sanitized;QSet<QString> ids;
         for(const auto &value:rows){if(!value.isObject())return fail("Invalid table row.");const auto row=value.toObject();const auto id=row["id"].toString();if(id.isEmpty()||id.size()>80||ids.contains(id))return fail("Table row identifiers must be unique.");ids.insert(id);QJsonObject result{{"id",id}};for(int c=0;c<it.value();++c){const auto text=row["c"+QString::number(c)].toString();if(text.size()>2000)return fail("A table cell exceeds 2,000 characters.");result["c"+QString::number(c)]=text;}sanitized.append(result);}clean[it.key()]=sanitized;

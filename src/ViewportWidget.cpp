@@ -439,6 +439,8 @@ void ViewportWidget::drawScreen(QPainter &p, const QRect &r, const View &v, bool
         p.fillRect(r, Qt::black);
         const QImage scaled = v.frame->scaled(r.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
         p.drawImage(r.center() - QPoint(scaled.width() / 2, scaled.height() / 2), scaled);
+    } else if(m_lib->property("planningPreview").toBool()&&seg->kind=="Plan element"&&seg->type!=Segment::Break){
+        p.fillRect(r,Qt::black);
     } else {
         QColor base = seg->type == Segment::Break ? QColor(seg->color) : segColor(*seg);
         QLinearGradient g(r.topLeft(), r.bottomRight());
