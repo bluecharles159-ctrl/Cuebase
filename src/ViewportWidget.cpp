@@ -439,7 +439,7 @@ void ViewportWidget::drawScreen(QPainter &p, const QRect &r, const View &v, bool
         p.fillRect(r, Qt::black);
         const QImage scaled = v.frame->scaled(r.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
         p.drawImage(r.center() - QPoint(scaled.width() / 2, scaled.height() / 2), scaled);
-    } else if(m_lib->property("planningPreview").toBool()&&seg->kind=="Plan element"&&seg->type!=Segment::Break){
+    } else if(((m_lib->property("planningPreview").toBool()&&seg->kind=="Plan element")||seg->kind=="Screen element")&&seg->type!=Segment::Break){
         p.fillRect(r,Qt::black);
     } else {
         QColor base = seg->type == Segment::Break ? QColor(seg->color) : segColor(*seg);
@@ -479,7 +479,11 @@ void ViewportWidget::drawScreen(QPainter &p, const QRect &r, const View &v, bool
     // ---- on-screen elements: switched-on ones, plus ones placed on the extra timelines for this moment ----
     struct GraphicLayer{Element element;qint64 time=0,elapsed=0,length=0;bool controlled=false,placed=false;};
     QVector<GraphicLayer> graphics;QSet<QString> drawn;const qint64 clock=v.posMs;
-    for(const auto &e:m_lib->elements){const auto playback=m_play->graphicPlayback(e,clock);if(playback.controlled)drawn.insert(e.id);if(!playback.visible||e.type=="Break")continue;if(e.type=="Ad Element"&&!(seg&&seg->type==Segment::Ad))continue;graphics.append({playback.resolved(e),playback.time,0,0,playback.controlled,false});drawn.insert(e.id);}
+    if(seg&&seg->type!=Segment::Break)if(const auto *item=m_lib->program(seg->programId);item&&!item->elementId.isEmpty())if(const auto *e=m_lib->element(item->elementId)){
+        Element instance=*e;instance.id="program:"+item->id;const auto playback=m_play->graphicPlayback(instance,clock,clock-v.segElapsed,item->offsetMs);
+        drawn.insert(e->id);if(playback.visible)graphics.append({playback.resolved(instance),playback.time,v.segElapsed,seg->ms,playback.controlled,true});
+    }
+    for(const auto &e:m_lib->elements){if(drawn.contains(e.id))continue;const auto playback=m_play->graphicPlayback(e,clock);if(playback.controlled)drawn.insert(e.id);if(!playback.visible||e.type=="Break")continue;if(e.type=="Ad Element"&&!(seg&&seg->type==Segment::Ad))continue;graphics.append({playback.resolved(e),playback.time,0,0,playback.controlled,false});drawn.insert(e.id);}
     if(v.onAir||m_detached)for(const auto &pl:m_lib->placements){if(pl.type!="Element"||!m_lib->layers.value(qBound(0,pl.layer,3)).visible||clock<pl.startMs||clock>=pl.startMs+pl.lengthMs())continue;const auto e=m_lib->placementElement(pl);if(e.type=="Break"||drawn.contains(e.id))continue;drawn.insert(e.id);const auto playback=m_play->graphicPlayback(e,clock,pl.startMs,pl.offsetMs);if(!playback.visible)continue;graphics.append({playback.resolved(e),playback.time,clock-pl.startMs,pl.lengthMs(),playback.controlled,true});}
     std::stable_sort(graphics.begin(),graphics.end(),[](const GraphicLayer &a,const GraphicLayer &b){return a.element.cueBoardSettings["zIndex"].toInt()<b.element.cueBoardSettings["zIndex"].toInt();});
     for(const auto &graphic:graphics){p.save();if(graphic.placed)applyFx(p,r,transitionAt(graphic.element.fx,graphic.elapsed,graphic.length));drawElement(p,r,graphic.element,graphic.time,graphic.controlled);p.restore();}

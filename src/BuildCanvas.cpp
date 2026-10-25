@@ -1,5 +1,9 @@
 #include "BuildCanvas.h"
+#include "ColorManagement.h"
 #include "SceneEffects.h"
+#include "TextureLibrary.h"
+#include <QDragEnterEvent>
+#include <QMimeData>
 
 #include <QAbstractSpinBox>
 #include <QApplication>
@@ -10,6 +14,7 @@
 #include <QPainterPath>
 #include <QPlainTextEdit>
 #include <QWheelEvent>
+#include <QElapsedTimer>
 #include <QtMath>
 #include <algorithm>
 
@@ -45,15 +50,42 @@ QVector3D axisOf(int a) { return a == 0 ? QVector3D(1, 0, 0) : a == 1 ? QVector3
 
 BuildCanvas::BuildCanvas(BuildModel *m, Library *lib, QWidget *parent) : QWidget(parent), m_m(m), m_lib(lib) {
     setMouseTracking(true);
+    setAcceptDrops(true);
     setFocusPolicy(Qt::StrongFocus);
     setMinimumSize(380, 240);
-    connect(m, &BuildModel::changed, this, [this] { update(); });
+    auto loadGuides=[this]{
+        m_verticalGuides.clear();m_horizontalGuides.clear();m_dragGuide=-1;
+        if(const auto *camera=m_m->design.camera()){
+            auto load=[](const QJsonArray &items,QVector<double> &values){for(auto item:items){const double value=item.toDouble(-1);if(value>=0&&value<=1)values.append(value);}};
+            load(camera->style["editor.guides.vertical"].toArray(),m_verticalGuides);
+            load(camera->style["editor.guides.horizontal"].toArray(),m_horizontalGuides);
+        }
+        update();
+    };
+    connect(m, &BuildModel::changed, this, loadGuides);loadGuides();
+    connect(lib,&Library::displayChanged,this,qOverload<>(&QWidget::update));
     connect(m, &BuildModel::timeChanged, this, [this] { update(); });
     connect(m, &BuildModel::selectionChanged, this, [this] { update(); });
     connect(m, &BuildModel::modeChanged, this, [this] {
         if (m_loopCut) cancelModal();
         update();
     });
+}
+
+void BuildCanvas::dragEnterEvent(QDragEnterEvent *event){
+    if(!modalActive()&&!m_m->editMode&&event->mimeData()->hasFormat(TextureLibrary::mimeType)&&
+       !TextureLibrary::entry(*m_lib,QString::fromUtf8(event->mimeData()->data(TextureLibrary::mimeType))).isEmpty())event->acceptProposedAction();
+}
+void BuildCanvas::dragMoveEvent(QDragMoveEvent *event){
+    const auto *object=m_m->byId(pickObject(event->position()));
+    if(!modalActive()&&!m_m->editMode&&event->mimeData()->hasFormat(TextureLibrary::mimeType)&&object&&!object->locked&&TextureLibrary::compatible(*object))event->acceptProposedAction();else event->ignore();
+}
+void BuildCanvas::dropEvent(QDropEvent *event){
+    if(modalActive()||m_m->editMode||!event->mimeData()->hasFormat(TextureLibrary::mimeType))return;
+    const auto target=pickObject(event->position());if(target.isEmpty())return;
+    QString error;if(TextureLibrary::apply(*m_m,*m_lib,QString::fromUtf8(event->mimeData()->data(TextureLibrary::mimeType)),target,&error)){
+        event->acceptProposedAction();emit message("Texture applied · view in Material or Final mode");
+    }else emit message(error);
 }
 
 // ------------------------------------------------------------------ view
@@ -90,7 +122,10 @@ bool BuildCanvas::projectWorld(const ViewCam &cam, const QRectF &r, const QVecto
 }
 
 void BuildCanvas::setShading(int s) {
-    m_shading = qBound(0, s, 2);
+    s=qBound(0,s,3);
+    if(m_shading==s)return;
+    m_shading=s;
+    emit shadingChanged(s);
     update();
 }
 
@@ -220,6 +255,7 @@ void BuildCanvas::drawGrid(QPainter &p, const ViewCam &cam, const QRectF &r) con
 
 void BuildCanvas::drawGizmos(QPainter &p, const ViewCam &cam, const QRectF &r) {
     const ElementDesign &d = m_m->design;
+
     for (const DObject &o : d.objects) {
         if (!o.visible || (o.type != "Light" && o.type != "Camera")) continue;
         if((o.type=="Light"&&!showLights)||(o.type=="Camera"&&!showCamera))continue;
@@ -375,17 +411,52 @@ void BuildCanvas::paintEvent(QPaintEvent *) {
     const ViewCam cam = activeCam(&r);
     const ElementDesign &d = m_m->design;
 
+    // Work/material views retain the off-camera workspace. Only the camera frame
+    // is exported; the dimmed surround helps position incoming/outgoing objects.
+    if(m_cameraView && m_shading!=Rendered && !r.contains(QRectF(rect()))){
+        const double factor=qMin(1.,qSqrt(2073600./qMax(1.,double(width())*height())));
+        QImage surround(QSize(qMax(2,int(width()*factor)),qMax(2,int(height()*factor))),QImage::Format_ARGB32_Premultiplied);surround.fill(Qt::transparent);
+        if(!surround.isNull()){
+            QPainter editor(&surround);PaintOpts options;options.shade=PaintOpts::Shade(m_shading);options.clip=false;options.background=false;
+            d.paint(editor,QRectF(r.topLeft()*factor,r.size()*factor),cam,m_m->t,options);editor.end();
+            QPainterPath outside;outside.addRect(rect());QPainterPath camera;camera.addRect(r);outside=outside.subtracted(camera);
+            p.save();p.setClipPath(outside);p.drawImage(rect(),surround);p.fillRect(rect(),QColor(0,0,0,135));p.restore();
+        }
+    }
+
     // Checker-like dark editor surround, then the real fixed-camera composition.
     p.save();
     p.setClipRect(r);
     p.fillRect(r,QColor("#393939"));
-    if (m_shading == Rendered) {
-        if(sceneEffect(d))p.drawImage(r,sceneEffectPreview(d,r.size().toSize(),m_m->t));else d.render(p,r,m_m->t,true);
-    } else {
-        PaintOpts o;
-        o.shade = PaintOpts::Shade(m_shading);
-        d.paint(p, r, cam, m_m->t, o);
+    // Render into an image so backdrop effects can sample already drawn pixels.
+    // Bound the buffer independently of editor zoom; previews never change output.
+    const QString quality=property("previewQuality").toString();
+    const double scale=quality=="Quarter"?.25:quality=="Half"?.5:
+        (quality.isEmpty()||quality=="Auto")&&(m_m->playing||modalActive())?.5:1.;
+    QSizeF requested=r.size()*devicePixelRatioF()*scale;
+    const double limit=2073600.;
+    if(requested.width()*requested.height()>limit)requested*=qSqrt(limit/(requested.width()*requested.height()));
+    const QSize previewSize(qMax(2,int(requested.width())),qMax(2,int(requested.height())));
+    setProperty("previewPixelSize",previewSize);
+    QElapsedTimer renderClock;renderClock.start();
+    QImage frame(previewSize,QImage::Format_ARGB32_Premultiplied);frame.fill(Qt::transparent);
+    if(!frame.isNull()){
+        if(m_shading==Rendered&&sceneEffect(d))frame=sceneEffectPreview(d,previewSize,m_m->t);
+        else{
+            QPainter render(&frame);render.setRenderHint(QPainter::Antialiasing);render.setRenderHint(QPainter::SmoothPixmapTransform);
+            if(m_shading==Rendered){
+                const auto &display=m_lib->display;RenderSettings settings;
+                settings.motionBlur=display.motionBlur;settings.shutter=display.shutter;settings.samples=display.mbSamples;
+                settings.frameMs=1000.*display.fpsBase/qMax(1,display.fps);
+                d.render(render,frame.rect(),m_m->t,true,&settings);
+            }else{PaintOpts options;options.shade=PaintOpts::Shade(m_shading);d.paint(render,frame.rect(),cam,m_m->t,options);}
+        }
+        const auto &display=m_lib->display;
+        if(m_shading==Rendered&&colorManagementActive(display.colorView,display.colorLook,display.exposure,display.gamma))
+            applyColorManagement(frame,display.colorView,display.colorLook,display.exposure,display.gamma);
+        p.setRenderHint(QPainter::SmoothPixmapTransform);p.drawImage(r,frame);
     }
+    setProperty("previewRenderMs",renderClock.elapsed());
     p.restore();
 
     // Broadcast-safe overlays are editor-only.
@@ -393,8 +464,10 @@ void BuildCanvas::paintEvent(QPaintEvent *) {
     p.setPen(QPen(QColor(255,255,255,90), 1));
     p.setBrush(Qt::NoBrush);
     p.drawRect(r);
-    const QRectF titleSafe = r.adjusted(r.width()*0.05, r.height()*0.05, -r.width()*0.05, -r.height()*0.05);
-    const QRectF actionSafe = r.adjusted(r.width()*0.035, r.height()*0.035, -r.width()*0.035, -r.height()*0.035);
+    const auto guideStyle=d.camera()?d.camera()->style:QJsonObject{};
+    const double titleMargin=qBound(0.,guideStyle["editor.titleSafe"].toDouble(.05),.45),actionMargin=qBound(0.,guideStyle["editor.actionSafe"].toDouble(.035),.45);
+    const QRectF titleSafe = r.adjusted(r.width()*titleMargin, r.height()*titleMargin, -r.width()*titleMargin, -r.height()*titleMargin);
+    const QRectF actionSafe = r.adjusted(r.width()*actionMargin, r.height()*actionMargin, -r.width()*actionMargin, -r.height()*actionMargin);
     p.setPen(QPen(QColor(96,165,250,45), 1, Qt::DashLine));
     if(showActionSafe) p.drawRect(actionSafe);
     p.setPen(QPen(QColor(250,204,21,38), 1, Qt::DashLine));
@@ -406,13 +479,14 @@ void BuildCanvas::paintEvent(QPaintEvent *) {
     p.save();p.setClipRect(r);
     if(showGrid){
         p.setPen(QColor(148,163,184,25));
-        const double step=120.0*r.width()/m_lib->display.resX();
+        const double step=qMax(12.,qBound(1.,guideStyle["editor.gridSpacing"].toDouble(120),4096.)*r.width()/m_lib->display.resX());
         for(double x=r.left();x<r.right();x+=step)p.drawLine(QPointF(x,r.top()),QPointF(x,r.bottom()));
         for(double y=r.top();y<r.bottom();y+=step)p.drawLine(QPointF(r.left(),y),QPointF(r.right(),y));
     }
-    p.setPen(QPen(QColor("#22d3ee"),1,Qt::DashLine));
-    for(double guide:m_verticalGuides){double x=r.left()+guide/m_lib->display.resX()*r.width();p.drawLine(QPointF(x,r.top()),QPointF(x,r.bottom()));}
-    for(double guide:m_horizontalGuides){double y=r.top()+guide/m_lib->display.resY()*r.height();p.drawLine(QPointF(r.left(),y),QPointF(r.right(),y));}
+    QColor guideColor(guideStyle["editor.guideColor"].toString("#22d3ee"));if(!guideColor.isValid())guideColor=QColor("#22d3ee");
+    p.setPen(QPen(guideColor,1,Qt::DashLine));
+    for(double guide:m_verticalGuides){double x=r.left()+guide*r.width();p.drawLine(QPointF(x,r.top()),QPointF(x,r.bottom()));}
+    for(double guide:m_horizontalGuides){double y=r.top()+guide*r.height();p.drawLine(QPointF(r.left(),y),QPointF(r.right(),y));}
     p.restore();
     if(showRulers){
         p.fillRect(QRectF(0,0,width(),20),palette().color(QPalette::Window));p.fillRect(QRectF(0,0,20,height()),palette().color(QPalette::Window));
@@ -757,6 +831,7 @@ void BuildCanvas::startModal(Modal::Kind k, bool fromButton, bool skipUndo) {
     md.startAngle = qAtan2(md.startMouse.y() - md.pivotScreen.y(), md.startMouse.x() - md.pivotScreen.x());
     m_modal = md;
     setFocus();
+    if(!fromButton)grabMouse();
     update();
 }
 
@@ -821,6 +896,7 @@ void BuildCanvas::cancelModal() {
     }
     if (m_modal.kind == Modal::None) return;
     m_modal = Modal();
+    if(QWidget::mouseGrabber()==this)releaseMouse();
     m_m->cancelToUndo();
     emit message("Cancelled");
     update();
@@ -829,6 +905,7 @@ void BuildCanvas::cancelModal() {
 void BuildCanvas::confirmModal() {
     if (m_modal.kind == Modal::None) return;
     m_modal = Modal();
+    if(QWidget::mouseGrabber()==this)releaseMouse();
     m_m->notify();
     update();
 }
@@ -885,11 +962,11 @@ void BuildCanvas::applyModal(const QPointF &mouse) {
             bool ok1, ok2;
             const QVector3D a = rayPlane(m_modal.startMouse, m_modal.pivot, fwd, &ok1), b = rayPlane(mouse, m_modal.pivot, fwd, &ok2);
             delta = (ok1 && ok2) ? b - a : QVector3D();
-            if(snapping && !edit && !(QApplication::keyboardModifiers()&Qt::AltModifier)){
+            if(snapping && !edit && !(QApplication::keyboardModifiers()&(Qt::AltModifier|Qt::ControlModifier))){
                 QPointF target;cam.toScreen(m_modal.pivot+delta,r,&target);
                 QVector<double> xs{r.left(),r.center().x(),r.right()},ys{r.top(),r.center().y(),r.bottom()};
-                for(double g:m_verticalGuides)xs.append(r.left()+g/m_lib->display.resX()*r.width());
-                for(double g:m_horizontalGuides)ys.append(r.top()+g/m_lib->display.resY()*r.height());
+                for(double g:m_verticalGuides)xs.append(r.left()+g*r.width());
+                for(double g:m_horizontalGuides)ys.append(r.top()+g*r.height());
                 for(const auto &o:m_m->design.objects)if(o.visible&&!m_m->sel.contains(o.id)&&o.isRenderable()){auto box=objectBounds(o,cam,r);xs<<box.left()<<box.center().x()<<box.right();ys<<box.top()<<box.center().y()<<box.bottom();}
                 double dx=7,dy=7;for(double x:xs)if(qAbs(x-target.x())<qAbs(dx))dx=x-target.x();for(double y:ys)if(qAbs(y-target.y())<qAbs(dy))dy=y-target.y();
                 if(qAbs(dx)<7)target.rx()+=dx;if(qAbs(dy)<7)target.ry()+=dy;
@@ -1021,7 +1098,7 @@ void BuildCanvas::mousePressEvent(QMouseEvent *e) {
     m_boxing = false;
     m_tweakPending = false;
     m_shiftPress = e->modifiers() & Qt::ShiftModifier;
-    if((e->button()==Qt::RightButton&&m_shiftPress)||(e->button()==Qt::LeftButton&&placeCursor)){
+    if(!modalActive()&&((e->button()==Qt::RightButton&&m_shiftPress)||(e->button()==Qt::LeftButton&&placeCursor))){
         QRectF frame;const auto camera=activeCam(&frame);bool valid=false;const auto point=rayPlane(pos,m_m->design.cursor,camera.forward(),&valid);
         if(valid){m_m->pushUndo();m_m->design.cursor=point;m_m->notify();emit message("Placement cursor set. New objects appear here.");}m_pressed=false;return;
     }
@@ -1053,12 +1130,15 @@ void BuildCanvas::mousePressEvent(QMouseEvent *e) {
 
     if(!m_m->editMode){
         QRectF frame;auto cam=activeCam(&frame);
-        if(showRulers && (pos.x()<20 || pos.y()<20)){
+        if(showOverlays && showRulers && (pos.x()<20 || pos.y()<20)){
+            m_m->pushUndo();
             m_guideVertical=pos.x()<20;
             auto &guides=m_guideVertical?m_verticalGuides:m_horizontalGuides;guides.append(0);m_dragGuide=int(guides.size())-1;return;
         }
-        for(int i=0;i<m_verticalGuides.size();++i)if(qAbs(pos.x()-(frame.left()+m_verticalGuides[i]/m_lib->display.resX()*frame.width()))<4){m_dragGuide=i;m_guideVertical=true;return;}
-        for(int i=0;i<m_horizontalGuides.size();++i)if(qAbs(pos.y()-(frame.top()+m_horizontalGuides[i]/m_lib->display.resY()*frame.height()))<4){m_dragGuide=i;m_guideVertical=false;return;}
+        if(showOverlays){
+            for(int i=0;i<m_verticalGuides.size();++i)if(qAbs(pos.x()-(frame.left()+m_verticalGuides[i]*frame.width()))<4){m_m->pushUndo();m_dragGuide=i;m_guideVertical=true;return;}
+            for(int i=0;i<m_horizontalGuides.size();++i)if(qAbs(pos.y()-(frame.top()+m_horizontalGuides[i]*frame.height()))<4){m_m->pushUndo();m_dragGuide=i;m_guideVertical=false;return;}
+        }
         const auto bounds=selectionBounds(cam,frame);
         if(!bounds.isEmpty()){
             QPointF rotation(bounds.center().x(),bounds.top()-24);
@@ -1082,8 +1162,7 @@ void BuildCanvas::mousePressEvent(QMouseEvent *e) {
     m_pressObj = id;
     if (!id.isEmpty()) {
         if (m_shiftPress) m_m->select(id, true);
-        else if (!m_m->sel.contains(id)) m_m->select(id);
-        else m_m->setSelection(m_m->sel, id);
+        else m_m->select(id);
         m_tweakPending = m_m->sel.contains(id);
     }
 }
@@ -1094,7 +1173,7 @@ void BuildCanvas::mouseMoveEvent(QMouseEvent *e) {
     const QPointF d = pos - m_last;
     m_last = m_hover = pos;
     m_hasHover = true;
-    if(m_dragGuide>=0){QRectF frame;activeCam(&frame);auto &guides=m_guideVertical?m_verticalGuides:m_horizontalGuides;guides[m_dragGuide]=m_guideVertical?(pos.x()-frame.left())/frame.width()*m_lib->display.resX():(pos.y()-frame.top())/frame.height()*m_lib->display.resY();update();return;}
+    if(m_dragGuide>=0){QRectF frame;activeCam(&frame);auto &guides=m_guideVertical?m_verticalGuides:m_horizontalGuides;guides[m_dragGuide]=m_guideVertical?(pos.x()-frame.left())/frame.width():(pos.y()-frame.top())/frame.height();update();return;}
     if (m_modal.kind != Modal::None) {
         applyModal(pos);
         return;
@@ -1142,7 +1221,12 @@ void BuildCanvas::mouseMoveEvent(QMouseEvent *e) {
 
 void BuildCanvas::mouseReleaseEvent(QMouseEvent *e) {
     if(m_dragGuide>=0){
-        QRectF frame;activeCam(&frame);if(!frame.contains(e->position())){auto &guides=m_guideVertical?m_verticalGuides:m_horizontalGuides;guides.removeAt(m_dragGuide);}m_dragGuide=-1;m_pressed=false;update();return;
+        QRectF frame;activeCam(&frame);if(!frame.contains(e->position())){auto &guides=m_guideVertical?m_verticalGuides:m_horizontalGuides;guides.removeAt(m_dragGuide);}
+        if(auto *camera=m_m->design.camera()){
+            auto json=[](const QVector<double> &values){QJsonArray array;for(double value:values)array.append(value);return array;};
+            camera->style["editor.guides.vertical"]=json(m_verticalGuides);camera->style["editor.guides.horizontal"]=json(m_horizontalGuides);
+        }
+        m_dragGuide=-1;m_pressed=false;m_m->notify();update();return;
     }
     const bool wasPressed = m_pressed;
     m_pressed = false;
@@ -1214,6 +1298,7 @@ void BuildCanvas::keyPressEvent(QKeyEvent *e) {
         return;
     }
 
+    if(!edit&&k==Qt::Key_Slash&&mod==Qt::NoModifier){emit componentBrowserRequested();return;}
     // ---- views (numpad)
     if (keypad) {
         if (k == Qt::Key_1) { viewFront(); return; }
@@ -1281,7 +1366,7 @@ void BuildCanvas::keyPressEvent(QKeyEvent *e) {
     if (k == Qt::Key_S && !ctrl) { startScale(); return; }
     if (k == Qt::Key_K) { alt ? m_m->deleteKey() : m_m->insertKey(); return; }
     if (k == Qt::Key_I && !edit) { alt ? m_m->deleteKey() : m_m->insertKey(); return; }
-    if (k == Qt::Key_Z && !ctrl) { setShading((m_shading + 1) % 3); return; }
+    if (k == Qt::Key_Z && !ctrl) { setShading(m_shading==Wire?Solid:m_shading==Solid?MaterialPreview:m_shading==MaterialPreview?Rendered:Wire); return; }
     if (k == Qt::Key_Period) { frameSelected(); return; }
     QWidget::keyPressEvent(e);
 }

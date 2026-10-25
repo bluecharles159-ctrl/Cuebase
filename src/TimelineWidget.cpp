@@ -1,7 +1,12 @@
 #include <QToolTip>
-#include <QInputDialog>
+#include "UiControls.h"
+#include <QDialogButtonBox>
+#include <QVBoxLayout>
+#include <QLabel>
 #include <QPainterPath>
 #include "TimelineWidget.h"
+#include "TimelineMedia.h"
+#include "StudioElements.h"
 
 #include <QApplication>
 #include <QContextMenuEvent>
@@ -28,9 +33,6 @@
 namespace {
 constexpr int kCapY = 22;                                   // the playhead's little flag sits above the lanes
 constexpr int kMainTop = 36;                                // top of the programs lane
-constexpr int kMainH = 40;
-constexpr int kLabelTop = kMainTop + kMainH + 4;
-constexpr int kLaneTop = kLabelTop + 20;                    // first extra timeline
 constexpr int kLaneH = 26;
 constexpr int kLaneGap = 4;
 constexpr int kBadge = 13;                                  // scissors badge radius
@@ -61,6 +63,8 @@ QColor segColor(const Segment &s) {
 
 TimelineWidget::TimelineWidget(Playout *play, Library *lib, QWidget *parent)
     : QWidget(parent), m_play(play), m_lib(lib) {
+    m_media=new TimelineMedia(this);connect(m_media,&TimelineMedia::updated,this,qOverload<>(&QWidget::update));
+    m_thumbnails=QSettings().value("studio/timelineThumbnails",true).toBool();m_waveforms=QSettings().value("studio/timelineWaveforms",true).toBool();
     m_glassClock.start();m_glassTimer.setInterval(50);connect(&m_glassTimer,&QTimer::timeout,this,[this]{if(isVisible())for(const auto &placement:m_lib->placements)if(!placement.boardSnapshot.isEmpty()){update();break;}});m_glassTimer.start();
     m_pixelsPerSecond=qBound(.1,QSettings().value("studio/timelineScale",14.).toDouble(),800.);
     m_fixedPlayhead=QSettings().value("studio/fixedPlayhead",true).toBool();
@@ -77,6 +81,10 @@ TimelineWidget::TimelineWidget(Playout *play, Library *lib, QWidget *parent)
     relayout();
 }
 
+void TimelineWidget::reloadPreferences(){
+    QSettings settings;m_thumbnails=settings.value("studio/timelineThumbnails",true).toBool();m_waveforms=settings.value("studio/timelineWaveforms",true).toBool();
+    m_fixedPlayhead=settings.value("studio/fixedPlayhead",true).toBool();m_followPaused=false;relayout();notifyHeight();followPlayhead();update();emit navigationChanged();
+}
 // ---------------------------------------------------------------- layout
 
 int TimelineWidget::viewportWidth() const { return parentWidget()?parentWidget()->width():width(); }
@@ -122,10 +130,10 @@ void TimelineWidget::setFixedPlayhead(bool enabled){
 }
 
 int TimelineWidget::lanesShown() const { return m_reveal ? 3 : m_lib->maxLayer(); }
-int TimelineWidget::laneY(int lane) const { return kLaneTop + (lane - 1) * (kLaneH + kLaneGap); }
+int TimelineWidget::laneY(int lane) const { return laneTop() + (lane - 1) * (kLaneH + kLaneGap); }
 int TimelineWidget::wantedHeight() const {
     const int n = lanesShown();
-    return n == 0 ? kLabelTop + 20 : laneY(n) + kLaneH + 6;
+    return n == 0 ? labelTop() + 20 : laneY(n) + kLaneH + 6;
 }
 
 void TimelineWidget::notifyHeight() {
@@ -159,7 +167,7 @@ void TimelineWidget::relayout() {
         const bool last = i + 1 == segs.size() || segs[i + 1].programId != segs[i].programId;
         const ProgramItem *pi = last ? m_lib->program(segs[i].programId) : nullptr;
         if (pi && pi->slotAfter)
-            m_slots.append({QRect(x - 2 - kSlotR, kMainTop + (kMainH - 2 * kSlotR) / 2, 2 * kSlotR, 2 * kSlotR), pi->id});
+            m_slots.append({QRect(x - 2 - kSlotR, kMainTop + (mainHeight() - 2 * kSlotR) / 2, 2 * kSlotR, 2 * kSlotR), pi->id});
     }
     m_totalW = qMax(400, x + m_originX);
     setMinimumWidth(m_totalW);
@@ -194,7 +202,7 @@ int TimelineWidget::playheadX() const {
 }
 
 int TimelineWidget::blockAt(const QPoint &pos) const {
-    if (pos.y() < kMainTop || pos.y() > kMainTop + kMainH) return -1;
+    if (pos.y() < kMainTop || pos.y() > kMainTop + mainHeight()) return -1;
     for (int i = 0; i < m_blocks.size(); ++i)
         if (pos.x() >= m_blocks[i].x && pos.x() <= m_blocks[i].x + m_blocks[i].w) return i;
     return -1;
@@ -215,7 +223,7 @@ const TimelineWidget::Slot *TimelineWidget::hitSlot(const QPoint &pos) const {
 // The cut tool: the program under the cursor, where it would be cut, and where the line is drawn.
 bool TimelineWidget::cutTarget(int *segment, int *atSec, int *lineX) const {
     if (!m_hasHover || m_drag != Drag::None || m_blocks.isEmpty()) return false;
-    if (m_hover.y() < kMainTop || m_hover.y() > kMainTop + kMainH) return false;
+    if (m_hover.y() < kMainTop || m_hover.y() > kMainTop + mainHeight()) return false;
     if (hitSlot(m_hover)) return false;
     const auto &segs = m_play->segments();
     for (int i = 0; i < m_blocks.size(); ++i) {
@@ -238,7 +246,7 @@ bool TimelineWidget::cutTarget(int *segment, int *atSec, int *lineX) const {
 bool TimelineWidget::overScissors(const QPoint &pos) const {
     int seg, at, lx;
     if (!cutTarget(&seg, &at, &lx)) return false;
-    return QLineF(pos, QPointF(lx, kMainTop + kMainH / 2)).length() <= kBadge;
+    return QLineF(pos, QPointF(lx, kMainTop + mainHeight() / 2)).length() <= kBadge;
 }
 
 // ---------------------------------------------------------------- dragging onto the timeline
@@ -311,7 +319,7 @@ bool TimelineWidget::dragMove(const DragPayload &d, const QPoint &g) {
     bool inside = rect().contains(pos) && (!vp || vp->rect().contains(mapTo(vp, pos)));
 
     const bool wantsLane = d.kind == "element" || d.kind == "placement";
-    const bool below = pos.y() > kMainTop + kMainH;
+    const bool below = pos.y() > kMainTop + mainHeight();
     const bool wasRevealed = m_reveal;
     if (inside && (wantsLane || below)) m_reveal = true;
     if (m_reveal != wasRevealed) notifyHeight();
@@ -324,7 +332,7 @@ bool TimelineWidget::dragMove(const DragPayload &d, const QPoint &g) {
         if (lane > 0) {
             m_dropLane = lane;
             m_dropMs = xToMs(left);
-        } else if (pos.y() <= kLabelTop + 14) {
+        } else if (pos.y() <= labelTop() + 14) {
             if (wantsLane) {
                 const Placement *pl = d.kind == "placement" ? m_lib->placement(d.id) : nullptr;
                 m_dropLane = pl ? qBound(1, pl->layer, 3) : 1;
@@ -372,6 +380,19 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
         return;
     }
 
+    const QRect visible(hbar()?hbar()->value():0,0,viewportWidth(),height());
+    auto drawWave=[&](const QRect &area,const QString &file,qint64 offset,qint64 duration){
+        const auto shown=area.intersected(visible);if(shown.isEmpty()||file.isEmpty()||duration<=0)return;
+        const auto sourceStart=offset+qint64(double(shown.left()-area.left())/qMax(1,area.width())*duration);
+        const auto sourceLength=qMax<qint64>(1,qint64(double(shown.width())/qMax(1,area.width())*duration));
+        const auto wave=m_media->waveform(file,sourceStart,sourceLength);if(wave.peaks.isEmpty())return;
+        p.save();p.setClipRect(area,Qt::IntersectClip);p.fillRect(shown,QColor(0,0,0,60));p.setPen(QColor("#69ddb1"));
+        for(int x=shown.left();x<=shown.right();++x){const auto time=offset+qint64(double(x-area.left())/qMax(1,area.width())*duration);const double next=offset+double(x+1-area.left())/qMax(1,area.width())*duration;
+            const int first=qBound(0,int((time-wave.startMs)*wave.peaks.size()/qMax<qint64>(1,wave.durationMs)),int(wave.peaks.size())-1);
+            const int last=qBound(first,int((next-wave.startMs)*wave.peaks.size()/qMax<qint64>(1,wave.durationMs)),int(wave.peaks.size())-1);float peak=0;for(int n=first;n<=last;++n)peak=qMax(peak,wave.peaks[n]);
+            const double amplitude=peak*(area.height()-2)/2.;p.drawLine(QPointF(x,area.center().y()-amplitude),QPointF(x,area.center().y()+amplitude));}
+        p.restore();
+    };
     // ---- programs lane
     auto block = [&](const QRect &r, const Segment &s, bool current, double opacity) {
         p.save();
@@ -380,12 +401,20 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
         p.setPen(current ? QPen(Qt::white, 2) : Qt::NoPen);
         p.setBrush(current ? c : c.darker(160));
         p.drawRoundedRect(r, 8, 8);
+        if(!s.file.isEmpty()&&r.intersects(visible)){
+            p.save();QPainterPath clip;clip.addRoundedRect(r.adjusted(1,1,-1,-1),7,7);p.setClipPath(clip,Qt::IntersectClip);
+            if(m_thumbnails){const QRect strip(r.left()+1,r.top()+23,r.width()-2,48);const auto shown=strip.intersected(visible);
+                for(int x=strip.left()+qMax(0,(shown.left()-strip.left())/85)*85;x<shown.right();x+=85){const QRect tile(x,strip.top(),85,48);const auto time=s.offsetMs+qint64(qBound(0.,double(tile.center().x()-r.left())/qMax(1,r.width()),1.)*qMax(0,s.ms-1));const auto frame=m_media->thumbnail(s.file,time);if(!frame.isNull())p.drawImage(tile,frame);}
+            }
+            if(m_waveforms)drawWave(QRect(r.left()+1,r.bottom()-20,r.width()-2,20),s.file,s.offsetMs,s.ms);
+            p.restore();
+        }
         p.setPen(Qt::white);
         QFont f = font();
         f.setBold(true);
         f.setPixelSize(12);
         p.setFont(f);
-        const QRect inner = r.adjusted(8, 4, -8, -4);
+        const QRect inner = r.adjusted(8, 4, -8, -4-(m_waveforms?20:0));
         if (s.type == Segment::Break) {
             p.drawText(r, Qt::AlignCenter, "BR");
         } else {
@@ -402,10 +431,10 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
         p.restore();
     };
 
-    int startSec = 0;
+    qint64 startMs = 0;
     for (int i = 0; i < segs.size(); ++i) {
         const Segment &s = segs[i];
-        const QRect r(m_blocks[i].x, kMainTop, m_blocks[i].w, kMainH);
+        const QRect r(m_blocks[i].x, kMainTop, m_blocks[i].w, mainHeight());
         const bool lifted = !m_liftedId.isEmpty() && s.programId == m_liftedId;
         const bool target = m_ins.valid && m_ins.seg == i;
         block(r, s, i == m_play->index(), lifted ? 0.3 : 1.0);
@@ -418,8 +447,8 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
         QFont tf = font();
         tf.setPixelSize(10);
         p.setFont(tf);
-        p.drawText(QRect(r.left(), kLabelTop, 80, 14), Qt::AlignLeft, formatDuration(startSec));
-        startSec += s.ms / 1000;
+        p.drawText(QRect(r.left(), labelTop(), 80, 14), Qt::AlignLeft, formatDuration(int(startMs/1000)));
+        startMs += s.ms;
     }
 
     // ---- extra timelines (layers 2-4)
@@ -466,6 +495,7 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
         p.setPen(Qt::NoPen);
         p.setBrush(c.darker(125));
         p.drawRoundedRect(pb.rect, 4, 4);
+        if(m_waveforms&&pb.type!="Element"){QString file=pl->file;if(file.isEmpty()&&pb.type=="Ad")if(const auto *ad=m_lib->ad(pl->refId))file=ad->file;drawWave(pb.rect.adjusted(1,1,-1,-1),file,pl->offsetMs,pl->lengthMs());}
         if(!pl->boardSnapshot.isEmpty()){
             p.save();QPainterPath glass;glass.addRoundedRect(pb.rect,4,4);p.setClipPath(glass,Qt::IntersectClip);QLinearGradient surface(pb.rect.topLeft(),pb.rect.bottomLeft());surface.setColorAt(0,QColor(195,220,235,90));surface.setColorAt(.45,QColor(85,120,160,10));surface.setColorAt(1,QColor(190,220,245,45));p.fillRect(pb.rect,surface);const double progress=(m_glassClock.elapsed()%3000)/3000.;const double center=pb.rect.left()-30+(pb.rect.width()+60)*progress;QLinearGradient shine(center-22,0,center+22,0);shine.setColorAt(0,QColor(255,255,255,0));shine.setColorAt(.5,QColor(225,247,255,120));shine.setColorAt(1,QColor(255,255,255,0));p.fillRect(pb.rect,shine);p.restore();
         }
@@ -497,17 +527,17 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
     // ---- a program / ad being dragged over the main lane: where it will go
     if (m_ins.valid && m_drag != Drag::Playhead) {
         p.setPen(QPen(QColor("#facc15"), 3, Qt::SolidLine, Qt::RoundCap));
-        p.drawLine(m_ins.x, kMainTop - 5, m_ins.x, kMainTop + kMainH + 5);
+        p.drawLine(m_ins.x, kMainTop - 5, m_ins.x, kMainTop + mainHeight() + 5);
     }
 
-    if(m_dropLane>0&&m_hasHover){qint64 length=1000;if(m_cand.kind=="element"){if(const auto *element=m_lib->element(m_cand.id))length=element->lengthMs();}else if(m_cand.kind=="placement"){if(const auto *clip=m_lib->placement(m_cand.id))length=clip->lengthMs();}else if(const auto *program=m_lib->program(m_cand.id))length=qint64(program->seconds)*1000;
+    if(m_dropLane>0&&m_hasHover){qint64 length=1000;if(m_cand.kind=="element"){if(const auto *element=m_lib->element(m_cand.id))length=element->lengthMs();}else if(m_cand.kind=="placement"){if(const auto *clip=m_lib->placement(m_cand.id))length=clip->lengthMs();}else if(const auto *program=m_lib->program(m_cand.id))length=program->lengthMs();
         QRect target(msToX(m_dropMs),laneY(m_dropLane)+1,qMax(2,msToX(m_dropMs+length)-msToX(m_dropMs)),kLaneH-3);p.setPen(QPen(QColor("#8bbcf0"),1,Qt::DashLine));p.setBrush(QColor(99,155,215,65));p.drawRoundedRect(target,3,3);p.setPen(Qt::white);p.drawText(target.adjusted(5,0,-3,0),Qt::AlignVCenter,m_cand.label);}
     // ---- the cut tool: dashed line through the program and a scissors in the middle of it
     int cutSeg, cutSec, cutX;
     if (!DragController::instance()->active() && cutTarget(&cutSeg, &cutSec, &cutX)) {
         p.setPen(QPen(QColor(255, 255, 255, 215), 1.5, Qt::DashLine));
-        p.drawLine(cutX, kMainTop - 2, cutX, kMainTop + kMainH + 2);
-        const QPointF c(cutX, kMainTop + kMainH / 2);
+        p.drawLine(cutX, kMainTop - 2, cutX, kMainTop + mainHeight() + 2);
+        const QPointF c(cutX, kMainTop + mainHeight() / 2);
         const bool hot = QLineF(m_hover, c).length() <= kBadge;
         p.setPen(Qt::NoPen);
         p.setBrush(hot ? QColor("#ffffff") : QColor("#e2e8f0"));
@@ -548,7 +578,7 @@ void TimelineWidget::updateCursor() {
     else if (m_hasHover) {
         const QPoint pos = m_hover;
         if (overScissors(pos) || hitSlot(pos)) c = Qt::PointingHandCursor;
-        else if (std::abs(pos.x() - playheadX()) <= 7 && pos.y() >= kCapY && pos.y() <= kMainTop + kMainH + 2) c = Qt::SizeHorCursor;
+        else if (std::abs(pos.x() - playheadX()) <= 7 && pos.y() >= kCapY && pos.y() <= kMainTop + mainHeight() + 2) c = Qt::SizeHorCursor;
         else if (const auto *placement=hitPlacement(pos)) c = (qAbs(pos.x()-placement->rect.left())<6||qAbs(pos.x()-placement->rect.right())<6)?Qt::SizeHorCursor:Qt::OpenHandCursor;
         else {
             const int i = blockAt(pos);
@@ -588,7 +618,7 @@ void TimelineWidget::mousePressEvent(QMouseEvent *e) {
         return;
     }
     // 3. playhead
-    if (std::abs(pos.x() - playheadX()) <= 7 && pos.y() >= kCapY && pos.y() <= kMainTop + kMainH + 2) {
+    if (std::abs(pos.x() - playheadX()) <= 7 && pos.y() >= kCapY && pos.y() <= kMainTop + mainHeight() + 2) {
         m_drag = Drag::Playhead;
         return;
     }
@@ -631,7 +661,13 @@ void TimelineWidget::mouseMoveEvent(QMouseEvent *e) {
     const QPoint pos = e->position().toPoint();
     m_hover = pos;m_hasHover = true;
     if(m_drag==Drag::Pan){if(auto *bar=hbar())bar->setValue(m_panScroll+m_pressPos.x()-e->globalPosition().toPoint().x());return;}
-    if(m_drag==Drag::TrimLeft||m_drag==Drag::TrimRight){if(m_trimProgram){const qint64 at=xToMs(pos.x());for(auto &program:m_lib->programs)if(program.id==m_trimId){if(m_drag==Drag::TrimRight)program.seconds=qBound(1,int(qRound64((at-m_trimStart)/1000.)),864000);else{const auto delta=qBound<qint64>(-m_trimOffset,qRound64((at-m_trimStart)/1000.)*1000,m_trimLength-1000);program.offsetMs=m_trimOffset+int(delta);program.seconds=qMax(1,int((m_trimLength-delta)/1000));}break;}emit m_lib->programsChanged();autoScroll(pos.x());update();return;}if(auto *placement=m_lib->placement(m_trimId)){
+    if(m_drag==Drag::TrimLeft||m_drag==Drag::TrimRight){if(m_trimProgram){const qint64 at=xToMs(pos.x());
+        for(auto &program:m_lib->programs)if(program.id==m_trimId){
+            if(m_drag==Drag::TrimRight)program.durationMs=qBound<qint64>(qint64(1),at-m_trimStart,qint64(864000000));
+            else{const auto delta=qBound<qint64>(-m_trimOffset,at-m_trimStart,m_trimLength-1);program.offsetMs=m_trimOffset+int(delta);program.durationMs=m_trimLength-delta;}
+            program.seconds=int((program.durationMs+999)/1000);break;
+        }
+        emit m_lib->programsChanged();autoScroll(pos.x());update();return;}if(auto *placement=m_lib->placement(m_trimId)){
         const double frame=1000.*m_lib->display.fpsBase/qMax(1,m_lib->display.fps);qint64 at=qRound64(xToMs(pos.x())/frame)*frame;
         if(m_drag==Drag::TrimRight)placement->durationMs=qMax<qint64>(qRound64(frame),at-m_trimStart);
         else{const auto end=m_trimStart+m_trimLength;at=qBound<qint64>(qMax<qint64>(0,m_trimStart-m_trimOffset),at,end-qRound64(frame));placement->startMs=at;placement->durationMs=end-at;placement->offsetMs=m_trimOffset+at-m_trimStart;}
@@ -662,7 +698,7 @@ void TimelineWidget::mouseReleaseEvent(QMouseEvent *e) {
     if(m_drag==Drag::Range){m_drag=Drag::None;update();return;}
     if(m_drag==Drag::Pan){m_drag=Drag::None;return;}
     if (e->button() != Qt::LeftButton) return;
-    if(m_drag==Drag::TrimLeft||m_drag==Drag::TrimRight){m_drag=Drag::None;if(m_trimProgram){const auto *program=m_lib->program(m_trimId);if(program){const auto delta=qint64(program->seconds)*1000-m_trimLength;for(auto &placement:m_lib->placements)if(placement.startMs>=m_trimGroupEnd)placement.startMs=qMax<qint64>(0,placement.startMs+delta);}m_lib->save();emit m_lib->programsChanged();emit m_lib->placementsChanged();m_trimProgram=false;}else m_lib->commitPlacements();updateCursor();return;}
+    if(m_drag==Drag::TrimLeft||m_drag==Drag::TrimRight){m_drag=Drag::None;if(m_trimProgram){const auto *program=m_lib->program(m_trimId);if(program){const auto delta=program->lengthMs()-m_trimLength;for(auto &placement:m_lib->placements)if(placement.startMs>=m_trimGroupEnd)placement.startMs=qMax<qint64>(0,placement.startMs+delta);}m_lib->save();emit m_lib->programsChanged();emit m_lib->placementsChanged();m_trimProgram=false;}else m_lib->commitPlacements();updateCursor();return;}
     const Drag d = m_drag;
     const int x = m_dragX;
     const bool moved = m_moved;
@@ -695,12 +731,14 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent *e) {
         QMenu menu(this);
         QAction *len = menu.addAction("Set length...");
         const auto *placed=m_lib->placement(id);QAction *edit=nullptr,*duplicate=nullptr;
+        QAction *order=placed&&placed->type=="Element"?menu.addAction("Overlap order…"):nullptr;
         if(placed&&!placed->boardSnapshot.isEmpty()){edit=menu.addAction("Edit this cue board");duplicate=menu.addAction("Duplicate on another layer");}
         QAction *rm = menu.addAction("Remove from timeline");
         QAction *chosen = menu.exec(e->globalPos());
         if (chosen == len) emit placementLengthRequested(id);
         else if (chosen == rm) emit placementRemoveRequested(id);
         else if(edit&&chosen==edit)emit m_lib->openCuePlacementRequested(id);
+        else if(order&&chosen==order){if(auto *dialog=placementOrderDialog(m_lib,id,this))dialog->open();}
         else if(duplicate&&chosen==duplicate&&placed){auto copy=*placed;int lane=-1;for(int candidate=1;candidate<=3;++candidate){bool occupied=false;for(const auto &other:m_lib->placements)if(other.layer==candidate&&copy.startMs<other.startMs+other.lengthMs()&&copy.startMs+copy.lengthMs()>other.startMs){occupied=true;break;}if(!occupied){lane=candidate;break;}}if(lane<0){QToolTip::showText(e->globalPos(),"No free layer for this overlap",this);return;}copy.id=Library::newId();copy.layer=lane;m_lib->placements.append(copy);QString error;if(!m_lib->saveChecked(&error)){m_lib->placements.removeLast();QToolTip::showText(e->globalPos(),error,this);}else emit m_lib->placementsChanged();}
         return;
     }
@@ -717,7 +755,7 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent *e) {
         const QString id = m_play->segments()[i].programId;
         QMenu menu(this);
         QAction *duration=menu.addAction("Set program duration...");QAction *rm = menu.addAction("Remove from timeline");
-        auto *chosen=menu.exec(e->globalPos());if(chosen==rm)emit spotRemoveRequested(id);else if(chosen==duration){const auto *current=m_lib->program(id);if(!current)return;bool ok=false;const int seconds=QInputDialog::getInt(this,"Program duration","Duration (seconds)",current->seconds,1,864000,1,&ok);if(!ok||seconds==current->seconds)return;const auto before=m_lib->programs;const auto placements=m_lib->placements;const auto end=m_play->groupEndMs(id);const auto delta=qint64(seconds-current->seconds)*1000;for(auto &program:m_lib->programs)if(program.id==id)program.seconds=seconds;for(auto &placement:m_lib->placements)if(placement.startMs>=end)placement.startMs=qMax<qint64>(0,placement.startMs+delta);QString error;if(!m_lib->saveChecked(&error)){m_lib->programs=before;m_lib->placements=placements;QToolTip::showText(e->globalPos(),error,this);return;}emit m_lib->programsChanged();emit m_lib->placementsChanged();}
+        auto *chosen=menu.exec(e->globalPos());if(chosen==rm)emit spotRemoveRequested(id);else if(chosen==duration){const auto *current=m_lib->program(id);if(!current)return;QDialog *dialog=roundedModal(this,"Program duration");QVBoxLayout layout(dialog);layout.setContentsMargins(20,18,20,18);layout.addWidget(new QLabel("Duration"));auto *input=new ValueInput;input->setDecimals(3);input->setRange(.001,864000);input->setSuffix(" s");input->setValue(current->lengthMs()/1000.);layout.addWidget(input);auto *buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);layout.addWidget(buttons);connect(buttons,&QDialogButtonBox::accepted,dialog,&QDialog::accept);connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::reject);const bool accepted=dialog->exec()==QDialog::Accepted;const qint64 durationMs=qRound64(input->value()*1000);dialog->deleteLater();current=m_lib->program(id);if(!accepted||!current||durationMs==current->lengthMs())return;const auto before=m_lib->programs;const auto placements=m_lib->placements;const auto end=m_play->groupEndMs(id);const auto delta=durationMs-current->lengthMs();for(auto &program:m_lib->programs)if(program.id==id){program.seconds=int((durationMs+999)/1000);program.durationMs=durationMs;}for(auto &placement:m_lib->placements)if(placement.startMs>=end)placement.startMs=qMax<qint64>(0,placement.startMs+delta);QString error;if(!m_lib->saveChecked(&error)){m_lib->programs=before;m_lib->placements=placements;QToolTip::showText(e->globalPos(),error,this);return;}emit m_lib->programsChanged();emit m_lib->placementsChanged();}
     }
 }
 

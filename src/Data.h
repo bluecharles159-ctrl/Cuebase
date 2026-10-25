@@ -8,6 +8,7 @@
 #include <QVector>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <optional>
 
 // ---- shared vocabulary ------------------------------------------------------
 
@@ -91,6 +92,9 @@ struct ProgramItem {
     // kind "Ad" is a standalone ad spot placed on the timeline (its adId points at the ad)
     QString replayInEffect="preset:Fade",replayOutEffect="preset:Fade";
     bool isAdSpot() const { return kind == QLatin1String("Ad"); }
+    qint64 durationMs = 0; // Optional exact duration; zero keeps legacy seconds.
+    QString elementId;    // A screen element occupying its own main-track slot.
+    qint64 lengthMs() const { return qBound<qint64>(qint64(1), durationMs>0?durationMs:qint64(seconds)*1000, qint64(2147483647)); }
 };
 
 // Something laid on one of the extra timeline layers: a screen element, a sound, an ad or a clip.
@@ -105,6 +109,7 @@ struct Placement {
     QJsonObject boardSnapshot;
     qint64 boardCycleMs=0;
     QString kind;                                      // Clip: the program type (for its colour)
+    std::optional<int> zIndex;                          // Empty inherits the element/snapshot order.
 };
 
 // Controls for one timeline layer. Layer 0 is the main timeline: it is always the one shown and broadcast.

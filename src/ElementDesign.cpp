@@ -204,7 +204,7 @@ QString ElementDesign::toJson() const {
             for (const auto &key : track.keys)
                 values.append(QJsonObject{{"ms", key.ms}, {"value", key.value}, {"interpolation", key.interpolation},
                     {"left",QJsonArray{key.leftHandle.x(),key.leftHandle.y()}},{"right",QJsonArray{key.rightHandle.x(),key.rightHandle.y()}},{"customHandles",key.customHandles},{"handleType",key.handleType}});
-            if (!values.isEmpty()) tracks.append(QJsonObject{{"property", track.property}, {"keys", values}});
+            if (!values.isEmpty()) {QJsonObject record{{"property", track.property}, {"keys", values}};if(!track.noise.isEmpty())record["noise"]=track.noise;tracks.append(record);}
         }
         QJsonArray mods;
         for (const Modifier &m : o.mods)
@@ -403,6 +403,7 @@ ElementDesign ElementDesign::fromJson(const QString &json) {
                 const auto tj = tv.toObject();
                 PropertyTrack track;
                 track.property = tj["property"].toString();
+                track.noise = tj["noise"].toObject();
                 for (const auto &kv : tj["keys"].toArray()) {
                     const auto kj = kv.toObject();
                     track.setKey(qMax(0, kj["ms"].toInt()), kj["value"].toDouble(), kj["interpolation"].toString("Smooth"));
@@ -558,7 +559,7 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
     QVector<LightW> lights;
     if (o.shade == PaintOpts::Rendered)
         for (const DObject &l : objects)
-            if (l.type == "Light" && l.visible) {
+            if (l.type == "Light" && effectiveVisible(l)) {
                 const QMatrix4x4 W = worldMatrix(l, ms);
                 lights.append({W.map(QVector3D(0, 0, 0)), W.mapVector(QVector3D(0, 0, -1)).normalized(), l.evaluated(ms).light});
             }
@@ -586,8 +587,9 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
 
     auto shadeFace = [&](const Material &m, QVector3D n, const QVector3D &center, double depth) {
         const QVector3D toCam = (cam.ortho ? -camFwd : (camPos - center)).normalized();
-        const float base[3] = {float(m.color.redF()), float(m.color.greenF()), float(m.color.blueF())};
-        if (o.shade == PaintOpts::Solid) {
+        const QColor surface=o.shade==PaintOpts::Solid?QColor("#a5a5a5"):m.color;
+        const float base[3] = {float(surface.redF()), float(surface.greenF()), float(surface.blueF())};
+        if (o.shade == PaintOpts::Solid || o.shade == PaintOpts::MaterialPreview) {
             const float lam = qMax(0.0f, QVector3D::dotProduct(n, toCam));
             const float k = 0.32f + 0.68f * lam, sp = qPow(lam, 24.0f) * 0.22f;
             return toColor(base[0] * k + sp, base[1] * k + sp, base[2] * k + sp);
@@ -645,7 +647,7 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
         if (!effectiveVisible(obj) || !obj.isRenderable() || o.skip.contains(obj.id)) continue;
         const DProps pr = propsAt(obj, ms);
         const QMatrix4x4 W = worldMatrix(obj,ms);
-        const auto clip=overflowClip(obj,ms,cam,rect);
+        const auto clip=overflowClip(obj,ms,cam,rect,o.clip?rect:p.transform().inverted().mapRect(QRectF(p.viewport())));
         const double alpha = qBound(0.0, pr.opacity * obj.mat.alpha, 1.0);
         if (alpha <= 0.003) continue;
 
@@ -702,12 +704,26 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
                 it.depth = depth / clipped.size();
                 it.color = shadeFace(obj.mat, n, center, it.depth);
                 it.alpha = alpha;
-            it.blend = blendMode(obj.style["blend"].toString());
-                it.blend = blendMode(obj.style["blend"].toString());
+                it.blend = o.shade==PaintOpts::Solid?QPainter::CompositionMode_SourceOver:blendMode(obj.style["blend"].toString());
                 items.append(it);
             }
         } else {  // Text / Image: a flat picture on a plane
-            const QImage tex = textureFor(obj);
+            // Structural preview changes only a temporary evaluated surface. It
+            // keeps typography and geometry while avoiding media/effect work.
+            DObject preview=obj;
+            if(o.shade==PaintOpts::Solid || o.shade==PaintOpts::Wire){
+                QJsonObject structural;
+                for(auto it=obj.style.begin();it!=obj.style.end();++it)
+                    if(it.key().startsWith("text.")||it.key().startsWith("corner.")||it.key()=="shape")structural[it.key()]=it.value();
+                structural["background.type"]="Solid";
+                structural["text.backgroundColor"]="#666666";
+                preview.style=structural;
+                preview.mat.color=obj.type=="Text"?QColor("#eeeeee"):QColor("#929292");
+                if(preview.type=="Image")preview.type="Shape";
+                preview.image.clear();
+                preview.id+="/work-preview";
+            }
+            const QImage tex = textureFor(preview);
             const double paddingX = qMax(0, tex.width() - qBound(1, qRound(obj.w*kPxPerUnit), 4096)) / (2*kPxPerUnit);
             const double paddingY = qMax(0, tex.height() - qBound(1, qRound(obj.h*kPxPerUnit), 4096)) / (2*kPxPerUnit);
             const double hw = obj.w / 2 + paddingX, hh = obj.h / 2 + paddingY;
@@ -730,14 +746,14 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
             src << QPointF(0, 0) << QPointF(tex.width(), 0) << QPointF(tex.width(), tex.height()) << QPointF(0, tex.height());
             Item it;it.clip=clip;
             if (!QTransform::quadToQuad(src, dst, it.tr)) continue;
-            it.backdrop=obj.propertyBase("backdrop.blur");it.brightness=obj.propertyBase("backdrop.brightness");
+            it.backdrop=preview.propertyBase("backdrop.blur");it.brightness=preview.propertyBase("backdrop.brightness");
             const double px=paddingX*kPxPerUnit,py=paddingY*kPxPerUnit;
             it.backdropClip=it.tr.map(surfaceOutline(QRectF(px,py,tex.width()-2*px,tex.height()-2*py),obj));
             it.textured = true;
             it.img = tex;
             it.depth = depth / 4;
             it.alpha = alpha;
-            it.blend = blendMode(obj.style["blend"].toString());
+            it.blend = blendMode(preview.style["blend"].toString());
             items.append(it);
         }
     }

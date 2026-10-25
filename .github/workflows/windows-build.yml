@@ -1,0 +1,112 @@
+name: Windows build, tests and portable ZIP
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/cloud-build]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cuebase-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CUEBASE_BUILD_DIR: build-cloud
+      CUEBASE_PACKAGE_NAME: Cuebase-Windows-${{ github.run_number }}
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cached Windows C++ and media dependencies
+        id: msys
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          cache: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-ccache
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-qt6-base
+            mingw-w64-ucrt-x86_64-qt6-multimedia
+            mingw-w64-ucrt-x86_64-qt6-svg
+            mingw-w64-ucrt-x86_64-qt6-tools
+            mingw-w64-ucrt-x86_64-assimp
+            mingw-w64-ucrt-x86_64-bullet
+            mingw-w64-ucrt-x86_64-ffmpeg
+            mingw-w64-ucrt-x86_64-python
+      - name: Restore compiled-object cache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: windows-ucrt64-v1-${{ hashFiles('CMakeLists.txt', '.github/workflows/windows-build.yml') }}-${{ github.sha }}
+          restore-keys: |
+            windows-ucrt64-v1-${{ hashFiles('CMakeLists.txt', '.github/workflows/windows-build.yml') }}-
+            windows-ucrt64-v1-
+      - name: Install pinned localhost streaming test receiver
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'mediamtx.zip'
+          Invoke-WebRequest 'https://github.com/bluenviron/mediamtx/releases/download/v1.21.1/mediamtx_v1.21.1_windows_amd64.zip' -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne 'FAA97974861EB75A68B5AA326C78E7E7A6F670B5EF191BACE78E715130381F23') { throw 'MediaMTX checksum mismatch' }
+          Expand-Archive -LiteralPath $archive -DestinationPath tools/mediamtx -Force
+      - name: Configure and compile
+        run: |
+          set -euo pipefail
+          ccache --max-size=700M
+          cmake -S . -B build-cloud -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_AUTOGEN_PARALLEL=2 -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DBUILD_TESTING=ON
+          cmake --build build-cloud --parallel 2
+          ccache --show-stats
+      - name: Test editing, rendering, planning and streaming
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          ctest --test-dir build-cloud --output-on-failure --parallel 1 --timeout 300 --output-junit cloud-tests.xml
+          build-cloud/CuebaseEditorInteractionTests.exe -platform windows -o native-editor-results.txt,txt
+      - name: Stage and verify the portable runtime
+        env:
+          CUEBASE_TOOLCHAIN: ${{ steps.msys.outputs.msys2-location }}/ucrt64
+        run: |
+          set -euo pipefail
+          python tools/package-windows-test.py stage
+          python tools/package-windows-test.py verify
+          python tools/package-windows-test.py archive
+      - name: Upload the complete test ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cuebase-Windows-${{ github.run_number }}
+          path: Cuebase-Windows-${{ github.run_number }}.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - name: Upload test reports and screenshots, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cuebase-test-evidence-${{ github.run_number }}
+          path: |
+            build-cloud/*results*.txt
+            build-cloud/*results*.xml
+            build-cloud/cloud-tests.xml
+            build-cloud/Testing/Temporary/LastTest.log
+            build-cloud/artifacts/
+            native-editor-results.txt
+            artifacts/
+            .delivery/**/verification/
+            .delivery/**/qt-deployment.log
+          if-no-files-found: warn
+          retention-days: 14

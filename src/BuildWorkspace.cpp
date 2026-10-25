@@ -1,7 +1,10 @@
 #include <QSignalBlocker>
 #include "UiControls.h"
 #include "BuildWorkspace.h"
+#include "TextureLibrary.h"
+#include "ComponentLibrary.h"
 #include "FrameExport.h"
+#include "ColorManagement.h"
 #include <QProgressDialog>
 #include <QApplication>
 #include "CueSequence.h"
@@ -51,6 +54,7 @@
 #include "LayerPanel.h"
 #include <QTreeWidgetItemIterator>
 #include "AssetImport.h"
+#include "DesignAssets.h"
 #include "SceneEffects.h"
 #include "DesignAudio.h"
 #include <QFileInfo>
@@ -65,9 +69,11 @@ namespace {
 class CompositionPreview final : public QWidget {
 public:
     CompositionPreview(BuildModel *model,Library *library):m(model),lib(library){
+        setObjectName("compositionCleanPreview");
         setMinimumSize(120,100);setToolTip("Clean broadcast composition preview");
         connect(m,&BuildModel::changed,this,qOverload<>(&QWidget::update));
         connect(m,&BuildModel::timeChanged,this,[this]{update();});
+        connect(lib,&Library::displayChanged,this,qOverload<>(&QWidget::update));
     }
 protected:
     void paintEvent(QPaintEvent *) override {
@@ -76,8 +82,14 @@ protected:
         if(size.width()/size.height()>aspect)size.setWidth(size.height()*aspect);else size.setHeight(size.width()/aspect);
         QRectF frame(QPointF((width()-size.width())/2,(height()-size.height())/2),size);
         p.fillRect(frame,QColor("#393939"));
-        if(sceneEffect(m->design))p.drawImage(frame,sceneEffectPreview(m->design,frame.size().toSize(),m->t));
-        else m->design.render(p,frame,m->t);
+        QSizeF pixels=frame.size()*devicePixelRatioF();if(pixels.width()*pixels.height()>2073600)pixels*=qSqrt(2073600/(pixels.width()*pixels.height()));
+        const QSize output(qMax(2,int(pixels.width())),qMax(2,int(pixels.height())));
+        QImage image(output,QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);
+        const auto &display=lib->display;
+        if(sceneEffect(m->design))image=sceneEffectPreview(m->design,output,m->t);
+        else{QPainter render(&image);render.setRenderHint(QPainter::Antialiasing);render.setRenderHint(QPainter::SmoothPixmapTransform);RenderSettings settings;settings.motionBlur=display.motionBlur;settings.shutter=display.shutter;settings.samples=display.mbSamples;settings.frameMs=1000.*display.fpsBase/qMax(1,display.fps);m->design.render(render,image.rect(),m->t,true,&settings);}
+        if(colorManagementActive(display.colorView,display.colorLook,display.exposure,display.gamma))applyColorManagement(image,display.colorView,display.colorLook,display.exposure,display.gamma);
+        p.setRenderHint(QPainter::SmoothPixmapTransform);p.drawImage(frame,image);
     }
 private:BuildModel *m;Library *lib;
 };
@@ -205,6 +217,10 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     bar->addWidget(redoBtn);
     bar->addWidget(saveBtn);
     root->addLayout(bar);
+    connect(m,&BuildModel::componentRegistrationRequested,this,[this,m,lib](const QString &id,const QString &name){QString error;const auto component=Components::registerSource(*m,*lib,id,name,&error);say(component.isEmpty()?error:"Reusable source registered · press / to insert a linked instance",component.isEmpty());});
+    auto openComponents=[this,m,lib]{if(auto *existing=findChild<QDialog*>("componentBrowser")){existing->show();existing->raise();existing->activateWindow();return;}Components::createBrowser(m,lib,this)->show();};
+    connect(canvas,&BuildCanvas::componentBrowserRequested,this,openComponents);
+    auto *componentsButton=new QPushButton(uiIcon("component"),"Components");componentsButton->setObjectName("buildComponents");componentsButton->setToolTip("Reusable objects · / in the viewport · rename ::name to register");bar->insertWidget(5,componentsButton);connect(componentsButton,&QPushButton::clicked,this,openComponents);
 
     // ---------------------------------------------------------------- viewport toolbar
     auto *tb = new QVBoxLayout;
@@ -229,8 +245,8 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     vBtn->setToolTip("Vertex select (1)");
     eBtn->setToolTip("Edge select (2)");
     fBtn->setToolTip("Face select (3)");
-    auto *wireBtn = new QPushButton("Wire"), *solidBtn = new QPushButton("Solid"), *rendBtn = new QPushButton("Rendered");
-    for (QPushButton *b : {wireBtn, solidBtn, rendBtn}) {
+    auto *wireBtn = new QPushButton("Wireframe"), *solidBtn = new QPushButton("Work"), *rendBtn = new QPushButton("Final"), *materialBtn=new QPushButton("Material");
+    for (QPushButton *b : {wireBtn, solidBtn, rendBtn, materialBtn}) {
         b->setCheckable(true);
         b->setAutoExclusive(true);
     }
@@ -250,6 +266,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     tb->addStretch();
     tb->addWidget(wireBtn);
     tb->addWidget(solidBtn);
+    tb->addWidget(materialBtn);
     tb->addWidget(rendBtn);
     tb->addSpacing(8);
     tb->addWidget(fixedBtn);
@@ -269,7 +286,23 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     overlay("All overlays",&canvas->showOverlays);overlay("Placement cursor",&canvas->showCursor);overlay("Lights",&canvas->showLights);overlay("Camera",&canvas->showCamera);
     overlay("Center guides",&canvas->showAxes);overlay("Grid",&canvas->showGrid);overlay("Rulers · drag to create guides",&canvas->showRulers);
     overlay("Snap · Alt temporarily bypasses",&canvas->snapping);
-    helperMenu->addAction("Clear guides",canvas,&BuildCanvas::clearGuides);
+    auto *guideSettings=helperMenu->addAction("Composition guides…");guideSettings->setObjectName("compositionGuideSettings");
+    connect(guideSettings,&QAction::triggered,this,[=,this]{
+        const auto *camera=m->design.camera();if(!camera)return;const auto cameraId=camera->id;const auto original=camera->style;
+        std::unique_ptr<QDialog> dialog(roundedModal(this,"Composition guides"));dialog->setObjectName("compositionGuideDialog");auto *form=new QFormLayout(dialog.get());form->setContentsMargins(16,16,16,16);
+        auto *heading=new QLabel("Composition guides");heading->setStyleSheet("font-size:14px;font-weight:600;");form->addRow(heading);
+        auto *title=dspin(0,45,.5,1," %"),*action=dspin(0,45,.5,1," %"),*grid=dspin(1,4096,1,0," px");
+        title->setObjectName("guideTitleMargin");action->setObjectName("guideActionMargin");grid->setObjectName("guideGridSpacing");title->setValue(original["editor.titleSafe"].toDouble(.05)*100);action->setValue(original["editor.actionSafe"].toDouble(.035)*100);grid->setValue(original["editor.gridSpacing"].toDouble(120));
+        form->addRow("Title-safe inset",title);form->addRow("Action-safe inset",action);form->addRow("Grid spacing",grid);
+        auto *color=new QLineEdit(original["editor.guideColor"].toString("#22d3ee"));color->setObjectName("compositionGuideColor");color->setToolTip("Guide color as #RRGGBB or #AARRGGBB");form->addRow("Guide color",color);
+        auto *hint=new QLabel("Drag from a ruler to add a guide. Drag outside the composition to remove it. Guides save with this scene and never appear in output.");hint->setWordWrap(true);form->addRow(hint);
+        auto *error=new QLabel;error->setWordWrap(true);form->addRow(error);auto *buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);form->addRow(buttons);
+        connect(buttons,&QDialogButtonBox::rejected,dialog.get(),&QDialog::reject);connect(buttons,&QDialogButtonBox::accepted,dialog.get(),[&]{if(!QColor(color->text()).isValid()){error->setText("Enter a valid guide color.");return;}dialog->accept();});
+        if(dialog->exec()!=QDialog::Accepted)return;auto *current=m->design.find(cameraId);if(!current||current->style!=original){say("Composition settings changed. Reopen guide settings.",true);return;}
+        auto updated=original;updated["editor.titleSafe"]=title->value()/100;updated["editor.actionSafe"]=action->value()/100;updated["editor.gridSpacing"]=grid->value();updated["editor.guideColor"]=QColor(color->text()).name(QColor::HexArgb);
+        if(updated!=original){m->pushUndo();current->style=updated;m->notify();}
+    });
+    auto *clearGuides=helperMenu->addAction("Clear guides");clearGuides->setObjectName("clearCompositionGuides");connect(clearGuides,&QAction::triggered,canvas,[=]{if(auto *camera=m->design.camera()){if(camera->style["editor.guides.vertical"].toArray().isEmpty()&&camera->style["editor.guides.horizontal"].toArray().isEmpty())return;m->pushUndo();camera->style.remove("editor.guides.vertical");camera->style.remove("editor.guides.horizontal");m->notify();}canvas->clearGuides();});
     helperMenu->addSeparator();
     for(const QString &op:QStringList{"Left","Horizontal Center","Right","Top","Vertical Center","Bottom","Distribute Horizontal","Distribute Vertical"})
         helperMenu->addAction(op,canvas,[canvas,op]{canvas->alignSelection(op);});
@@ -394,7 +427,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
         tabBtns << b;
     }
     tabBtns[0]->setChecked(true);
-    tabBtns[2]->hide(); // Material, lighting and camera controls live in the contextual inspector.
+    tabBtns[2]->setToolTip("Materials · textures and reusable surface presets");
     tabs->addStretch();sideL->addLayout(tabs);
     auto *stack = new QStackedWidget;
     stack->setObjectName("buildPropertyPages");
@@ -599,6 +632,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     auto *tl2 = new QVBoxLayout(matPage);
     tl2->setContentsMargins(4, 4, 8, 8);
     tl2->setSpacing(8);
+    tl2->addWidget(TextureLibrary::createPanel(m,lib));
     auto *noObj = new QLabel("Select an object to edit its material.");
     noObj->setStyleSheet("color:palette(placeholder-text);");
     tl2->addWidget(noObj);
@@ -726,6 +760,8 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
         for (const QString &k : Mesh::primitiveKinds()) ((k=="Plane"||k=="Circle")?shapes:mesh)->addAction(k, this, [m, k] { m->addMesh(k); });
         addMenu->addAction("Text", this, [m] { m->addText(); });
         auto *media=addMenu->addMenu(uiIcon("image"),"Media");
+        media->addAction(uiIcon("folder"),"Composition media…",this,[this]{createDesignMediaDialog(m_model,this)->open();});
+        media->addSeparator();
         media->addAction(uiIcon("image"),"Image or SVG…",this,[this]{const auto path=QFileDialog::getOpenFileName(this,"Add image",{},"Images (*.png *.jpg *.jpeg *.bmp *.webp *.gif *.svg)");if(!path.isEmpty())importFile(path);});
         media->addAction(uiIcon("play"),"Video…",this,[this]{const auto path=QFileDialog::getOpenFileName(this,"Add video",{},"Videos (*.mp4 *.mov *.mkv *.avi *.webm)");if(!path.isEmpty())importFile(path);});
         media->addAction(uiIcon("audio"),"Audio…",this,[this]{const auto paths=QFileDialog::getOpenFileNames(this,"Add audio",{},"Audio (*.wav *.mp3 *.aac *.m4a *.flac *.ogg)");for(const auto &path:paths)importFile(path);});
@@ -1265,6 +1301,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     connect(wireBtn, &QPushButton::clicked, this, [canvas] { canvas->setShading(BuildCanvas::Wire); });
     connect(solidBtn, &QPushButton::clicked, this, [canvas] { canvas->setShading(BuildCanvas::Solid); });
     connect(rendBtn, &QPushButton::clicked, this, [canvas] { canvas->setShading(BuildCanvas::Rendered); });
+    connect(materialBtn, &QPushButton::clicked, this, [canvas] { canvas->setShading(BuildCanvas::MaterialPreview); });
     connect(fixedBtn, &QPushButton::clicked, this, [canvas] { canvas->setCameraView(true); });
     connect(fitBtn, &QPushButton::clicked, this, [canvas] { canvas->frameAll(); });
     connect(undoBtn, &QPushButton::clicked, this, [m] { m->undo(); });
@@ -1351,8 +1388,23 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     for(auto *button:QList<QAbstractButton*>{play,toStart,keyBtn,delKey,graphBtn})iconButton(button,button==play?"play":button==keyBtn?"key":button==delKey?"delete":button==graphBtn?"graph":"back");
     interp->hide();delKey->hide();
     for(auto *button:QList<QCheckBox*>{loop,autoKey}){button->setToolTip(button==loop?"Loop playback":"Auto key changed properties");button->setIcon(uiIcon(button==loop?"loop":"key"));button->setText({});button->setFixedSize(25,22);button->setStyleSheet("QCheckBox{border-radius:4px;padding:2px;} QCheckBox:checked{background:#496d9a;} QCheckBox::indicator{width:0;height:0;}");}
-    auto *viewButton=new QToolButton;viewButton->setIcon(uiIcon("rendered"));viewButton->setToolTip("View shading");viewButton->setPopupMode(QToolButton::InstantPopup);
-    auto *viewMenu=new QMenu(viewButton);for(auto *button:{wireBtn,solidBtn,rendBtn}){auto *action=viewMenu->addAction(button->toolTip());action->setCheckable(true);action->setChecked(button->isChecked());connect(action,&QAction::triggered,button,&QPushButton::click);connect(button,&QPushButton::toggled,action,&QAction::setChecked);button->hide();}viewButton->setMenu(viewMenu);tb->insertWidget(0,viewButton);
+    auto *viewButton=new QToolButton;viewButton->setObjectName("buildViewMode");viewButton->setIcon(uiIcon("rendered"));viewButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);viewButton->setToolTip("Viewport appearance only; export always uses Final. Z cycles modes.");viewButton->setPopupMode(QToolButton::InstantPopup);
+    auto *viewMenu=new QMenu(viewButton);
+    const QList<QPushButton*> modes{wireBtn,solidBtn,rendBtn,materialBtn};
+    const QStringList modeNames{"Wireframe","Work","Final","Material"};
+    int modeWidth=0;for(const auto &name:modeNames)modeWidth=qMax(modeWidth,viewButton->fontMetrics().horizontalAdvance(name));viewButton->setFixedWidth(modeWidth+48);
+    const QStringList modeHints{"Inspect mesh edges","Plain surfaces and readable typography without finishing effects","Output renderer with authored lighting and effects","Surface styling with neutral mesh lighting"};
+    for(int mode:{1,3,2,0}){auto *button=modes[mode];auto *action=viewMenu->addAction(modeNames[mode]);action->setObjectName("buildViewMode_"+modeNames[mode]);action->setToolTip(modeHints[mode]);action->setCheckable(true);connect(action,&QAction::triggered,button,&QPushButton::click);connect(canvas,&BuildCanvas::shadingChanged,action,[action,mode](int active){action->setChecked(active==mode);});button->hide();}
+    connect(canvas,&BuildCanvas::shadingChanged,viewButton,[=](int mode){viewButton->setText(modeNames[mode]);QSettings().setValue("build/viewMode",mode);for(int i=0;i<modes.size();++i)modes[i]->setChecked(i==mode);});
+    viewButton->setMenu(viewMenu);tb->insertWidget(0,viewButton);
+    canvas->setShading(qBound(0,QSettings().value("build/viewMode",int(BuildCanvas::Solid)).toInt(),3));
+    viewButton->setText(modeNames[canvas->shading()]);for(auto *action:viewMenu->actions())action->setChecked(action->text()==viewButton->text());
+    auto *qualityButton=new QToolButton;qualityButton->setObjectName("buildPreviewQuality");qualityButton->setPopupMode(QToolButton::InstantPopup);qualityButton->setToolTip("Preview resolution only. Auto uses half resolution during playback and transforms; full resolution when idle. Buffers are limited to 1080p pixel count.");
+    auto *qualityMenu=new QMenu(qualityButton);qualityButton->setMenu(qualityMenu);
+    QString quality=QSettings().value("build/previewQuality","Auto").toString();const QStringList qualities{"Auto","Full","Half","Quarter"};if(!qualities.contains(quality))quality="Auto";
+    canvas->setProperty("previewQuality",quality);qualityButton->setText(quality);
+    for(const auto &name:qualities){auto *action=qualityMenu->addAction(name);action->setCheckable(true);action->setChecked(name==quality);connect(action,&QAction::triggered,qualityButton,[=]{canvas->setProperty("previewQuality",name);qualityButton->setText(name);QSettings().setValue("build/previewQuality",name);for(auto *item:qualityMenu->actions())item->setChecked(item==action);canvas->update();});}
+    tb->insertWidget(1,qualityButton);
     // buttons never keep the keyboard focus, so Space always means play / pause
     for (QAbstractButton *b : findChildren<QAbstractButton *>()) b->setFocusPolicy(Qt::NoFocus);
 
@@ -1398,7 +1450,8 @@ bool BuildWorkspace::importFile(const QString &path){
         QFile file(path);if(!file.open(QIODevice::ReadOnly)){say(file.errorString(),true);return false;}
         const QString data=QString::fromUtf8(file.readAll());auto design=ElementDesign::fromJson(data);
         if(design.isEmpty()){say("The file does not contain a Build composition.",true);return false;}
-        for(auto &object:design.objects)if(!object.image.isEmpty()&&QFileInfo(object.image).isRelative())object.image=QFileInfo(path).absoluteDir().absoluteFilePath(object.image);
+        resolveDesignAssets(design,QFileInfo(path).absolutePath());
+        const auto missing=missingDesignAsset(design);if(!missing.isEmpty()){say(missing,true);return false;}
         m_model->pushUndo();m_model->design=design;m_model->deselectAll();m_model->notify();m_canvas->frameAll();return true;
     }
     if(!m_model->addImage(path).isEmpty())return true;
@@ -1406,10 +1459,18 @@ bool BuildWorkspace::importFile(const QString &path){
 }
 void BuildWorkspace::exportFile(){
     QString selectedFilter;
-    QString path=QFileDialog::getSaveFileName(this,"Export Build composition",m_name->text(),"Cuebase composition (*.cuebuild);;PNG image (*.png);;PNG animation folder (*.frames)",&selectedFilter);if(path.isEmpty())return;
+    QString path=QFileDialog::getSaveFileName(this,"Export Build composition",m_name->text(),"Cuebase composition (*.cuebuild);;Portable composition with media (*.cuebuild);;PNG image (*.png);;PNG animation folder (*.frames)",&selectedFilter);if(path.isEmpty())return;
+    if(selectedFilter.startsWith("Portable composition")){
+        if(!path.endsWith(".cuebuild",Qt::CaseInsensitive))path+=".cuebuild";
+        QProgressDialog progress("Collecting composition media…","Cancel",0,designAssets(m_model->design).size(),this);progress.setWindowModality(Qt::WindowModal);progress.setMinimumDuration(0);progress.setAutoClose(false);progress.setAutoReset(false);
+        QString error;const bool saved=exportPortableDesign(m_model->design,path,&error,[&](int done,int total){progress.setMaximum(total);progress.setValue(done);QApplication::processEvents();return !progress.wasCanceled();});
+        if(saved)say("Portable composition saved. Move the .cuebuild file and its sibling .assets folder together.");else say(error,true);return;
+    }
     if(selectedFilter.startsWith("PNG animation")&&!path.endsWith(".frames",Qt::CaseInsensitive))path+=".frames";
     if(QFileInfo(path).suffix().compare("frames",Qt::CaseInsensitive)==0){
         FrameExportOptions options;options.size={m_lib->display.resX(),m_lib->display.resY()};options.setProjectFrameRate(m_model->fps,m_model->fpsBase);
+        options.renderSettings.motionBlur=m_lib->display.motionBlur;options.renderSettings.shutter=m_lib->display.shutter;options.renderSettings.samples=m_lib->display.mbSamples;
+        options.colorView=m_lib->display.colorView;options.colorLook=m_lib->display.colorLook;options.exposure=m_lib->display.exposure;options.gamma=m_lib->display.gamma;
         options.firstFrame=qMax(0,qFloor(double(m_model->design.startMs)*options.fps/(1000.*options.fpsBase)));
         options.endFrame=qCeil(double(m_model->design.durationMs)*options.fps/(1000.*options.fpsBase));
         QProgressDialog progress("Exporting PNG frames with transparency (no audio)…","Cancel",0,options.endFrame-options.firstFrame,this);
@@ -1419,7 +1480,7 @@ void BuildWorkspace::exportFile(){
         else if(result.cancelled)say(QString("Export cancelled; %1 completed frames remain in %2").arg(result.written).arg(path));
         else say(result.error,true);return;
     }
-    if(QFileInfo(path).suffix().compare("png",Qt::CaseInsensitive)==0){QImage image(m_lib->display.resX(),m_lib->display.resY(),QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);QPainter painter(&image);m_model->design.render(painter,QRectF(image.rect()),m_model->t);painter.end();if(!image.save(path))say("Could not save the image.",true);return;}
+    if(QFileInfo(path).suffix().compare("png",Qt::CaseInsensitive)==0){QImage image(m_lib->display.resX(),m_lib->display.resY(),QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);QPainter painter(&image);painter.setRenderHint(QPainter::Antialiasing);painter.setRenderHint(QPainter::SmoothPixmapTransform);RenderSettings settings;settings.motionBlur=m_lib->display.motionBlur;settings.shutter=m_lib->display.shutter;settings.samples=m_lib->display.mbSamples;settings.frameMs=1000.*m_model->fpsBase/qMax(1,m_model->fps);m_model->design.render(painter,QRectF(image.rect()),m_model->t,true,&settings);painter.end();const auto &display=m_lib->display;if(colorManagementActive(display.colorView,display.colorLook,display.exposure,display.gamma))applyColorManagement(image,display.colorView,display.colorLook,display.exposure,display.gamma);if(!image.save(path))say("Could not save the image.",true);return;}
     QSaveFile file(path);if(!file.open(QIODevice::WriteOnly)){say(file.errorString(),true);return;}file.write(m_model->design.toJson().toUtf8());if(!file.commit())say(file.errorString(),true);
 }
 
@@ -1489,7 +1550,8 @@ void BuildWorkspace::newEffect() {
 }
 
 void BuildWorkspace::save() {
-    QString n = m_name->text().trimmed();QString semanticRole,semanticPlaylist;
+    const QString requestedName=m_name->text();
+    QString n = requestedName.trimmed();QString semanticRole,semanticPlaylist;
     if(m_cueIteration<0){static const QRegularExpression tag("^\\{\\{element:([a-z-]+)\\|([^{}\\r\\n]+)\\}\\}$");const auto match=tag.match(n);if(match.hasMatch()){semanticRole=match.captured(1);n=match.captured(2).trimmed();const QMap<QString,QString> categories{{"logo","Logos"},{"main-logo","Logos"},{"overlay","Overlays"},{"lower-third","Overlays"},{"title","Titles"},{"ticker","Overlays"},{"clock","Overlays"},{"break","Break screens"},{"ident","Break screens"},{"replay","Effects"},{"effect","Effects"},{"credits","Titles"}};if(!categories.contains(semanticRole)){say("Unknown scene category. Use logo, main-logo, overlay, lower-third, title, ticker, clock, break, ident, replay, effect or credits.",true);return;}semanticPlaylist=categories.value(semanticRole);m_name->setText(n);if(auto *camera=m_model->design.camera())camera->style["studio.sceneRole"]=semanticRole;}}
 
     if (n.isEmpty()) {
@@ -1520,6 +1582,10 @@ void BuildWorkspace::save() {
     QString color = "#6366f1";
     for (const DObject &o : m_model->design.objects)
         if (o.isRenderable()) { color = o.mat.color.name(); break; }
+    const auto previousElements=m_lib->elements;
+    const auto previousPlaylists=m_lib->elementPlaylists;
+    const auto previousLogo=m_lib->display.channelLogoElement;
+    const auto previousId=m_editingId;
     bool updated = false;
     for (Element &e : m_lib->elements)
         if (e.id == m_editingId) {
@@ -1539,14 +1605,24 @@ void BuildWorkspace::save() {
         e.seconds = secs;
         e.color = color;
         e.previewMs=m_model->t;if(e.previewMs==0&&!m_model->design.animationCues.isEmpty())e.previewMs=m_model->design.animationCues.first().toObject()["end"].toDouble();refreshElementThumbnail(e);
-        if(!editElementPresentation(e,this))return;
+        if(!editElementPresentation(e,this)){m_name->setText(requestedName);return;}
         if(!m_lib->elementPlaylists.contains(e.playlist))m_lib->elementPlaylists.append(e.playlist);
         m_lib->elements.append(e);m_name->setText(e.name);
         m_editingId = e.id;
     }
     if(semanticRole=="main-logo")m_lib->display.channelLogoElement=m_editingId;
     if(!semanticPlaylist.isEmpty()&&!m_lib->elementPlaylists.contains(semanticPlaylist))m_lib->elementPlaylists.append(semanticPlaylist);
-    m_lib->commitElements();
+    QString error;
+    if(!m_lib->saveChecked(&error)){
+        m_lib->elements=previousElements;
+        m_lib->elementPlaylists=previousPlaylists;
+        m_lib->display.channelLogoElement=previousLogo;
+        m_editingId=previousId;
+        m_name->setText(requestedName);
+        say("Could not save screen element: "+error,true);
+        return;
+    }
+    emit m_lib->elementsChanged();
     m_savedJson=m_model->design.toJson();m_savedName=m_name->text();m_draftName=m_name->text();
     say("Saved to screen elements");
 }

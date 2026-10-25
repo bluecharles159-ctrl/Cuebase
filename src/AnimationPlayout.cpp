@@ -1,5 +1,28 @@
 #include "Playout.h"
 #include <QJsonDocument>
+#include <optional>
+
+namespace {
+struct CueInstance {Element element;qint64 start=-1,offset=0;};
+std::optional<CueInstance> resolveCueInstance(Library *library,const Playout &play,const QString &id){
+    if(const auto *element=library->element(id))return CueInstance{*element};
+    if(id.startsWith("placement:")){
+        const auto *placement=library->placement(id.mid(10));
+        if(placement&&placement->type=="Element")return CueInstance{library->placementElement(*placement),placement->startMs,placement->offsetMs};
+    }else if(id.startsWith("program:")){
+        const auto *program=library->program(id.mid(8));
+        const int index=play.segmentAtMs(play.playheadMs());
+        if(!program||index<0||index>=play.segments().size())return {};
+        const auto &segment=play.segments()[index];
+        if(segment.programId!=program->id||segment.type!=Segment::Program)return {};
+        if(const auto *source=library->element(program->elementId)){
+            auto instance=*source;instance.id=id;
+            return CueInstance{instance,play.segmentStartMs(index),program->offsetMs};
+        }
+    }
+    return {};
+}
+}
 
 Playout::GraphicPlayback Playout::graphicPlayback(const Element &element,qint64 timelineTime,qint64 placementStart,qint64 offset) const {
     GraphicPlayback result{element.live||placementStart>=0,false,placementStart>=0?timelineTime-placementStart+offset:timelineTime,{}};
@@ -41,13 +64,13 @@ Playout::GraphicPlayback Playout::graphicPlayback(const Element &element,qint64 
 }
 
 void Playout::triggerElementAnimation(const QString &elementId,const QString &cueId){
-    Element instance;const auto *element=m_lib->element(elementId);if(!element&&elementId.startsWith("placement:")){if(const auto *placement=m_lib->placement(elementId.mid(10))){instance=m_lib->placementElement(*placement);element=&instance;}}if(!element)return;
+    const auto instance=resolveCueInstance(m_lib,*this,elementId);if(!instance)return;const auto *element=&instance->element;
     if(cueId.startsWith("@board:")){const auto plan=compileCueBoard(ElementDesign::fromJson(element->design),element->cueBoard,element->cueBoardSettings);bool ok=false;const int first=cueId.mid(7).toInt(&ok);if(!ok||!plan.error.isEmpty()||first<0||first>=plan.steps.size())return;}
     else if(!cueId.isEmpty()){const auto cues=QJsonDocument::fromJson(element->design.toUtf8()).object()["animationCues"].toArray();bool found=false;for(auto value:cues)found|=value.toObject()["id"].toString()==cueId;if(!found)return;}
     m_manualCues[elementId]={cueId,playheadMs()};syncDesignAudio();emit ticked();
 }
 void Playout::advanceElementCue(const QString &elementId){
-    Element instance;const auto *element=m_lib->element(elementId);if(!element&&elementId.startsWith("placement:")){if(const auto *placement=m_lib->placement(elementId.mid(10))){instance=m_lib->placementElement(*placement);element=&instance;}}if(!element)return;const auto *placement=elementId.startsWith("placement:")?m_lib->placement(elementId.mid(10)):nullptr;const auto current=graphicPlayback(*element,playheadMs(),placement?placement->startMs:-1,placement?placement->offsetMs:0);
+    const auto instance=resolveCueInstance(m_lib,*this,elementId);if(!instance)return;const auto *element=&instance->element;const auto current=graphicPlayback(*element,playheadMs(),instance->start,instance->offset);
     if(current.boardStep<0)return;const auto plan=compileCueBoard(ElementDesign::fromJson(element->design),element->cueBoard,element->cueBoardSettings);const int next=current.boardStep+1<int(plan.steps.size())?current.boardStep+1:-1;
     triggerElementAnimation(elementId,next>=0?"@board:"+QString::number(next):QString());
 }

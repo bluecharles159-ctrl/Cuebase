@@ -13,7 +13,7 @@ QString symbol(QString n){
     static const QHash<QString,QString> names{
         {"inspector","sliders-horizontal"},{"align","align-horizontal-justify-start"},{"view / align","align-horizontal-justify-start"},
         {"graph","chart-spline"},{"animation","film"},{"cue","list-video"},{"modifiers","boxes"},{"modifier","boxes"},
-        {"world","globe"},{"effects","sparkles"},{"effect","sparkles"},{"apply","square-check"},{"picker","pipette"},
+        {"world","globe"},{"material","image"},{"component","layers"},{"effects","sparkles"},{"effect","sparkles"},{"apply","square-check"},{"picker","pipette"},
         {"down","chevron-down"},{"right","chevron-right"},{"back","arrow-left"},{"undo","undo-2"},{"redo","redo-2"},
         {"add","plus"},{"remove","trash-2"},{"delete","trash-2"},{"hidden","eye-off"},{"visible","eye"},
         {"lock","lock-keyhole"},{"unlock","lock-keyhole-open"},{"fit","maximize"},{"100%","search"},
@@ -41,6 +41,7 @@ public:
         auto svg=sources.value(file);const auto palette=qApp->palette();QColor color=palette.color(active&&mode!=QIcon::Disabled?QPalette::Active:QPalette::Disabled,QPalette::WindowText);
         if(active&&mode!=QIcon::Disabled){const bool light=palette.color(QPalette::Window).lightness()>128;
             if(name=="cue")color=QColor(light?"#287557":"#8bcdb1");
+            else if(name=="component")color=QColor(light?"#7653ab":"#bca0f2");
             else if(name=="effects"||name=="effect")color=QColor(light?"#8056a5":"#c49bdc");
             else if(name=="world")color=QColor(light?"#24758c":"#80bdcf");
             else if(name=="graph")color=QColor(light?"#a06d27":"#ddba7f");

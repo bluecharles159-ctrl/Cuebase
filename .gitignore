@@ -2,6 +2,7 @@
 /build/
 /build-*/
 /Cuebase*.zip
+/.delivery/
 
 # Downloaded local streaming test receiver (see tools/mediamtx/README.md)
 /tools/mediamtx/*.exe

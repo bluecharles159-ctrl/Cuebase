@@ -110,16 +110,17 @@ QString Library::cutProgram(const QString &id, int atSec, bool slot) {
     const int i = programIndex(id);
     if (i < 0) return {};
     ProgramItem b = programs[i];
-    if (b.isAdSpot() || atSec < 1 || atSec > b.seconds - 1) return {};
+    if (b.isAdSpot() || !b.elementId.isEmpty() || atSec < 1 || qint64(atSec)*1000 >= b.lengthMs()) return {};
 
     // second half: the rest of the media, keeps the ad and breaks and any "+" that was after the program
     b.id = newId();
-    b.seconds = programs[i].seconds - atSec;
+    b.durationMs=programs[i].lengthMs()-qint64(atSec)*1000;
+    b.seconds=int((b.durationMs+999)/1000);
     b.offsetMs = programs[i].offsetMs + atSec * 1000;
 
     // first half: plays up to the cut, no ad or breaks, a "+" sits after it
     ProgramItem &a = programs[i];
-    a.seconds = atSec;
+    a.seconds = atSec;a.durationMs=qint64(atSec)*1000;
     a.adId.clear();
     a.breakIn.clear();
     a.breakOut.clear();
@@ -228,6 +229,7 @@ void Library::load() {
         p.breakOut = j["breakOut"].toString();
         p.replayInEffect=j["replayInEffect"].toString("preset:Fade");p.replayOutEffect=j["replayOutEffect"].toString("preset:Fade");
         p.seconds = j["seconds"].toInt(60);
+        p.durationMs=qint64(qBound(0.,j["durationMs"].toDouble(),2147483647.));p.elementId=j["elementId"].toString();
         p.offsetMs = j["offsetMs"].toInt(0);
         p.slotAfter = j["slotAfter"].toBool(false);
         p.description = j["description"].toString();
@@ -278,6 +280,7 @@ void Library::load() {
         pl.durationMs=qint64(j["durationMs"].toDouble());pl.boardSnapshot=j["boardSnapshot"].toObject();pl.boardCycleMs=j["boardCycleMs"].toDouble();
         pl.layer = qBound(1, j["layer"].toInt(1), 3);
         pl.offsetMs = j["offsetMs"].toInt(0);
+        if(j["zIndex"].isDouble())pl.zIndex=qBound(-10000,j["zIndex"].toInt(),10000);
         pl.kind = j["kind"].toString();
         placements.append(pl);
     }
@@ -325,7 +328,7 @@ bool Library::saveChecked(QString *error) const {
         pa.append(QJsonObject{{"id", p.id}, {"title", p.title}, {"kind", p.kind}, {"file", p.file},
                               {"adId", p.adId}, {"breakIn", p.breakIn}, {"breakOut", p.breakOut},
                               {"replayInEffect",p.replayInEffect},{"replayOutEffect",p.replayOutEffect},
-                              {"seconds", p.seconds}, {"offsetMs", p.offsetMs}, {"slotAfter", p.slotAfter},
+                              {"seconds", p.seconds}, {"durationMs",double(p.durationMs)}, {"elementId",p.elementId}, {"offsetMs", p.offsetMs}, {"slotAfter", p.slotAfter},
                               {"description", p.description}, {"image", p.image}, {"fx", fxToJson(p.fx)}});
     for (const Ad &a : ads)
         aa.append(QJsonObject{{"id", a.id}, {"name", a.name}, {"file", a.file}, {"seconds", a.seconds},
@@ -339,7 +342,7 @@ bool Library::saveChecked(QString *error) const {
                               {"fx", fxToJson(e.fx)}});
     for (const Placement &pl : placements)
         la.append(QJsonObject{{"id", pl.id}, {"type", pl.type}, {"refId", pl.refId}, {"name", pl.name},
-                              {"file", pl.file}, {"startMs", double(pl.startMs)}, {"seconds", pl.seconds}, {"durationMs",double(pl.durationMs)},{"boardSnapshot",pl.boardSnapshot},{"boardCycleMs",double(pl.boardCycleMs)},
+                              {"file", pl.file}, {"startMs", double(pl.startMs)}, {"seconds", pl.seconds}, {"durationMs",double(pl.durationMs)},{"boardSnapshot",pl.boardSnapshot},{"boardCycleMs",double(pl.boardCycleMs)},{"zIndex",pl.zIndex?QJsonValue(*pl.zIndex):QJsonValue(QJsonValue::Null)},
                               {"layer", pl.layer}, {"offsetMs", pl.offsetMs}, {"kind", pl.kind}});
     QJsonArray lay;
     for (const LayerState &s : layers)
@@ -373,4 +376,4 @@ void Library::seed() {
     programs = {a, b, c};
 }
 
-Element Library::placementElement(const Placement &pl)const{Element e;if(const auto *source=element(pl.refId))e=*source;if(!pl.boardSnapshot.isEmpty()){e.design=pl.boardSnapshot["design"].toString();e.cueBoard=pl.boardSnapshot["cueBoard"].toArray();e.cueBoardSettings=pl.boardSnapshot["settings"].toObject();e.name=pl.name;e.type="Custom";}e.id="placement:"+pl.id;e.live=false;e.cueBoardSettings["_placementLength"]=double(pl.lengthMs());e.cueBoardSettings["_cycle"]=double(pl.boardCycleMs);return e;}
+Element Library::placementElement(const Placement &pl)const{Element e;if(const auto *source=element(pl.refId))e=*source;if(!pl.boardSnapshot.isEmpty()){e.design=pl.boardSnapshot["design"].toString();e.cueBoard=pl.boardSnapshot["cueBoard"].toArray();e.cueBoardSettings=pl.boardSnapshot["settings"].toObject();e.name=pl.name;e.type="Custom";}if(pl.zIndex)e.cueBoardSettings["zIndex"]=*pl.zIndex;e.id="placement:"+pl.id;e.live=false;e.cueBoardSettings["_placementLength"]=double(pl.lengthMs());e.cueBoardSettings["_cycle"]=double(pl.boardCycleMs);return e;}

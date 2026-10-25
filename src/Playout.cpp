@@ -208,7 +208,7 @@ void Playout::rebuild() {
     // durations. Imported channel data cannot enable this QObject property.
     const bool planning=m_lib->property("planningPreview").toBool();
     const auto planDurations=m_lib->property("planningDurations").toMap();
-    auto length=[&](const ProgramItem &item){return planning&&planDurations.contains(item.id)?int(qBound<qint64>(qint64(1),planDurations.value(item.id).toLongLong(),qint64(2147483647))):item.seconds*1000;};
+    auto length=[&](const ProgramItem &item){return planning&&planDurations.contains(item.id)?int(qBound<qint64>(qint64(1),planDurations.value(item.id).toLongLong(),qint64(2147483647))):int(item.lengthMs());};
     const auto &progs = m_lib->programs;
     for (int i = 0; i < progs.size(); ++i) {
         const ProgramItem &p = progs[i];
@@ -238,8 +238,11 @@ void Playout::rebuild() {
         s.offsetMs = p.offsetMs;
         s.ms = length(p);
         s.fx = p.fx;
-        if(planning&&p.kind=="Plan element")if(const auto *element=m_lib->element(p.breakIn);element&&element->type=="Break"){
+        if(!p.elementId.isEmpty()){s.kind="Screen element";s.spot=true;}
+        if(!p.elementId.isEmpty()||(planning&&p.kind=="Plan element"))if(const auto *element=m_lib->element(p.elementId.isEmpty()?p.breakIn:p.elementId);element&&element->type=="Break"){
             s.type=Segment::Break;s.color=element->color;s.text=element->text;
+            const auto *nextAd=i+1<progs.size()?m_lib->ad(progs[i+1].adId):nullptr;
+            s.text.replace("{title}",i>0?progs[i-1].title:p.title).replace("{next}",i+1<progs.size()?progs[i+1].title:m_lib->display.channel).replace("{ad}",nextAd?nextAd->name:QString());
         }
         m_segs << s;
 
@@ -359,6 +362,13 @@ void Playout::jumpTo(int segment, qint64 inSegmentMs) {
         if (i < target) markFinished(pid);
         else m_finished.remove(pid);
     }
+    // An explicit broadcast jump begins a fresh pass through rundown graphics.
+    // Do not replay old manual Hide/Continue commands when their timestamps recur.
+    // Library overlays and placed graphics keep their independent live controls.
+    for(auto it=m_manualCues.begin();it!=m_manualCues.end();){
+        if(it.key().startsWith("program:"))it=m_manualCues.erase(it);else ++it;
+    }
+    inSegmentMs=qBound<qint64>(0,inSegmentMs,qint64(m_segs[segment].ms)-1);
     const bool wasPaused = m_state == Paused;
     m_state = Playing;
     m_index = segment;
@@ -601,6 +611,10 @@ void Playout::syncDesignAudio(){
         cues.append(designAudioCues(found->second,time,m_state==Playing&&advancing,element.id+"/",gain,!controlled));
     };
     if(m_state!=Stopped&&!(m_continuity&&m_continuity->active())){const double gain=m_muted?0:m_volume*(1-m_replayMix);
+        if(const auto *segment=current())if(const auto *item=m_lib->program(segment->programId);item&&!item->elementId.isEmpty())if(const auto *element=m_lib->element(item->elementId)){
+            Element instance=*element;instance.id="program:"+item->id;const auto playback=graphicPlayback(instance,timelinePosMs(),timelinePosMs()-m_segElapsed,item->offsetMs);
+            const auto layer=m_lib->layers.value(0);if(playback.visible)append(playback.resolved(instance),playback.time,layer.muted?0:gain*layer.volume/100.,playback.controlled,playback.advancing);drawn.insert(element->id);
+        }
         for(const auto &element:m_lib->elements){const auto playback=graphicPlayback(element,timelinePosMs());if(playback.visible)append(playback.resolved(element),playback.time,gain,playback.controlled,playback.advancing);else if(playback.controlled)drawn.insert(element.id);}
         for(const auto &placement:m_lib->placements){const auto layer=m_lib->layers.value(qBound(0,placement.layer,3));
             if(placement.type!="Element"||!layer.visible||timelinePosMs()<placement.startMs||timelinePosMs()>=placement.startMs+placement.lengthMs())continue;

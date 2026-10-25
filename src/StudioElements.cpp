@@ -23,9 +23,29 @@
 #include <QMenu>
 #include <QWidgetAction>
 #include <QMessageBox>
+#include <QDialogButtonBox>
 #include <QSettings>
 #include <memory>
 #include <cmath>
+
+QDialog *placementOrderDialog(Library *lib,const QString &id,QWidget *parent){
+    const auto *placement=lib->placement(id);if(!placement||placement->type!="Element")return nullptr;
+    const auto original=placement->zIndex;auto inherited=*placement;inherited.zIndex.reset();const int sourceOrder=lib->placementElement(inherited).cueBoardSettings["zIndex"].toInt();
+    auto *dialog=roundedModal(parent,"Overlap order");dialog->setObjectName("placementOrderDialog");dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->resize(360,190);
+    auto *form=new QFormLayout(dialog);form->setContentsMargins(20,18,20,18);auto *title=new QLabel(placement->name);title->setWordWrap(true);form->addRow(title);
+    auto *inherit=new QCheckBox("Use source order");inherit->setObjectName("inheritPlacementOrder");inherit->setChecked(!original);form->addRow(inherit);
+    auto *order=new FrameInput;order->setObjectName("placementZIndex");order->setRange(-10000,10000);order->setValue(original.value_or(sourceOrder));order->setEnabled(original.has_value());form->addRow("Z index",order);
+    auto *hint=new QLabel("Higher values appear above lower values. This changes only this timeline copy.");hint->setWordWrap(true);form->addRow(hint);auto *error=new QLabel;error->setObjectName("placementOrderError");error->setWordWrap(true);form->addRow(error);
+    auto *buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);form->addRow(buttons);
+    QObject::connect(inherit,&QCheckBox::toggled,dialog,[=](bool checked){order->setEnabled(!checked);});
+    QObject::connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::reject);
+    QObject::connect(buttons,&QDialogButtonBox::accepted,dialog,[=]{
+        auto *current=lib->placement(id);if(!current){error->setText("This timeline copy was removed.");return;}
+        if(current->zIndex!=original){error->setText("The overlap order changed elsewhere. Reopen this window before saving.");return;}
+        const auto before=current->zIndex;current->zIndex=inherit->isChecked()?std::optional<int>{}:std::optional<int>{order->value()};
+        QString reason;if(!lib->saveChecked(&reason)){current->zIndex=before;error->setText(reason);return;}emit lib->placementsChanged();dialog->accept();
+    });return dialog;
+}
 
 QWidget *studioElementsPage(Library *lib,Playout *play){
     auto *page=new QWidget;page->setObjectName("screenElementsLibrary");auto *layout=new QVBoxLayout(page);layout->setContentsMargins(8,8,8,8);layout->setSpacing(7);
@@ -45,7 +65,7 @@ QWidget *studioElementsPage(Library *lib,Playout *play){
     auto *placement=new QHBoxLayout;auto *place=new QPushButton(uiIcon("add"),"Place on timeline");auto *at=new ValueInput;at->setObjectName("elementPlacementTime");at->setRange(0,86400*365);at->setDecimals(3);at->setValue(play->playheadMs()/1000.);at->setSuffix(" s");at->setSingleStep(1./qMax(1,lib->display.fps));at->setToolTip("Timeline time in seconds. Horizontal drag adjusts; arrows step one frame.");auto *back=new QPushButton(uiIcon("undo"),""),*forward=new QPushButton(uiIcon("redo"),"");back->setFixedWidth(24);forward->setFixedWidth(24);back->setToolTip("One frame earlier");forward->setToolTip("One frame later");auto *follow=new QCheckBox("Follow playhead");follow->setChecked(true);placement->addWidget(place,1);placement->addWidget(back);placement->addWidget(at);placement->addWidget(forward);layout->addLayout(placement);layout->addWidget(follow);
     auto *status=new QLabel;status->setWordWrap(true);layout->addWidget(status);layout->addStretch();
     struct State{QString selected,baseDesign;Element draft;QHash<QString,QWidget*> inputs;bool loading=false,dirty=false;};auto state=std::make_shared<State>();
-    QObject::connect(zIndex,&QSpinBox::editingFinished,page,[=]{if(state->loading)return;for(auto &e:lib->elements)if(e.id==state->selected){const auto before=e.cueBoardSettings;if(before["zIndex"].toInt()==zIndex->value())return;e.cueBoardSettings["zIndex"]=zIndex->value();QString reason;if(!lib->saveChecked(&reason)){e.cueBoardSettings=before;status->setText(reason);return;}emit lib->elementsChanged();return;}});
+    QObject::connect(zIndex,&QSpinBox::editingFinished,page,[=]{if(state->loading)return;for(auto &e:lib->elements)if(e.id==state->selected){const auto before=e.cueBoardSettings;if(before["zIndex"].toInt()==zIndex->value())return;e.cueBoardSettings["zIndex"]=zIndex->value();QString reason;if(!lib->saveChecked(&reason)){e.cueBoardSettings=before;{QSignalBlocker block(zIndex);zIndex->setValue(before["zIndex"].toInt());}status->setText(reason);return;}emit lib->elementsChanged();return;}});
     auto filter=[=]{for(int i=0;i<list->count();++i){auto *item=list->item(i);auto *e=lib->element(item->data(Qt::UserRole).toString());item->setHidden(!e||(!(e->name+" "+e->description).contains(search->text(),Qt::CaseInsensitive))||(groups->currentIndex()>0&&e->playlist!=groups->currentText()));}};
     auto refresh=[=]{QSignalBlocker block(list),groupBlock(groups);const auto selectedGroup=groups->currentText();groups->clear();groups->addItem("All playlists");groups->addItems(lib->elementPlaylists);groups->setCurrentText(selectedGroup.isEmpty()?"All playlists":selectedGroup);list->clear();for(const auto &e:lib->elements){auto *item=new QListWidgetItem(QIcon(QPixmap::fromImage(elementThumbnail(e))),e.name);item->setData(Qt::UserRole,e.id);item->setToolTip(e.name+"\n"+e.playlist+"\n"+e.description);list->addItem(item);if(e.id==state->selected)list->setCurrentItem(item);}filter();};
     auto load=std::make_shared<std::function<void()>>();

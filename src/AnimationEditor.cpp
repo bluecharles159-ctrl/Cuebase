@@ -1,6 +1,7 @@
 #include "AnimationEditor.h"
 #include "BuildModel.h"
 #include "UiControls.h"
+#include "CurveNoise.h"
 #include <QMenu>
 #include <QToolButton>
 #include <QCheckBox>
@@ -108,6 +109,7 @@ public:
     double valueAt(double y)const{auto r=area();return v0+(r.bottom()-y)/r.height()*(v1-v0);}
     void selectAll(){selected.clear();for(auto ref:tracks(graph&&!channels.isEmpty()))for(auto &k:ref.track->keys)selected.insert(keyId(ref.object->id,ref.track->property,k.ms));changedSelection();}
     void cueFrames(){const auto refs=keys();if(refs.isEmpty())return;qint64 first=refs.first().time,last=first;for(const auto &ref:refs){first=qMin(first,qint64(ref.time));last=qMax(last,qint64(ref.time));}emit m->cueFramesRequested(first,qMax(first+m->frameMs(),last));}
+    void noise(){QVector<QPair<QString,QString>> refs;for(const auto &key:keys()){const auto ref=qMakePair(key.object,key.path);if(!refs.contains(ref))refs.append(ref);}if(refs.isEmpty())for(auto ref:tracks(true))refs.append(qMakePair(ref.object->id,ref.track->property));editCurveNoise(m,refs,this);changedSelection();}
     void setNormalized(bool on){double first=t0,last=t1;normalized=on;QSettings().setValue("animation/normalized",on);frame(false);t0=first;t1=last;saveView();update();}
     void changedSelection(){publishView();update();if(selectionChanged)selectionChanged();}
     QString interpolationLabel()const{QSet<QString> values;auto refs=keys();if(refs.isEmpty()){for(auto ref:tracks(true))for(const auto &key:ref.track->keys)values.insert(key.interpolation);}else for(auto ref:refs){auto *tr=track(ref);int i=tr?tr->indexAt(ref.time):-1;if(i>=0)values.insert(tr->keys[i].interpolation);}return values.isEmpty()?defaultInterpolation:values.size()==1?*values.begin():"Mixed";}
@@ -215,10 +217,10 @@ protected:
             else if(tree){for(QTreeWidgetItemIterator it(tree);*it;++it){auto row=tree->visualItemRect(*it);double y=row.center().y()+tree->header()->height();if(row.isEmpty()||y<box.top()||y>box.bottom())continue;for(auto ref:tracks())if(matches((*it)->data(0,Qt::UserRole).toString(),(*it)->data(0,Qt::UserRole+1).toString(),ref))for(auto &key:ref.track->keys){double x=area().left()+(key.ms-t0)/(t1-t0)*area().width();if(x>=box.left()&&x<=box.right())selected.insert(keyId(ref.object->id,ref.track->property,key.ms));}}}}
         update();
     }
-    void mouseReleaseEvent(QMouseEvent *event)override{if((drag==ScaleMove||drag==ScaleKeys)&&!mouseTransform)return;const bool menu=drag==Pan&&event->button()==Qt::RightButton&&QLineF(press,event->position()).length()<3;drag=None;pushed=false;saveView();changedSelection();if(menu){QMenu popup;auto *cue=popup.addAction("Cue selected frames");cue->setEnabled(!keys().isEmpty());if(popup.exec(event->globalPosition().toPoint())==cue)cueFrames();}}
+    void mouseReleaseEvent(QMouseEvent *event)override{if((drag==ScaleMove||drag==ScaleKeys)&&!mouseTransform)return;const bool menu=drag==Pan&&event->button()==Qt::RightButton&&QLineF(press,event->position()).length()<3;drag=None;pushed=false;saveView();changedSelection();if(menu){QMenu popup;auto *cue=popup.addAction("Cue selected frames");cue->setEnabled(!keys().isEmpty());auto *modifier=popup.addAction("Noise modifier…");modifier->setEnabled(!keys().isEmpty()||!tracks(true).isEmpty());auto *action=popup.exec(event->globalPosition().toPoint());if(action==cue)cueFrames();else if(action==modifier)noise();}}
     void cancel(){if(drag==None)return;if(pushed&&(drag==ScaleMove||drag==ScaleKeys||drag==Handle))m->cancelToUndo();if(drag==ScaleMove||drag==ScaleKeys||drag==Handle||drag==Box)selected=originalSelected;drag=None;pushed=false;changedSelection();}
     void wheelEvent(QWheelEvent *e)override{
-        if(e->modifiers()&Qt::AltModifier){m->stepFrame(e->angleDelta().y()>0?1:-1);e->accept();return;}
+        if(e->modifiers()&Qt::AltModifier){if(drag==None){if(e->angleDelta().y()>0)m->undo();else if(e->angleDelta().y()<0)m->redo();selected.clear();changedSelection();}e->accept();return;}
         if(e->angleDelta().x()||(e->modifiers()&Qt::ShiftModifier)){double delta=(e->angleDelta().x()?e->angleDelta().x():e->angleDelta().y())/600.*(t1-t0);t0-=delta;t1-=delta;}
         else {double factor=std::pow(1.2,-e->angleDelta().y()/120.),anchor=timeAt(e->position().x(),false);if(e->modifiers()&Qt::ControlModifier&&graph){double v=valueAt(e->position().y());v0=v+(v0-v)*factor;v1=v+(v1-v)*factor;}else if((t1-t0)*factor>=m->frameMs()*2){t0=anchor+(t0-anchor)*factor;t1=anchor+(t1-anchor)*factor;}}
         saveView();update();e->accept();
@@ -248,6 +250,7 @@ AnimationEditor::AnimationEditor(BuildModel *model,bool graph,QWidget *parent):Q
     auto button=[&](QString label,QString icon,auto fn){auto *b=new QToolButton;b->setIcon(uiIcon(icon));b->setToolTip(label);b->setAccessibleName(label);b->setIconSize({14,14});b->setFixedSize(24,22);bar->addWidget(b);connect(b,&QToolButton::clicked,this,fn);};
     button("View All","fit",[this]{m_curve->frame(false);});button("Frame Selected","composition",[this]{m_curve->frame(true);});button("Scale Keys / Handles · S","scale",[this]{m_curve->scaleKeys();});button("Insert key · I","key",[this]{m_curve->insert();});button("Delete","delete",[this]{m_curve->erase();});
     button("Cue selected frames","cue",[this]{m_curve->cueFrames();});
+    button("Noise modifier · selected curves","effects",[this]{m_curve->noise();});
     auto *snap=new QCheckBox("Snap");snap->setChecked(true);bar->addWidget(snap);connect(snap,&QCheckBox::toggled,this,[this](bool on){m_curve->snap=on;});
     if(graph){auto *norm=new QCheckBox("Normalize");norm->setChecked(m_curve->normalized);bar->addWidget(norm);connect(norm,&QCheckBox::toggled,this,[this](bool on){m_curve->setNormalized(on);});}
     auto *visibility=new QToolButton;visibility->setIcon(uiIcon("eye"));visibility->setToolTip("Key visibility: all objects or selected only");visibility->setPopupMode(QToolButton::InstantPopup);auto *visMenu=new QMenu(visibility);for(bool only:{false,true}){auto *a=visMenu->addAction(only?"Selected objects only":"All objects");a->setCheckable(true);a->setChecked(!only);connect(a,&QAction::triggered,this,[this,only,visMenu]{m_curve->selectedOnly=only;for(auto *action:visMenu->actions())action->setChecked(action->text()==(only?"Selected objects only":"All objects"));m_signature.clear();rebuild();});}visibility->setMenu(visMenu);bar->addWidget(visibility);

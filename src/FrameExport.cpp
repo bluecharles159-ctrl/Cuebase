@@ -1,4 +1,5 @@
 #include "FrameExport.h"
+#include "ColorManagement.h"
 #include <QDir>
 #include <QJsonDocument>
 #include <QPainter>
@@ -33,13 +34,17 @@ FrameExportResult exportSceneFrames(ElementDesign scene,const QString &directory
         return fail("The export folder must be empty. Existing files were preserved.");
     if(!QDir().mkpath(output.absolutePath()))return fail("Could not create the export folder.");
     const int count=o.endFrame-o.firstFrame;
+    auto settings=o.renderSettings;
+    settings.frameMs=1000.*o.fpsBase/o.fps;
     for(int frame=o.firstFrame;frame<o.endFrame;++frame) {
         if(progress&&!progress(result.written,count)){result.cancelled=true;return result;}
         QImage image(o.size,QImage::Format_ARGB32_Premultiplied);
         if(image.isNull())return fail("There is not enough memory for this frame size.");
         image.fill(Qt::transparent);
         {QPainter painter(&image);painter.setRenderHint(QPainter::Antialiasing);painter.setRenderHint(QPainter::SmoothPixmapTransform);
-         scene.render(painter,image.rect(),qRound64(double(frame)*1000*o.fpsBase/o.fps),true,nullptr,false);}
+         scene.render(painter,image.rect(),qRound64(double(frame)*1000*o.fpsBase/o.fps),true,&settings,false);}
+        if(colorManagementActive(o.colorView,o.colorLook,o.exposure,o.gamma))
+            applyColorManagement(image,o.colorView,o.colorLook,o.exposure,o.gamma);
         QSaveFile file(output.filePath(QString("frame_%1.png").arg(frame,6,10,QChar('0'))));
         if(!file.open(QIODevice::WriteOnly)||!image.save(&file,"PNG")||!file.commit())
             return fail("Could not write frame "+QString::number(frame)+". Check free disk space and folder permissions.");

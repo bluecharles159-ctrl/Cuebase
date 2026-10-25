@@ -2,6 +2,8 @@
 #include <QCache>
 #include <QMutex>
 #include <QMutexLocker>
+#include <QFileInfo>
+#include <QDateTime>
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
@@ -42,5 +44,5 @@ struct Decoder {
 };
 QCache<QString,Decoder> decoders(12);QMutex mutex;
 }
-QImage MediaFrames::frame(const QString &file,qint64 milliseconds,const QString &instance){QMutexLocker lock(&mutex);const auto key=instance+"|"+file;auto *decoder=decoders.object(key);if(!decoder){decoder=new Decoder(file);decoders.insert(key,decoder);}return decoder->at(milliseconds);}
+QImage MediaFrames::frame(const QString &file,qint64 milliseconds,const QString &instance){QMutexLocker lock(&mutex);const QFileInfo media(file);const auto key=instance+"|"+media.absoluteFilePath()+QString("|%1|%2|%3").arg(media.exists()).arg(media.size()).arg(media.lastModified().toMSecsSinceEpoch());auto *decoder=decoders.object(key);if(!decoder){decoder=new Decoder(file);decoders.insert(key,decoder);}return decoder->at(milliseconds);}
 qint64 MediaFrames::duration(const QString &file,QString *error){Decoder decoder(file);if(error)*error=decoder.error;return decoder.error.isEmpty()?decoder.duration():0;}

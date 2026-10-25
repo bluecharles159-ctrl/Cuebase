@@ -15,7 +15,7 @@ class Library;
 class BuildCanvas : public QWidget {
     Q_OBJECT
 public:
-    enum Shading { Wire = 0, Solid = 1, Rendered = 2 };
+    enum Shading { Wire = 0, Solid = 1, Rendered = 2, MaterialPreview = 3 };
 
     BuildCanvas(BuildModel *m, Library *lib, QWidget *parent = nullptr);
 
@@ -48,6 +48,8 @@ public:
     void pickSceneObject(std::function<void(QString)> picked);
 
 signals:
+    void componentBrowserRequested();
+    void shadingChanged(int mode);
     void addMenuRequested(const QPoint &globalPos);
     void message(const QString &text);
     void shortcutHint(const QString &text);
@@ -62,6 +64,9 @@ protected:
     void enterEvent(QEnterEvent *) override;
     void leaveEvent(QEvent *) override;
     void resizeEvent(QResizeEvent *) override;
+    void dragEnterEvent(QDragEnterEvent *) override;
+    void dragMoveEvent(QDragMoveEvent *) override;
+    void dropEvent(QDropEvent *) override;
 
 private:
     struct Modal {

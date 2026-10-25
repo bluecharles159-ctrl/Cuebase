@@ -18,6 +18,7 @@ public:
     void previewAt(qint64 milliseconds,bool play=false);
     void undoPlan();
     void redoPlan();
+    void setBroadcastPlayout(Playout *broadcast);
     void done(int result)override;
 protected:
     void paintEvent(QPaintEvent *)override;

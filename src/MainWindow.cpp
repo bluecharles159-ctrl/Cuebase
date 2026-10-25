@@ -154,6 +154,10 @@ QLabel *caption(const QString &t) {
     return l;
 }
 
+QPixmap channelLogoPreview(const QPixmap &image,int size){
+    if(image.isNull())return makeLogo(size);
+    QPixmap circle(size,size);circle.fill(Qt::transparent);QPainter painter(&circle);painter.setRenderHint(QPainter::Antialiasing);painter.setRenderHint(QPainter::SmoothPixmapTransform);painter.setPen(Qt::NoPen);painter.setBrush(qApp->palette().color(QPalette::Button));painter.drawEllipse(circle.rect());QPainterPath mask;mask.addEllipse(QRectF(circle.rect()));painter.setClipPath(mask);const int inset=qMax(2,qRound(size*2./26));const auto fitted=image.scaled(size-2*inset,size-2*inset,Qt::KeepAspectRatio,Qt::SmoothTransformation);painter.drawPixmap((size-fitted.width())/2,(size-fitted.height())/2,fitted);return circle;
+}
 } // namespace
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
@@ -181,10 +185,12 @@ void MainWindow::buildMenus() {
     hl->setSpacing(4);
 
     auto *logo = new QToolButton;logo->setObjectName("channelProfile");logo->setIcon(QIcon(makeLogo(26)));logo->setIconSize({26,26});logo->setStyleSheet("QToolButton{border-radius:17px;padding:4px;background:palette(window);}");logo->setToolTip("Channel profile");
-    auto refreshLogo=[this,logo]{QPixmap image(m_lib->display.channelLogo);if(const auto *element=m_lib->element(m_lib->display.channelLogoElement))image=QPixmap::fromImage(elementThumbnail(*element));if(image.isNull())logo->setIcon(QIcon(makeLogo(26)));else{QPixmap circle(26,26);circle.fill(Qt::transparent);QPainter painter(&circle);painter.setRenderHint(QPainter::Antialiasing);painter.setRenderHint(QPainter::SmoothPixmapTransform);painter.setPen(Qt::NoPen);painter.setBrush(QColor("#263640"));painter.drawEllipse(circle.rect());QPainterPath mask;mask.addEllipse(QRectF(circle.rect()));painter.setClipPath(mask);const auto fitted=image.scaled(22,22,Qt::KeepAspectRatio,Qt::SmoothTransformation);painter.drawPixmap((26-fitted.width())/2,(26-fitted.height())/2,fitted);painter.end();logo->setIcon(QIcon(circle));}logo->setToolTip(m_lib->display.channel+" / Channel profile");};refreshLogo();connect(m_lib,&Library::elementsChanged,logo,refreshLogo);
+    auto refreshLogo=[this,logo]{QPixmap image(m_lib->display.channelLogo);if(const auto *element=m_lib->element(m_lib->display.channelLogoElement))image=QPixmap::fromImage(elementThumbnail(*element));logo->setIcon(QIcon(channelLogoPreview(image,26)));logo->setToolTip(m_lib->display.channel+" / Channel profile");};refreshLogo();connect(m_lib,&Library::elementsChanged,logo,refreshLogo);
     connect(logo,&QToolButton::clicked,this,[this,refreshLogo]{
-        QDialog dialog(this);dialog.setWindowTitle("Channel profile");dialog.setMinimumWidth(390);dialog.setStyleSheet("QDialog{background:palette(window);border-radius:12px;}QLabel{font-size:10px;}QLineEdit,QPlainTextEdit,QComboBox{border-radius:5px;padding:5px;}");auto *form=new QFormLayout(&dialog);form->setContentsMargins(18,18,18,18);
-        auto *name=new QLineEdit(m_lib->display.channel);auto *description=new QPlainTextEdit(m_lib->display.channelDescription);description->setMaximumHeight(80);auto *image=new QLineEdit(m_lib->display.channelLogo);auto *browse=new QPushButton(uiIcon("image"),"Import logo");auto *element=new QComboBox;element->addItem("Use imported image",QString());for(const auto &e:m_lib->elements)element->addItem(e.name,e.id);element->setCurrentIndex(qMax(0,element->findData(m_lib->display.channelLogoElement)));
+        std::unique_ptr<QDialog> profile(roundedModal(this,"Channel profile"));auto &dialog=*profile;dialog.setObjectName("channelProfileDialog");dialog.setMinimumWidth(390);dialog.setStyleSheet("QDialog{background:palette(window);border-radius:12px;}QLabel{font-size:10px;}QLineEdit,QPlainTextEdit,QComboBox{border-radius:5px;padding:5px;}");auto *form=new QFormLayout(&dialog);form->setContentsMargins(18,18,18,18);
+        auto *heading=new QLabel("Channel profile");heading->setStyleSheet("font-size:14px;font-weight:600;padding-bottom:6px;");form->addRow(heading);
+        auto *name=new QLineEdit(m_lib->display.channel);name->setObjectName("channelName");auto *description=new QPlainTextEdit(m_lib->display.channelDescription);description->setObjectName("channelDescription");description->setMaximumHeight(80);auto *image=new QLineEdit(m_lib->display.channelLogo);image->setObjectName("channelLogoPath");auto *browse=new QPushButton(uiIcon("image"),"Import logo");auto *element=new QComboBox;element->setObjectName("channelLogoElement");element->addItem("Use imported image",QString());for(const auto &e:m_lib->elements)element->addItem(e.name,e.id);element->setCurrentIndex(qMax(0,element->findData(m_lib->display.channelLogoElement)));
+        auto *preview=new QLabel;preview->setObjectName("channelLogoPreview");preview->setFixedSize(64,64);form->addRow(preview);auto updatePreview=[&]{QPixmap source(image->text());if(const auto *built=m_lib->element(element->currentData().toString()))source=QPixmap::fromImage(elementThumbnail(*built));preview->setPixmap(channelLogoPreview(source,64));};connect(image,&QLineEdit::textChanged,&dialog,[&]{updatePreview();});connect(element,&QComboBox::currentIndexChanged,&dialog,[&]{updatePreview();});updatePreview();
         form->addRow("Channel",name);form->addRow("About / focus",description);form->addRow("Logo image",image);form->addRow(browse);form->addRow("Build screen element",element);auto *error=new QLabel;error->setWordWrap(true);form->addRow(error);auto *buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);form->addRow(buttons);
         connect(browse,&QPushButton::clicked,&dialog,[&]{const auto file=QFileDialog::getOpenFileName(&dialog,"Channel logo",{},"Images (*.png *.jpg *.jpeg *.webp *.svg)");if(!file.isEmpty()){image->setText(file);element->setCurrentIndex(0);}});connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);connect(buttons,&QDialogButtonBox::accepted,&dialog,[&]{if(name->text().trimmed().isEmpty()){error->setText("Enter a channel name.");return;}if(element->currentData().toString().isEmpty()&&!image->text().isEmpty()&&QImage(image->text()).isNull()){error->setText("Choose a readable logo image.");return;}const auto before=m_lib->display;m_lib->display.channel=name->text().trimmed();m_lib->display.channelDescription=description->toPlainText();m_lib->display.channelLogo=image->text();m_lib->display.channelLogoElement=element->currentData().toString();QString reason;if(!m_lib->saveChecked(&reason)){m_lib->display=before;error->setText(reason);return;}refreshLogo();dialog.accept();});dialog.exec();
     });
@@ -201,7 +207,7 @@ void MainWindow::buildMenus() {
     hl->addWidget(bar);
     hl->addStretch();
     auto control=[&](QString name,QString icon,QString label){auto *button=new QToolButton;button->setObjectName(name);button->setIcon(uiIcon(icon));button->setIconSize({13,13});button->setFixedSize(30,26);button->setToolTip(label);button->setAccessibleName(label);hl->addWidget(button);return button;};
-    auto *planner=control("windowPlanner","workflow","Production plan");connect(planner,&QToolButton::clicked,this,[this]{auto *board=findChild<ProductionBoard*>("productionBoard",Qt::FindDirectChildrenOnly);if(!board)board=new ProductionBoard(m_lib,this);board->show();board->raise();board->activateWindow();});
+    auto *planner=control("windowPlanner","workflow","Production plan");connect(planner,&QToolButton::clicked,this,[this]{auto *board=findChild<ProductionBoard*>("productionBoard",Qt::FindDirectChildrenOnly);if(!board){board=new ProductionBoard(m_lib,this);board->setBroadcastPlayout(m_play);}board->show();board->raise();board->activateWindow();});
     auto *settings=control("windowSettings","settings","Settings");connect(settings,&QToolButton::clicked,this,[this]{showUiSettings(this);});
     auto *minimize=control("windowMinimize","remove","Minimize");minimize->setIcon(style()->standardIcon(QStyle::SP_TitleBarMinButton));connect(minimize,&QToolButton::clicked,this,&QWidget::showMinimized);
     auto *maximize=control("windowMaximize","square","Maximize / restore");connect(maximize,&QToolButton::clicked,this,[this]{isMaximized()?showNormal():showMaximized();});
@@ -959,8 +965,9 @@ void MainWindow::onTimelineDrop(const DragPayload &d, int lane, qint64 startMs, 
         const ProgramItem *p = m_lib->program(d.id);
         if (!p) return;
         pl.name = p->title;
-        pl.seconds = p->seconds;
-        if (p->isAdSpot()) {
+        pl.seconds = p->seconds;pl.durationMs=p->lengthMs();
+        if(!p->elementId.isEmpty()){const auto *element=m_lib->element(p->elementId);if(!element||element->type=="Break"){report("Break screens stay on the main timeline.");return;}pl.type="Element";pl.refId=p->elementId;pl.offsetMs=p->offsetMs;}
+        else if (p->isAdSpot()) {
             const Ad *ad = m_lib->ad(p->adId);
             pl.type = "Ad";
             pl.refId = p->adId;

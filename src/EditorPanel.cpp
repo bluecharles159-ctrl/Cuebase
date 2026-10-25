@@ -898,8 +898,8 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
         bool updated = false;
         for (ProgramItem &p : lib->programs)
             if (p.id == id) {
-                if (p.isAdSpot()) {
-                    say(msg, "Ad blocks can't be edited here. Drag or remove them on the timeline.");
+                if (p.isAdSpot() || !p.elementId.isEmpty()) {
+                    say(msg, "Ad and screen-element blocks can't be edited here. Drag or remove them on the timeline.");
                     return;
                 }
                 updated = true;
@@ -908,6 +908,7 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
         if (!updated) item.id = Library::newId();
         item.title = t;
         item.kind = kind->currentText();
+        if(item.seconds!=total)item.durationMs=0;
         item.seconds = total;
         item.file = file->text().trimmed();
         item.adId = adBox->currentData().toString();

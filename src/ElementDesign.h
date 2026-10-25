@@ -56,7 +56,9 @@ struct AnimationKey {
 struct PropertyTrack {
     QString property;
     QVector<AnimationKey> keys;
+    QJsonObject noise; // Optional non-destructive curve modifier, times in seconds.
     double evaluate(qint64 ms, double fallback) const;
+    double evaluateBase(qint64 ms, double fallback) const;
     int indexAt(qint64 ms) const;
     void setKey(int ms, double value, const QString &interpolation = QString());
     QPointF handle(int index, bool right) const;
@@ -172,7 +174,7 @@ struct ViewCam {
 };
 
 struct PaintOpts {
-    enum Shade { Wire, Solid, Rendered } shade = Rendered;
+    enum Shade { Wire, Solid, Rendered, MaterialPreview } shade = Rendered;
     bool background = false;  // fill with the world colour
     bool clip = true;
     bool twoSided = false;
@@ -212,7 +214,7 @@ struct ElementDesign {
     QMatrix4x4 worldMatrix(const DObject &o, qint64 ms) const;
     QMatrix4x4 parentMatrix(const DObject &o, qint64 ms) const;
     bool effectiveVisible(const DObject &o) const;
-    QPainterPath overflowClip(const DObject &o, qint64 ms, const ViewCam &cam, const QRectF &rect) const;
+    QPainterPath overflowClip(const DObject &o, qint64 ms, const ViewCam &cam, const QRectF &rect, const QRectF &viewport = {}) const;
     const Mesh &evalMesh(const DObject &o, qint64 ms) const;  // modifiers applied
     ViewCam sceneCamera(qint64 ms, double aspect) const;
     QImage textureFor(const DObject &o) const;

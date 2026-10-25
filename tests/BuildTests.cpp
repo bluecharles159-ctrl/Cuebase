@@ -1,6 +1,12 @@
 #include <QDialogButtonBox>
 #include <QDialog>
+#include <QLayout>
+#include <QFileDialog>
+#include <QTimer>
+#include <QPointer>
+#include <QDateTime>
 #include <QtTest>
+#include <algorithm>
 #include <QToolButton>
 #include <QMenu>
 #include <QSettings>
@@ -8,6 +14,7 @@
 #include "SceneEffects.h"
 #include "CueSequence.h"
 #include "AssetImport.h"
+#include "DesignAssets.h"
 #include "DesignAudio.h"
 #include "MediaFrames.h"
 #include <QDoubleSpinBox>
@@ -20,6 +27,8 @@
 #include <QStandardPaths>
 #include <QUuid>
 #include <QTreeWidget>
+#include <QListWidget>
+#include <QPlainTextEdit>
 #include "BuildModel.h"
 #include "BuildCanvas.h"
 #include "BuildWorkspace.h"
@@ -31,14 +40,182 @@
 #include "BuildContextAction.h"
 #include "SurfaceEffects.h"
 #include "FrameExport.h"
+#include "ColorManagement.h"
 #include <QDir>
 #include "AnimationCuePanel.h"
 #include "PropertyInspector.h"
 #include <QCheckBox>
+#include <QComboBox>
 
 class BuildTests:public QObject {
     Q_OBJECT
 private slots:
+    void lightingModesHierarchyAndExport(){
+        Library library;BuildModel model;auto scene=ElementDesign::defaultScene();scene.objects.erase(std::remove_if(scene.objects.begin(),scene.objects.end(),[](const DObject &o){return o.type=="Light";}),scene.objects.end());scene.world.transparent=false;scene.world.color=QColor("#393939");scene.world.ambient=.02;
+        DObject cube;cube.id="lit-cube";cube.type="Mesh";cube.mesh=Mesh::primitive("Cube");cube.base.scl={2,2,2};cube.base.rot={20,0,25};cube.mat.color=QColor("#74a7db");scene.objects.append(cube);DObject group;group.id="light-rig";group.type="Group";scene.objects.append(group);DObject light;light.id="key-light";light.type="Light";light.parentId=group.id;light.base.loc={0,-6,0};light.base.rot={90,0,0};light.light.color=QColor("#ffe0b0");scene.objects.append(light);model.reset(scene);
+        BuildCanvas canvas(&model,&library);canvas.resize(708,428);canvas.showOverlays=false;canvas.setProperty("previewQuality","Full");canvas.show();QTest::qWait(20);auto picture=[&](int mode){canvas.setShading(mode);return canvas.grab().toImage().copy(34,34,640,360).convertToFormat(QImage::Format_ARGB32_Premultiplied);};const auto work=picture(BuildCanvas::Solid),material=picture(BuildCanvas::MaterialPreview);QVERIFY(work!=material);QTemporaryDir temporary;QVERIFY(temporary.isValid());
+        QImage proof(960,4*204,QImage::Format_ARGB32_Premultiplied);proof.fill(QColor("#202327"));QPainter proofPainter(&proof);proofPainter.setPen(Qt::white);int row=0;
+        for(const auto &kind:QStringList{"Point","Sun","Spot","Area"}){
+            auto *lamp=model.design.find(light.id);lamp->light.kind=kind;lamp->light.energy=kind=="Sun"?3:600;const auto lit=picture(BuildCanvas::Rendered);model.design.find(group.id)->visible=false;const auto hidden=picture(BuildCanvas::Rendered);QVERIFY2(lit!=hidden,qPrintable(kind));model.design.find(group.id)->visible=true;lamp->visible=false;QCOMPARE(picture(BuildCanvas::Rendered),hidden);lamp->visible=true;QCOMPARE(picture(BuildCanvas::Rendered),lit);
+            lamp->light.color=Qt::blue;QCOMPARE(picture(BuildCanvas::Solid),work);QCOMPARE(picture(BuildCanvas::MaterialPreview),material);QVERIFY(picture(BuildCanvas::Rendered)!=lit);lamp->light.color=QColor("#ffe0b0");
+            const auto restored=ElementDesign::fromJson(model.design.toJson());FrameExportOptions options;options.size=lit.size();options.endFrame=1;const auto destination=temporary.filePath(kind);const auto result=exportSceneFrames(restored,destination,options);QVERIFY2(result.success,qPrintable(result.error));QImage saved(destination+"/frame_000000.png");QCOMPARE(saved.convertToFormat(lit.format()),lit);
+            proofPainter.drawText(10,row*204+18,kind+" — Work / Material / Final");proofPainter.drawImage(QRect(0,row*204+24,320,180),work);proofPainter.drawImage(QRect(320,row*204+24,320,180),material);proofPainter.drawImage(QRect(640,row*204+24,320,180),lit);++row;
+        }
+        proofPainter.end();QVERIFY(proof.save("artifacts/build-lighting-modes.png"));auto *lamp=model.design.find(light.id);lamp->light.kind="Point";lamp->keyChannel("light.power",0,0);lamp->keyChannel("light.power",1000,600);model.t=0;const auto dark=picture(BuildCanvas::Rendered);model.t=1000;const auto bright=picture(BuildCanvas::Rendered);QVERIFY(bright!=dark);FrameExportOptions options;options.size=bright.size();options.firstFrame=25;options.endFrame=26;const auto path=temporary.filePath("animated");const auto result=exportSceneFrames(model.design,path,options);QVERIFY2(result.success,qPrintable(result.error));QImage saved(path+"/frame_000025.png");QCOMPARE(saved.convertToFormat(bright.format()),bright);
+    }
+    void displayColorMatchesFinalAndExport(){
+        Library library;BuildModel model;auto scene=ElementDesign::defaultScene();scene.world.transparent=false;scene.world.color=QColor("#393939");DObject plate;plate.id="graded";plate.type="Shape";plate.w=10;plate.h=6;plate.base.rot={90,0,0};plate.mat.shadeless=true;plate.mat.color=QColor("#557fa8");plate.mat.alpha=.65;scene.objects.append(plate);model.reset(scene);
+        BuildCanvas canvas(&model,&library);canvas.resize(708,428);canvas.showOverlays=false;canvas.setProperty("previewQuality","Full");canvas.setShading(BuildCanvas::Solid);canvas.show();QTest::qWait(20);const auto work=canvas.grab().toImage();const auto unchanged=model.design.toJson();QTemporaryDir temporary;QVERIFY(temporary.isValid());
+        QImage base(640,360,QImage::Format_ARGB32_Premultiplied);base.fill(Qt::transparent);{QPainter painter(&base);painter.setRenderHint(QPainter::Antialiasing);painter.setRenderHint(QPainter::SmoothPixmapTransform);scene.render(painter,base.rect(),0);}
+        int index=0;for(const auto &view:colorViews())for(const auto &look:colorLooks()){
+            auto &display=library.display;display.colorView=view;display.colorLook=look;display.exposure=.7;display.gamma=1.2;canvas.setShading(BuildCanvas::Solid);QCOMPARE(canvas.grab().toImage(),work);canvas.setShading(BuildCanvas::Rendered);
+            auto expected=base;applyColorManagement(expected,view,look,display.exposure,display.gamma);QVERIFY(expected!=base);QCOMPARE(canvas.grab().toImage().copy(34,34,640,360).convertToFormat(expected.format()),expected);
+            FrameExportOptions options;options.size=base.size();options.endFrame=1;options.colorView=view;options.colorLook=look;options.exposure=display.exposure;options.gamma=display.gamma;const auto path=temporary.filePath(QString::number(index++));const auto result=exportSceneFrames(scene,path,options);QVERIFY2(result.success,qPrintable(result.error));QImage saved(path+"/frame_000000.png");QCOMPARE(saved.convertToFormat(expected.format()),expected);
+        }
+        QCOMPARE(model.design.toJson(),unchanged);
+        BuildWorkspace workspace(&library);workspace.resize(1200,760);workspace.findChild<BuildModel*>()->reset(scene);workspace.show();QTest::qWait(20);auto *preview=workspace.findChild<QWidget*>("compositionCleanPreview");QVERIFY(preview);auto clean=preview->grab().toImage();auto expectedClean=base;applyColorManagement(expectedClean,library.display.colorView,library.display.colorLook,library.display.exposure,library.display.gamma);QCOMPARE(clean.pixelColor(clean.width()/2,clean.height()/2),expectedClean.pixelColor(320,180));QVERIFY(canvas.grab().save("artifacts/build-color-managed-final.png"));
+        QImage alpha(2,1,QImage::Format_ARGB32_Premultiplied);alpha.fill(Qt::transparent);alpha.setPixelColor(1,0,QColor(80,100,120,96));applyColorManagement(alpha,"Filmic","High Contrast",1.,1.2);QCOMPARE(alpha.pixelColor(0,0).alpha(),0);QCOMPARE(alpha.pixelColor(1,0).alpha(),96);
+    }
+    void frameExportRetainsMotionBlur(){
+        auto scene=ElementDesign::defaultScene();scene.durationMs=1000;scene.loop=false;
+        DObject object;object.id="moving";object.type="Shape";object.w=1;object.h=3;object.base.rot={90,0,0};object.mat.color=Qt::white;object.mat.shadeless=true;object.keyChannel("position.x",0,-6);object.keyChannel("position.x",1000,6);scene.objects.append(object);
+        FrameExportOptions options;options.size={320,180};options.setProjectFrameRate(25,1);options.firstFrame=12;options.endFrame=13;options.renderSettings.motionBlur=true;options.renderSettings.shutter=2;options.renderSettings.samples=7;
+        auto render=[&](bool blur){QImage image(options.size,QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);QPainter painter(&image);painter.setRenderHint(QPainter::Antialiasing);painter.setRenderHint(QPainter::SmoothPixmapTransform);auto settings=options.renderSettings;settings.motionBlur=blur;settings.frameMs=40;scene.render(painter,image.rect(),480,true,&settings,false);painter.end();return image;};
+        const auto expected=render(true);QVERIFY(expected!=render(false));QTemporaryDir directory;QVERIFY(directory.isValid());const auto result=exportSceneFrames(scene,directory.path(),options);QVERIFY2(result.success,qPrintable(result.error));QImage saved(directory.filePath("frame_000012.png"));QCOMPARE(saved.convertToFormat(expected.format()),expected);
+    }
+    void backgroundInspectorPreviewExport(){
+        Library library;BuildModel model;QTemporaryDir temporary;QVERIFY(temporary.isValid());QImage media(64,32,QImage::Format_ARGB32);media.fill(Qt::blue);{QPainter p(&media);p.fillRect(0,0,32,32,Qt::red);}const auto path=temporary.filePath("background.png");QVERIFY(media.save(path));
+        auto scene=ElementDesign::defaultScene();scene.world.transparent=false;scene.world.color=QColor("#393939");DObject plate;plate.id="background";plate.type="Shape";plate.w=10;plate.h=6;plate.base.rot={90,0,0};plate.mat.color=Qt::red;plate.mat.shadeless=true;plate.image=path;plate.style["fill.end"]="#245ad5";scene.objects.append(plate);
+        auto glass=plate;glass.id="glass";glass.image.clear();glass.w=5;glass.h=3;glass.base.loc.setY(-.1);glass.mat.color=Qt::white;glass.mat.alpha=.2;glass.style={};glass.style["backdrop.blur"]=20.;glass.style["background.type"]="Solid";scene.objects.append(glass);model.reset(scene);model.select(plate.id);
+        PropertyInspector inspector(&model,&library);auto *background=inspector.findChild<QComboBox*>("property_background.type");QVERIFY(background);BuildCanvas canvas(&model,&library);canvas.resize(708,428);canvas.showOverlays=false;canvas.setShading(BuildCanvas::Rendered);canvas.setProperty("previewQuality","Full");canvas.show();QTest::qWait(20);
+        for(const auto &kind:QStringList{"Solid","Gradient","Media"}){
+            background->setCurrentText(kind);QMetaObject::invokeMethod(background,"activated",Qt::DirectConnection,Q_ARG(int,background->currentIndex()));QCOMPARE(model.byId(plate.id)->style["background.type"].toString(),kind);
+            QImage expected(640,360,QImage::Format_ARGB32_Premultiplied);expected.fill(Qt::transparent);{QPainter p(&expected);p.setRenderHint(QPainter::Antialiasing);p.setRenderHint(QPainter::SmoothPixmapTransform);model.design.render(p,expected.rect(),0);}
+            const auto preview=canvas.grab().toImage().copy(34,34,640,360).convertToFormat(expected.format());QCOMPARE(preview,expected);
+            const auto restored=ElementDesign::fromJson(model.design.toJson());QCOMPARE(restored.find(plate.id)->style["background.type"].toString(),kind);FrameExportOptions options;options.size=expected.size();options.endFrame=1;const auto destination=temporary.filePath(kind);const auto result=exportSceneFrames(restored,destination,options);QVERIFY2(result.success,qPrintable(result.error));QImage output(destination+"/frame_000000.png");QCOMPARE(output.convertToFormat(expected.format()),expected);QVERIFY(preview.save("artifacts/background-"+kind.toLower()+".png"));
+        }
+    }
+    void revealInspectorAndExport(){
+        Library library;BuildModel model;auto design=ElementDesign::defaultScene();design.durationMs=1000;design.loop=false;
+        DObject shape;shape.id="reveal-demo";shape.type="Shape";shape.name="Reveal demo";shape.w=9;shape.h=5;shape.base.rot={90,0,0};shape.mat.shadeless=true;shape.mat.color=QColor("#208fdf");shape.style["corner.radius"]=28;shape.style["background.type"]="Gradient";shape.style["fill.end"]="#7043c7";shape.keyChannel("effects.reveal",0,0);shape.keyChannel("effects.reveal",1000,1);design.objects.append(shape);model.reset(design);model.select(shape.id);
+        PropertyInspector inspector(&model,&library);inspector.resize(320,800);inspector.show();for(auto *section:inspector.findChildren<QToolButton*>())if(section->text()=="EFFECTS")section->setChecked(true);
+        auto *style=inspector.findChild<QComboBox*>("property_effects.revealStyle");auto *timing=inspector.findChild<QComboBox*>("property_effects.revealTiming");QVERIFY(style&&timing);
+        auto choose=[](QComboBox *combo,const QString &value){combo->setCurrentText(value);QMetaObject::invokeMethod(combo,"activated",Qt::DirectConnection,Q_ARG(int,combo->currentIndex()));};
+        auto render=[&](qint64 time){QImage image(320,180,QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);QPainter p(&image);p.setRenderHint(QPainter::Antialiasing);p.setRenderHint(QPainter::SmoothPixmapTransform);model.design.render(p,image.rect(),time,true,nullptr,false);p.end();return image;};
+        const QStringList styles{"Wipe","Pixels","Blocks","Liquid","Assemble"},timings{"Linear","Smooth","Constant","Steps","Flicker"};QImage sheet(960,styles.size()*210,QImage::Format_ARGB32_Premultiplied);sheet.fill(QColor("#171c23"));QPainter sheetPainter(&sheet);sheetPainter.setPen(Qt::white);QTemporaryDir exports;QVERIFY(exports.isValid());
+        for(int row=0;row<styles.size();++row){const auto previous=model.design.toJson();choose(style,styles[row]);QCOMPARE(model.byId(shape.id)->style["effects.revealStyle"].toString(),styles[row]);QVERIFY(model.undo());QCOMPARE(model.design.toJson(),previous);QVERIFY(model.redo());
+            for(const auto &name:timings){choose(timing,name);const auto expected=render(400);render(800);QCOMPARE(render(400),expected);const auto restored=ElementDesign::fromJson(model.design.toJson());QCOMPARE(restored.find(shape.id)->style["effects.revealStyle"].toString(),styles[row]);QCOMPARE(restored.find(shape.id)->style["effects.revealTiming"].toString(),name);
+                FrameExportOptions options;options.size={320,180};options.firstFrame=10;options.endFrame=11;const auto path=exports.filePath(styles[row]+"-"+name);const auto result=exportSceneFrames(restored,path,options);QVERIFY2(result.success,qPrintable(result.error));QImage saved(path+"/frame_000010.png");QCOMPARE(saved.convertToFormat(expected.format()),expected);
+            }
+            choose(timing,"Smooth");sheetPainter.drawText(12,row*210+22,styles[row]+" — 20% / 55% / complete");sheetPainter.drawImage(0,row*210+30,render(200));sheetPainter.drawImage(320,row*210+30,render(550));sheetPainter.drawImage(640,row*210+30,render(1000));
+        }
+        sheetPainter.end();QVERIFY(sheet.save("artifacts/reveal-styles-proof.png"));
+    }
+    void compositionGuidesPersistAndUndo(){
+        Library library;BuildWorkspace workspace(&library);workspace.resize(1200,760);workspace.show();auto *model=workspace.findChild<BuildModel*>();auto *canvas=workspace.findChild<BuildCanvas*>();QVERIFY(model&&canvas);model->reset(ElementDesign::defaultScene());canvas->frameAll();QTest::qWait(20);canvas->grab();
+        auto frame=canvas->property("compositionFrame").toRectF();QVERIFY(frame.width()>100);auto position=[&](double fraction){return QPoint(qRound(frame.left()+fraction*frame.width()),qRound(frame.center().y()));};
+        QTest::mousePress(canvas,Qt::LeftButton,Qt::NoModifier,QPoint(10,position(.25).y()));QTest::mouseMove(canvas,position(.25));QTest::mouseRelease(canvas,Qt::LeftButton,Qt::NoModifier,position(.25));
+        auto guides=[&]{return model->design.camera()->style["editor.guides.vertical"].toArray();};QCOMPARE(guides().size(),1);QVERIFY(qAbs(guides().first().toDouble()-.25)<.01);QVERIFY(model->undo());QVERIFY(guides().isEmpty());QVERIFY(model->redo());QCOMPARE(guides().size(),1);
+        const auto saved=model->design.toJson();model->reset(ElementDesign::fromJson(saved));QCOMPARE(guides().size(),1);library.display.resolution="3840x2160";canvas->grab();frame=canvas->property("compositionFrame").toRectF();
+        QTest::mousePress(canvas,Qt::LeftButton,Qt::NoModifier,position(.25));QTest::mouseMove(canvas,position(.6));QTest::mouseRelease(canvas,Qt::LeftButton,Qt::NoModifier,position(.6));QCOMPARE(guides().size(),1);QVERIFY(qAbs(guides().first().toDouble()-.6)<.01);QVERIFY(model->undo());QVERIFY(qAbs(guides().first().toDouble()-.25)<.01);
+        auto *clear=workspace.findChild<QAction*>("clearCompositionGuides");QVERIFY(clear);clear->trigger();QVERIFY(guides().isEmpty());QVERIFY(model->undo());QCOMPARE(guides().size(),1);
+        auto *settings=workspace.findChild<QAction*>("compositionGuideSettings");QVERIFY(settings);bool edited=false;
+        QTimer::singleShot(0,[&]{auto *dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());if(!dialog)return;QTimer::singleShot(3000,dialog,&QDialog::reject);auto *title=dialog->findChild<QDoubleSpinBox*>("guideTitleMargin");auto *grid=dialog->findChild<QDoubleSpinBox*>("guideGridSpacing");auto *color=dialog->findChild<QLineEdit*>("compositionGuideColor");QVERIFY(title&&grid&&color);title->setValue(12);grid->setValue(80);color->setText("#edb950");QVERIFY(dialog->grab().save("artifacts/composition-guides-dialog.png"));edited=true;dialog->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Save)->click();});settings->trigger();QVERIFY(edited);QCOMPARE(model->design.camera()->style["editor.titleSafe"].toDouble(),.12);QCOMPARE(model->design.camera()->style["editor.gridSpacing"].toDouble(),80.);QCOMPARE(QColor(model->design.camera()->style["editor.guideColor"].toString()),QColor("#edb950"));QVERIFY(model->undo());QVERIFY(!model->design.camera()->style.contains("editor.titleSafe"));QVERIFY(model->redo());
+        const auto beforeCancel=model->design.toJson();QTimer::singleShot(0,[&]{if(auto *dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget())){dialog->findChild<QDoubleSpinBox*>("guideTitleMargin")->setValue(20);dialog->reject();}});settings->trigger();QCOMPARE(model->design.toJson(),beforeCancel);
+        canvas->grab();QVERIFY(canvas->grab().save("artifacts/composition-guides.png"));model->reset(ElementDesign::defaultScene());QVERIFY(guides().isEmpty());
+    }
+    void buildPreviewQualityAndBackdrop(){
+        Library library;BuildModel model;auto scene=ElementDesign::defaultScene();scene.durationMs=1000;
+        DObject left;left.id="left";left.type="Shape";left.w=4;left.h=5;left.base.rot={90,0,0};left.base.loc.setX(-2);left.mat.color=Qt::red;left.mat.shadeless=true;
+        auto right=left;right.id="right";right.base.loc.setX(2);right.mat.color=Qt::blue;
+        auto glass=left;glass.id="glass";glass.w=5;glass.h=3;glass.base.loc={0,-.1f,0};glass.mat.color=Qt::white;glass.mat.alpha=.15;glass.style["backdrop.blur"]=24.;glass.style["backdrop.brightness"]=1.;scene.objects.append(left);scene.objects.append(right);scene.objects.append(glass);model.reset(scene);
+        BuildCanvas canvas(&model,&library);canvas.resize(640,428);canvas.showOverlays=false;canvas.setShading(BuildCanvas::Rendered);canvas.setProperty("previewQuality","Full");canvas.show();QTest::qWait(20);
+        const auto before=model.design.toJson();const auto full=canvas.grab().toImage();const QSize fullSize=canvas.property("previewPixelSize").toSize();QVERIFY(fullSize.width()>0);QVERIFY(full.save("artifacts/build-backdrop-preview.png"));
+        QImage expected(fullSize,QImage::Format_ARGB32_Premultiplied);expected.fill(Qt::transparent);{QPainter p(&expected);p.setRenderHint(QPainter::Antialiasing);p.setRenderHint(QPainter::SmoothPixmapTransform);scene.render(p,expected.rect(),0);}
+        const double ratio=double(fullSize.width())/(canvas.width()-68);const auto actual=full.pixelColor(full.width()/2+1,full.height()/2);const auto reference=expected.pixelColor(expected.width()/2+qRound(ratio),expected.height()/2);
+        QVERIFY2(qAbs(actual.red()-reference.red())<12&&qAbs(actual.blue()-reference.blue())<12,qPrintable(actual.name()+" / "+reference.name()));QVERIFY(actual.red()>45&&actual.blue()>45);
+        canvas.setProperty("previewQuality","Auto");model.playing=true;canvas.grab();const QSize playing=canvas.property("previewPixelSize").toSize();QVERIFY(qAbs(playing.width()*2-fullSize.width())<=1);model.playing=false;canvas.grab();QCOMPARE(canvas.property("previewPixelSize").toSize(),fullSize);
+        canvas.setProperty("previewQuality","Quarter");canvas.grab();QVERIFY(qAbs(canvas.property("previewPixelSize").toSize().width()*4-fullSize.width())<=3);QCOMPARE(model.design.toJson(),before);
+        canvas.setProperty("previewQuality","Full");const QPointF anchor(canvas.rect().center());for(int i=0;i<24;++i){QWheelEvent wheel(anchor,canvas.mapToGlobal(anchor.toPoint()),QPoint(),QPoint(0,120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);QApplication::sendEvent(&canvas,&wheel);}canvas.grab();const QSize zoomed=canvas.property("previewPixelSize").toSize();QVERIFY(qint64(zoomed.width())*zoomed.height()<=2073600);QVERIFY(canvas.property("previewRenderMs").toLongLong()>=0);QCOMPARE(model.design.toJson(),before);
+    }
+    void buildAppearanceModes(){
+        QSettings settings;const auto previous=settings.value("build/viewMode");
+        struct Restore {QVariant value;~Restore(){QSettings s;if(value.isValid())s.setValue("build/viewMode",value);else s.remove("build/viewMode");}} restore{previous};
+        settings.setValue("build/viewMode",int(BuildCanvas::Solid));
+        Library library;BuildWorkspace workspace(&library);workspace.resize(1200,760);workspace.show();
+        auto *model=workspace.findChild<BuildModel*>();auto *canvas=workspace.findChild<BuildCanvas*>();auto *control=workspace.findChild<QToolButton*>("buildViewMode");QVERIFY(model&&canvas&&control);
+        model->reset(elementPreset("Sponsor spotlight"));model->setTime(1500);canvas->frameAll();QCOMPARE(canvas->shading(),int(BuildCanvas::Solid));QCOMPARE(control->text(),QString("Work"));
+        const auto original=model->design.toJson();
+        auto render=[&]{QImage frame(640,360,QImage::Format_ARGB32_Premultiplied);frame.fill(Qt::transparent);QPainter p(&frame);model->design.render(p,frame.rect(),model->t);p.end();return frame;};
+        const auto output=render();
+        auto workAction=control->menu()->findChild<QAction*>("buildViewMode_Work");auto finalAction=control->menu()->findChild<QAction*>("buildViewMode_Final");auto materialAction=control->menu()->findChild<QAction*>("buildViewMode_Material");QVERIFY(workAction&&finalAction&&materialAction);
+        QTest::qWait(30);const auto work=canvas->grab().toImage();QVERIFY(work.save("artifacts/build-work-mode.png"));
+        materialAction->trigger();QCOMPARE(canvas->shading(),int(BuildCanvas::MaterialPreview));QCOMPARE(control->text(),QString("Material"));QVERIFY(materialAction->isChecked());const auto material=canvas->grab().toImage();QVERIFY(material.save("artifacts/build-material-mode.png"));QVERIFY(work!=material);
+        finalAction->trigger();QCOMPARE(canvas->shading(),int(BuildCanvas::Rendered));QCOMPARE(control->text(),QString("Final"));QVERIFY(finalAction->isChecked());QVERIFY(!materialAction->isChecked());QVERIFY(canvas->grab().save("artifacts/build-final-mode.png"));QCOMPARE(render(),output);QCOMPARE(model->design.toJson(),original);
+        workAction->trigger();QCOMPARE(canvas->grab().toImage(),work);QTest::keyClick(canvas,Qt::Key_Z);QCOMPARE(control->text(),QString("Material"));QVERIFY(materialAction->isChecked());QCOMPARE(model->design.toJson(),original);
+        BuildWorkspace reopened(&library);QCOMPARE(reopened.findChild<BuildCanvas*>()->shading(),int(BuildCanvas::MaterialPreview));
+        // Work surfaces remain neutral even with a saturated material and effects.
+        auto scene=ElementDesign::defaultScene();DObject plate;plate.id="plain";plate.type="Shape";plate.w=8;plate.h=4;plate.base.rot={90,0,0};plate.mat.color=Qt::red;plate.style["effects.invert"]=1.;scene.objects.append(plate);
+        QImage frame(320,180,QImage::Format_ARGB32_Premultiplied);frame.fill(Qt::transparent);QPainter painter(&frame);PaintOpts options;options.shade=PaintOpts::Solid;scene.paint(painter,frame.rect(),scene.sceneCamera(0,320./180),0,options);painter.end();const auto center=frame.pixelColor(160,90);QCOMPARE(center.red(),center.green());QCOMPARE(center.green(),center.blue());QVERIFY(center.alpha()>0);
+    }
+    void elementNamingSaveFailure(){
+        struct Profile {QString previous=qApp->applicationName();Profile(){qApp->setApplicationName(previous+"-element-save");}~Profile(){qApp->setApplicationName(previous);}} profile;
+        Library library;Element element;element.id="identity";element.name="Original";element.type="Custom";element.playlist="Overlays";element.design=elementPreset("Sponsor spotlight").toJson();library.elements={element};library.display.channelLogoElement="previous-logo";QString error;QVERIFY2(library.saveChecked(&error),qPrintable(error));
+        BuildWorkspace workspace(&library);workspace.editElement(element.id);auto *picker=workspace.findChild<QComboBox*>("buildElementPicker");QVERIFY(picker);QVERIFY(picker->lineEdit());QSignalSpy changed(&library,&Library::elementsChanged);
+        const QString tag="{{element:main-logo|Primary identity}}";picker->lineEdit()->setText(tag);
+        const auto destination=QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)+"/cuebase.json";QVERIFY(QFile::remove(destination));QVERIFY(QDir().mkpath(destination));
+        QVERIFY(!workspace.saveForClose());QCOMPARE(changed.count(),0);QCOMPARE(library.elements.size(),1);QCOMPARE(library.elements.first().name,QString("Original"));QCOMPARE(library.elements.first().playlist,QString("Overlays"));QCOMPARE(library.display.channelLogoElement,QString("previous-logo"));QCOMPARE(picker->currentText(),tag);QVERIFY(workspace.hasUnsavedChanges());
+        QVERIFY(QDir().rmdir(destination));QVERIFY(workspace.saveForClose());QCOMPARE(changed.count(),1);QCOMPARE(library.elements.first().name,QString("Primary identity"));QCOMPARE(library.elements.first().playlist,QString("Logos"));QCOMPARE(library.display.channelLogoElement,element.id);QVERIFY(!workspace.hasUnsavedChanges());
+        Library reopened;reopened.load();QVERIFY(reopened.element(element.id));QCOMPARE(reopened.element(element.id)->name,QString("Primary identity"));QCOMPARE(reopened.display.channelLogoElement,element.id);QCOMPARE(ElementDesign::fromJson(reopened.element(element.id)->design).camera()->style["studio.sceneRole"].toString(),QString("main-logo"));
+        picker->lineEdit()->setText("{{element:break|Next program}}");QVERIFY(workspace.saveForClose());QCOMPARE(library.elements.first().playlist,QString("Break screens"));QCOMPARE(library.elements.first().name,QString("Next program"));QVERIFY(QFile::remove(destination));
+    }
+    void portableCompositionMedia(){
+        QTemporaryDir temporary;QVERIFY(temporary.isValid());QDir root(temporary.path());QVERIFY(root.mkdir("original"));QVERIFY(root.mkdir("export"));
+        QImage image(16,16,QImage::Format_ARGB32);image.fill(Qt::cyan);const auto imagePath=root.filePath("original/plate.png");QVERIFY(image.save(imagePath));
+        const auto audioPath=root.filePath("original/sound.wav");QFile audioFile(audioPath);QVERIFY(audioFile.open(QIODevice::WriteOnly));const QByteArray audioBytes("portable audio fixture");QCOMPARE(audioFile.write(audioBytes),qint64(audioBytes.size()));audioFile.close();
+        auto design=ElementDesign::defaultScene();DObject picture;picture.id="picture";picture.name="Picture";picture.type="Image";picture.image=imagePath;design.objects.append(picture);auto duplicate=picture;duplicate.id="duplicate";design.objects.append(duplicate);DObject audio;audio.id="audio";audio.type="Audio";audio.style["audio.file"]=audioPath;design.objects.append(audio);
+        const auto original=design.toJson();const auto destination=root.filePath("export/portable.cuebuild");QString error;QVERIFY2(exportPortableDesign(design,destination,&error),qPrintable(error));QCOMPARE(design.toJson(),original);
+        QFile manifest(destination);QVERIFY(manifest.open(QIODevice::ReadOnly));const auto bytes=manifest.readAll();manifest.close();auto packed=ElementDesign::fromJson(QString::fromUtf8(bytes));QCOMPARE(packed.objects[packed.objects.size()-3].image,packed.objects[packed.objects.size()-2].image);for(const auto &asset:designAssets(packed))QVERIFY(QFileInfo(asset.path).isRelative());
+        const auto assetFolders=QDir(root.filePath("export")).entryList(QDir::Dirs|QDir::NoDotAndDotDot);QCOMPARE(assetFolders.size(),1);QCOMPARE(QDir(root.filePath("export/"+assetFolders.first())).entryList(QDir::Files).size(),2);
+        QVERIFY(root.rename("export","moved"));resolveDesignAssets(packed,root.filePath("moved"));QVERIFY(missingDesignAsset(packed).isEmpty());QCOMPARE(QImage(packed.find("picture")->image),image);QFile copiedAudio(packed.find("audio")->style["audio.file"].toString());QVERIFY(copiedAudio.open(QIODevice::ReadOnly));QCOMPARE(copiedAudio.readAll(),audioBytes);
+        const auto moved=root.filePath("moved/portable.cuebuild");int progressCalls=0;QVERIFY(!exportPortableDesign(design,moved,&error,[&](int,int){return ++progressCalls<3;}));QCOMPARE(progressCalls,3);QVERIFY(error.contains("cancelled"));QFile unchanged(moved);QVERIFY(unchanged.open(QIODevice::ReadOnly));QCOMPARE(unchanged.readAll(),bytes);unchanged.close();QCOMPARE(QDir(root.filePath("moved")).entryList(QDir::Dirs|QDir::NoDotAndDotDot),assetFolders);
+        design.find("picture")->image=root.filePath("missing.png");QVERIFY(!exportPortableDesign(design,moved,&error));QVERIFY(error.contains("Picture"));QVERIFY(unchanged.open(QIODevice::ReadOnly));QCOMPARE(unchanged.readAll(),bytes);
+    }
+    void relativeCompositionAudioImport(){
+        QTemporaryDir directory;QVERIFY(directory.isValid());QFile audio(directory.filePath("audio.wav"));QVERIFY(audio.open(QIODevice::WriteOnly));audio.write("fixture");audio.close();
+        auto design=ElementDesign::defaultScene();DObject sound;sound.id="relative-audio";sound.type="Audio";sound.style["audio.file"]="audio.wav";design.objects.append(sound);
+        QFile document(directory.filePath("relative.cuebuild"));QVERIFY(document.open(QIODevice::WriteOnly));document.write(design.toJson().toUtf8());document.close();
+        Library lib;BuildWorkspace workspace(&lib);QVERIFY(workspace.importFile(document.fileName()));auto *model=workspace.findChild<BuildModel*>();QVERIFY(model);QCOMPARE(model->design.find(sound.id)->style["audio.file"].toString(),directory.filePath("audio.wav"));
+        const auto before=model->design.toJson();sound.style["audio.file"]="missing.wav";design.objects.last()=sound;QVERIFY(document.open(QIODevice::WriteOnly|QIODevice::Truncate));document.write(design.toJson().toUtf8());document.close();QVERIFY(!workspace.importFile(document.fileName()));QCOMPARE(model->design.toJson(),before);
+    }
+    void compositionMediaRelink(){
+        QTemporaryDir directory;QVERIFY(directory.isValid());QImage image(8,8,QImage::Format_ARGB32);image.fill(Qt::yellow);const auto replacement=directory.filePath("replacement.png");QVERIFY(image.save(replacement));
+        auto design=ElementDesign::defaultScene();DObject a;a.id="media-a";a.name="First image";a.type="Image";a.image=directory.filePath("missing.png");a.keyChannel("opacity",0,.5);a.keyChannel("opacity",1000,1.);auto b=a;b.id="media-b";design.objects.append(a);design.objects.append(b);const auto original=design.toJson();QString error;
+        QVERIFY(!relinkDesignAsset(design,a.image,directory.filePath("absent.png"),&error));QCOMPARE(design.toJson(),original);
+        BuildModel model;model.reset(design);QPointer<QDialog> dialog=createDesignMediaDialog(&model);dialog->show();auto *tree=dialog->findChild<QTreeWidget*>("compositionMediaList");QVERIFY(tree);QCOMPARE(tree->topLevelItemCount(),1);QCOMPARE(tree->topLevelItem(0)->text(2),QString("Missing"));tree->setCurrentItem(tree->topLevelItem(0));
+        bool selected=false;QTimer::singleShot(0,dialog,[&]{if(auto *picker=qobject_cast<QFileDialog*>(QApplication::activeModalWidget())){QTimer::singleShot(3000,picker,&QDialog::reject);picker->selectFile(replacement);selected=QMetaObject::invokeMethod(picker,"accept",Qt::DirectConnection);}});
+        dialog->findChild<QPushButton*>("relinkCompositionMedia")->click();QVERIFY(selected);QCOMPARE(model.design.toJson(),original);QCOMPARE(tree->topLevelItem(0)->text(2),QString("Available"));
+        auto *buttons=dialog->findChild<QDialogButtonBox*>();QVERIFY(buttons->button(QDialogButtonBox::Apply)->isEnabled());buttons->button(QDialogButtonBox::Apply)->click();QCOMPARE(model.design.find(a.id)->image,replacement);QCOMPARE(model.design.find(b.id)->image,replacement);QCOMPARE(model.design.find(a.id)->track("opacity")->keys.size(),2);QVERIFY(model.undo());QCOMPARE(model.design.toJson(),original);
+        auto *cancelled=createDesignMediaDialog(&model);cancelled->reject();QCOMPARE(model.design.toJson(),original);
+        QPointer<QDialog> stale=createDesignMediaDialog(&model);stale->show();auto *staleTree=stale->findChild<QTreeWidget*>("compositionMediaList");staleTree->setCurrentItem(staleTree->topLevelItem(0));auto *relink=stale->findChild<QPushButton*>("relinkCompositionMedia");QVERIFY(relink->isEnabled());
+        auto *search=stale->findChild<QLineEdit*>("mediaSearch");search->setText("no matching source");QVERIFY(staleTree->topLevelItem(0)->isHidden());QVERIFY(!relink->isEnabled());search->clear();staleTree->setCurrentItem(staleTree->topLevelItem(0));
+        QTimer::singleShot(0,stale,[&]{if(auto *picker=qobject_cast<QFileDialog*>(QApplication::activeModalWidget())){QTimer::singleShot(3000,picker,&QDialog::reject);picker->selectFile(replacement);QMetaObject::invokeMethod(picker,"accept",Qt::DirectConnection);}});relink->click();
+        model.design.find(a.id)->name="Changed while relinking";model.notify();const auto concurrent=model.design.toJson();stale->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Apply)->click();QCOMPARE(model.design.toJson(),concurrent);QVERIFY(stale->isVisible());QVERIFY(stale->findChild<QLabel*>("mediaStatus")->text().contains("composition changed"));stale->reject();
+    }
+    void perObjectInspectorExpansion(){
+        Library lib;BuildModel model;auto design=ElementDesign::defaultScene();
+        DObject first;first.id=Library::newId();first.type="Shape";first.name="Circle";first.style["shape"]="Ellipse";auto second=first;second.id=Library::newId();second.name="Square";second.style["shape"]="Rectangle";auto third=second;third.id=Library::newId();auto text=first;text.id=Library::newId();text.type="Text";
+        design.objects.append(first);design.objects.append(second);design.objects.append(third);design.objects.append(text);model.reset(design);model.select(first.id);
+        auto inspector=std::make_unique<PropertyInspector>(&model,&lib);
+        auto header=[&](const QString &name)->QToolButton*{for(int i=0;i<inspector->QWidget::layout()->count();++i)if(auto *button=qobject_cast<QToolButton*>(inspector->QWidget::layout()->itemAt(i)->widget());button&&button->text()==name)return button;return nullptr;};
+        QVERIFY(header("TRANSFORM"));QVERIFY(header("TRANSFORM")->isChecked());QVERIFY(header("CORNERS"));QVERIFY(!header("CORNERS")->isChecked());QVERIFY(!header("APPEARANCE")->isChecked());header("CORNERS")->click();
+        model.select(second.id);QVERIFY(!header("CORNERS")->isChecked());QVERIFY(header("TRANSFORM")->isChecked());header("APPEARANCE")->click();
+        model.select(first.id);QVERIFY(header("CORNERS")->isChecked());QVERIFY(!header("APPEARANCE")->isChecked());
+        model.select(third.id);QVERIFY(!header("CORNERS")->isChecked());QVERIFY(!header("APPEARANCE")->isChecked());
+        model.select(text.id);QVERIFY(header("TYPOGRAPHY"));QVERIFY(header("TYPOGRAPHY")->isChecked());QVERIFY(header("TRANSFORM")->isChecked());header("TYPOGRAPHY")->click();
+        model.select(second.id);QVERIFY(header("APPEARANCE")->isChecked());model.select(text.id);QVERIFY(!header("TYPOGRAPHY")->isChecked());
+        inspector.reset();QSettings().sync();inspector=std::make_unique<PropertyInspector>(&model,&lib);QVERIFY(!header("TYPOGRAPHY")->isChecked());model.select(first.id);QVERIFY(header("CORNERS")->isChecked());QVERIFY(!header("APPEARANCE")->isChecked());
+    }
     void rigidBodySupportAndReplay(){
         auto cube=[](QString id,QVector3D position,QVector3D scale,bool active){DObject o;o.id=id;o.type="Mesh";o.mesh=Mesh::primitive("Cube");o.base.loc=position;o.base.scl=scale;o.phys.enabled=true;o.phys.active=active;o.phys.bounce=0;o.phys.friction=.6;return o;};
         ElementDesign stable;stable.objects={cube("support",{0,0,2},{1,1,.25f},false),cube("body",{0,0,4.5f},{.5f,.5f,.5f},true)};
@@ -149,6 +326,12 @@ private slots:
         model.previewCueElapsed=1000;QVERIFY(model.cuePreviewWaiting());QVERIFY(model.continueCuePreview());QCOMPARE(model.previewCueStep,1);QCOMPARE(model.previewCueElapsed,qint64(0));QVERIFY(model.playing);
         model.previewCueElapsed=1000;QVERIFY(model.continueCuePreview());QVERIFY(!model.playing);QVERIFY(!model.continueCuePreview());
     }
+    void mirrorModifierCardPicker(){
+        Library library;BuildWorkspace workspace(&library);workspace.resize(1280,900);workspace.show();auto *model=workspace.findChild<BuildModel*>();auto *canvas=workspace.findChild<BuildCanvas*>();QVERIFY(model&&canvas);model->reset(ElementDesign::defaultScene());const auto reference=model->addMesh("Cube");const auto owner=model->addMesh("Cube");model->byId(owner)->base.loc={3,0,0};Modifier mirror;mirror.type="Mirror";model->byId(owner)->mods.append(mirror);model->notify();
+        auto *modifierTab=workspace.findChild<QPushButton*>("buildTab_Modifiers");QVERIFY(modifierTab);modifierTab->click();for(auto *section:workspace.findChildren<QToolButton*>())if(section->text()=="MIRROR"&&!section->isChecked())section->click();canvas->showCamera=false;canvas->showLights=false;canvas->frameAll();QTest::qWait(60);auto *pick=workspace.findChild<QPushButton*>("pickMirrorObject");QVERIFY(pick);QVERIFY(pick->isVisible());const auto original=model->design.toJson();pick->click();QTest::keyClick(canvas,Qt::Key_Escape);QCOMPARE(model->design.toJson(),original);QCOMPARE(model->activeId,owner);
+        pick->click();QTest::mouseClick(canvas,Qt::LeftButton,Qt::NoModifier,canvas->rect().center());QCOMPARE(model->byId(owner)->mods.first().target,reference);QCOMPARE(model->activeId,owner);QVERIFY(model->undo());QVERIFY(model->byId(owner)->mods.first().target.isEmpty());QVERIFY(model->redo());QCOMPARE(model->byId(owner)->mods.first().target,reference);
+        const auto saved=ElementDesign::fromJson(model->design.toJson());QCOMPARE(saved.find(owner)->mods.first().target,reference);
+    }
     void inspectorExpansionPerObject(){BuildModel m;Library lib;const auto first=m.addText();PropertyInspector inspector(&m,&lib);auto button=[&](QString title)->QToolButton*{QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);for(auto *b:inspector.findChildren<QToolButton*>())if(b->text()==title)return b;return nullptr;};QVERIFY(button("CORNERS"));QVERIFY(!button("CORNERS")->isChecked());button("CORNERS")->setChecked(true);const auto second=m.addText();QVERIFY(button("CORNERS"));QVERIFY(!button("CORNERS")->isChecked());m.select(first);QVERIFY(button("CORNERS")->isChecked());m.select(second);QVERIFY(!button("CORNERS")->isChecked());m.addText();QVERIFY(button("TYPOGRAPHY"));QVERIFY(button("TYPOGRAPHY")->isChecked());}
 
     void revealAndFrameExport(){
@@ -182,9 +365,19 @@ private slots:
         ElementDesign scene;DObject text;text.id="markdown-text";text.type="Text";text.w=5;text.h=3;text.fontPx=32;text.text="# Headline\n**Bold** and *italic*\n- First\n- Second";text.style["text.align"]="Left";text.style["text.vertical"]="Top";
         const auto plain=scene.textureFor(text);text.style["text.format"]="Markdown";const auto formatted=scene.textureFor(text);QVERIFY(!formatted.isNull());QVERIFY(formatted!=plain);scene.objects.append(text);const auto reopened=ElementDesign::fromJson(scene.toJson());const auto *saved=reopened.find(text.id);QVERIFY(saved);QCOMPARE(saved->style["text.format"].toString(),QString("Markdown"));QCOMPARE(reopened.textureFor(*saved),formatted);
     }
+    void markdownInspectorWorkflow(){
+        Library library;BuildModel model;auto scene=ElementDesign::defaultScene();DObject text;text.id="editable-markdown";text.type="Text";text.text="Original";text.w=6;text.h=3;text.base.rot={90,0,0};text.mat.shadeless=true;text.keyChannel("opacity",0,.5);text.keyChannel("opacity",1000,1);scene.objects.append(text);model.reset(scene);model.select(text.id);
+        PropertyInspector inspector(&model,&library);inspector.resize(350,900);inspector.show();auto *content=inspector.findChild<QPlainTextEdit*>("textContent");auto *format=inspector.findChild<QComboBox*>("property_text.format");QVERIFY(content&&format);
+        const QString markdown="# Tonight\n**Renovation** and *design*\n- New rooms\n- New ideas";content->setPlainText("{{studio:Headline}}"+markdown);QCOMPARE(model.active()->text,markdown);QVERIFY(model.active()->style["studio.editable"].toBool());QCOMPARE(content->toPlainText(),markdown);
+        format->setCurrentText("Markdown");QVERIFY(QMetaObject::invokeMethod(format,"activated",Q_ARG(int,format->currentIndex())));QCOMPARE(model.active()->style["text.format"].toString(),QString("Markdown"));QCOMPARE(model.active()->track("opacity")->keys.size(),2);
+        const auto formatted=model.design.toJson();QVERIFY(model.undo());QCOMPARE(model.active()->style["text.format"].toString("Plain text"),QString("Plain text"));QVERIFY(model.redo());QCOMPARE(model.design.toJson(),formatted);
+        auto restored=ElementDesign::fromJson(formatted);QString error;QVERIFY(setStudioField(restored,text.id,"# Tomorrow\n**The next chapter**",&error));QCOMPARE(restored.find(text.id)->style["text.format"].toString(),QString("Markdown"));QCOMPARE(restored.find(text.id)->track("opacity")->keys.size(),2);QCOMPARE(restored.find(text.id)->track("opacity")->keys[1].value,1.);
+        QTemporaryDir output;FrameExportOptions options;options.size={320,180};options.firstFrame=12;options.endFrame=13;const auto exported=exportSceneFrames(restored,output.path(),options);QVERIFY2(exported.success,qPrintable(exported.error));QImage expected(options.size,QImage::Format_ARGB32_Premultiplied);expected.fill(Qt::transparent);{QPainter painter(&expected);painter.setRenderHint(QPainter::Antialiasing);painter.setRenderHint(QPainter::SmoothPixmapTransform);restored.render(painter,expected.rect(),480,true,nullptr,false);}const QImage actual(output.filePath("frame_000012.png"));QVERIFY(!actual.isNull());QCOMPARE(actual.convertToFormat(QImage::Format_ARGB32_Premultiplied),expected);
+    }
 
     void initTestCase(){
         installUiBehavior(qApp);
+        QDir().mkpath("artifacts");
         QStandardPaths::setTestModeEnabled(true);
         qApp->setOrganizationName("CuebaseBuildTests");
         qApp->setApplicationName(QUuid::createUuid().toString(QUuid::WithoutBraces));
@@ -335,6 +528,13 @@ private slots:
         mesh=Mesh::primitive("Cube");sel.clear();QVERIFY(mesh.loopCut(mesh.edges().first(),1,sel));
         for(const auto &kind:Mesh::primitiveKinds()){auto primitive=Mesh::primitive(kind);QVERIFY(!primitive.v.isEmpty());QVERIFY(!primitive.f.isEmpty());}
     }
+    void restoredImageRefreshesTexture(){
+        QTemporaryDir directory;QVERIFY(directory.isValid());DObject object;object.id="restored-image";object.type="Image";object.w=1;object.h=1;object.image=directory.filePath("image.png");ElementDesign design;
+        auto texture=design.textureFor(object);QCOMPARE(texture.pixelColor(texture.width()/2,texture.height()/2).alpha(),0);
+        QImage source(16,16,QImage::Format_ARGB32);source.fill(Qt::red);QVERIFY(source.save(object.image));texture=design.textureFor(object);QCOMPARE(texture.pixelColor(texture.width()/2,texture.height()/2),QColor(Qt::red));
+        source.fill(Qt::blue);QVERIFY(source.save(object.image));QFile file(object.image);QVERIFY(file.open(QIODevice::ReadWrite));QVERIFY(file.setFileTime(QDateTime::currentDateTimeUtc().addSecs(2),QFileDevice::FileModificationTime));file.close();
+        texture=design.textureFor(object);QCOMPARE(texture.pixelColor(texture.width()/2,texture.height()/2),QColor(Qt::blue));QVERIFY(QFile::remove(object.image));texture=design.textureFor(object);QCOMPARE(texture.pixelColor(texture.width()/2,texture.height()/2).alpha(),0);
+    }
     void renderedStyles(){
         auto d=ElementDesign::defaultScene();DObject o;o.id="shape";o.type="Shape";o.w=3;o.h=2;o.base.rot={90,0,0};o.style["fill.kind"]="Linear";o.style["corner.radius"]=20;
         auto texture=d.textureFor(o);QVERIFY(!texture.isNull());QVERIFY(qAlpha(texture.pixel(0,0))<255);
@@ -430,6 +630,14 @@ private slots:
         auto cue=model.design.animationCues.first().toObject();QCOMPARE(cue["name"].toString(),QString("Exit"));QVERIFY(!cue["hold"].toBool());QCOMPARE(cue["end"].toInt(),50*model.frameMs());QCOMPARE(ElementDesign::fromJson(model.design.toJson()).animationCues,model.design.animationCues);
         QCOMPARE(cue["repeat"].toInt(),2);QCOMPARE(compileAnimationCue(model.design,cue).duration(),qint64(6500));QCOMPARE(cue["plays"].toArray()[0].toObject()["holdMs"].toInt(),2500);
         QVERIFY(editor->grab().save("artifacts/animation-cues.png"));QVERIFY(model.undo());QVERIFY(model.design.animationCues.isEmpty());delete editor;
+    }
+    void infiniteCueEditingPreservesPlays(){
+        BuildModel model;auto design=ElementDesign::defaultScene();QJsonObject cue{{"id","looped"},{"name","Looped cue"},{"start",0},{"end",1000},{"repeat",2},{"loop",true},{"plays",QJsonArray{QJsonObject{{"hold",true},{"holdManual",false},{"holdMs",200}},QJsonObject{{"hold",true},{"holdManual",false},{"holdMs",700}}}}};design.animationCues={cue};model.reset(design);
+        std::unique_ptr<QWidget> editor(animationCueEditor(&model));editor->resize(520,700);editor->show();QTest::qWait(30);auto *list=editor->findChild<QListWidget*>("buildCueList");QVERIFY(list);QTest::mouseClick(list->viewport(),Qt::LeftButton,Qt::NoModifier,list->visualItemRect(list->item(0)).center());
+        auto *edit=editor->findChild<QPushButton*>("editSelectedCue");QVERIFY(edit);edit->click();auto *dialog=editor->findChild<QDialog*>("cueRangeDialog");QVERIFY(dialog);auto *count=dialog->findChild<QSpinBox*>("cueRepeat");auto *plays=dialog->findChild<QComboBox*>("cuePlaySelector");QCOMPARE(count->value(),0);QCOMPARE(plays->count(),2);QVERIFY(dialog->findChild<QCheckBox*>("cueLoop")->isChecked());
+        plays->setCurrentIndex(1);QCOMPARE(dialog->findChild<QDoubleSpinBox*>("cueHoldSeconds")->value(),.7);dialog->findChild<QDoubleSpinBox*>("cueHoldSeconds")->setValue(.9);dialog->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Save)->click();
+        auto saved=model.design.animationCues.first().toObject();QVERIFY(saved["loop"].toBool());QCOMPARE(saved["repeat"].toInt(),2);QCOMPARE(compileAnimationCue(model.design,saved).duration(),qint64(-1));QCOMPARE(saved["plays"].toArray()[0].toObject()["holdMs"].toInt(),200);QCOMPARE(saved["plays"].toArray()[1].toObject()["holdMs"].toInt(),900);
+        QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);edit->click();dialog=editor->findChild<QDialog*>("cueRangeDialog");QVERIFY(dialog);count=dialog->findChild<QSpinBox*>("cueRepeat");count->setValue(3);QCOMPARE(dialog->findChild<QComboBox*>("cuePlaySelector")->count(),3);dialog->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Save)->click();saved=model.design.animationCues.first().toObject();QVERIFY(!saved["loop"].toBool());QCOMPARE(saved["repeat"].toInt(),3);QCOMPARE(compileAnimationCue(model.design,saved).duration(),qint64(4100));
     }
     void graphCoordinatesAndInterpolation(){
         QSettings().remove("animation/graphView");

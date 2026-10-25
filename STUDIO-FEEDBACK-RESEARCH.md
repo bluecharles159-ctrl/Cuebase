@@ -1,6 +1,91 @@
-# Production software feedback — initial review, 2026-10-12
+# Production software feedback and UI research — updated 2026-10-15
 
 This is a small qualitative review of publicly accessible discussions, not a survey or a claim about the frequency of problems across the industry. Some reports concern old releases or resolved bugs. The observations below distinguish reported experience from Cuebase engineering recommendations. No interviews or broadcast-station trials were conducted.
+
+## Research deliverable and evidence boundaries
+
+This report completes the scoped product/UI research and sourced feedback report
+(checklist task 74). Implementation, native UI review, the one-hour audiovisual
+study and HGTV reconstruction are separate tasks and remain incomplete. The older
+feedback below retains its original qualification; the new source review is in
+LOW-DISK-REVIEW.md. Search snippets alone do not establish current product defects.
+
+## What established production tools provide
+
+| Verified reference | Useful workflow | Cuebase implementation decision |
+|---|---|---|
+| [OBS Studio Mode](https://obsproject.com/kb/OBS-Studio-Overview#studio-mode) | Separate editable preview and live program, with an explicit transition | Keep preview scrubbing local. Return to live resynchronizes the monitor; taking edited content to air is a different command. |
+| [vMix Layers](https://www.vmix.com/help29/InputSettingsMultiView.html) | Position, crop, border, visibility, ordering and reusable multi-input layouts | Use stable source IDs and reusable layouts; animate geometry between layouts without restarting source playback. |
+| [vMix Audio Mixer](https://www.vmix.com/help29/Mixer.html) | Input/master/bus strips, separate headphone level and solo monitoring | Clearly separate monitor and program routes; meters must measure actual audio at identified processing stages. |
+| [Qt main-window layout facilities](https://doc.qt.io/qt-6/qmainwindow.html) | Nested/tabbed dock panels and stored window layout | Migrate splitters using stable panel identities; retain existing editors and document state while panels move. Verify APIs against installed Qt 6.11.2. |
+
+These are documented capabilities, not measured comparisons of reliability or speed.
+
+## Visual design systems: primary creator evidence
+
+- [HGTV / Nathaniel Howe Studios](https://nathanielhowe.com/projects/2023_hgtv_refresh/prj_index.html)
+  describes consistent typography/grids alongside variable textures and a recurring
+  gable motif. Recommendation: separate reusable layout, content fields, materials
+  and motion; permit show-specific appearances without rebuilding the composition.
+- [Disney Jr. / Makiné](https://www.makinestudios.com/case-study/disney-jr)
+  describes a modular graphical system spanning platforms and seasonal packages.
+  Recommendation: master designs with aspect-ratio/content variants and explicit
+  override controls, rather than detached copies with matching names.
+- [Nickelodeon / Shalinder Matharu](https://www.shalindermatharu.com/work/nickelodeon)
+  identifies bumpers, tags and logo bugs, and separates final on-air work from
+  exploratory work. Recommendation: label graphic purpose and distinguish a
+  preview/draft from an approved production asset.
+- [Studio Universal / Luke Tilly](https://www.luketilly.com/work/studio-universal-global-identity)
+  describes cinema/poster influences and cinematic typography. Recommendation:
+  adjustable headline hierarchy, safe regions and footage-aware layouts.
+- [Discovery / Stephen Royle](https://stephenjohnroyle.com/branding)
+  describes genre palettes, territorial adaptations and a Discovery Science
+  refresh designed for multiple screen contexts. Recommendation: shared brand
+  tokens with language/territory variants and text-fit checks.
+- [E! Style Collective / Jon Berry](https://jonberrydesign.com/estylecollective)
+  describes a flexible package for online and on-air use with multiple palettes.
+  Recommendation: editable graphic variants and portable material/style presets.
+
+These descriptions were read; their embedded videos were not watched in this
+pass. No extra audiovisual viewing time is claimed. An M-Net Movies Zone concept
+pitch was located, but a pitch does not prove that its graphics aired:
+[creator's concept](https://www.behance.net/gallery/96149671/M-Net-Movies-Re-Brand-Concept).
+
+## UI decisions for Cuebase
+
+The user's Studio Blue screenshots remain authoritative for color and sizing.
+References inform behavior; they do not replace the requested compact Inspector.
+
+1. Use the same property-row height, indentation, collapsible headers and input
+   behavior across Effects, World, Modifiers and future mixer/layout panels.
+2. Show purpose and state with text plus distinct icons. Preview, Program,
+   Draft, On air and Standby must not rely solely on color.
+3. Keep common operations directly accessible: add source, choose layout,
+   duration, preview, apply. Put advanced crop/routing/interpolation controls in
+   expandable sections instead of increasing every panel's density.
+4. Keep transition animations brief and local to UI where appropriate. The
+   return-to-live graphic must never contaminate the actual program output.
+5. Expose audio routing and monitor state beside controls, not in tooltips alone.
+   Wheel adjustments should apply only to the intended hovered/focused control.
+6. Keep source content separate from presentation. A layout switch must not
+   restart a camera/video or silently change which microphones are on air.
+
+## Current gap and priority update
+
+| Priority | Current evidence | Next implementation / acceptance | Difficulty |
+|---|---|---|---|
+| Critical | Program-instance manual cue IDs are not resolved by Continue/Hide | Shared instance resolver; independent-copy command/audio tests | Medium |
+| Critical | Network audio consumes arrival-order PCM rather than timestamped blocks | Sample-clock scheduler, discontinuity handling and independent monitor buses | High |
+| High | Handoff validates top-level media but not nested design dependencies | Shared asset inventory, relink report and isolated package reopen | Medium/high |
+| High | Timeline previews now pass; trim test update and app build await disk space | Finish build, both trim layouts and full regressions | Low/medium |
+| High | Timed multi-source split-screen system remains open | Stable layout slots, broadcast-time events, five transition presets and audio policy | High |
+| Medium | Splitters exist; full docking does not | Stable dock identities, migration, tab/float/reset and lost-monitor recovery | Medium/high |
+| High | Hosted authentication is deferred by the user | Resume real service setup when requested; do not count local profiles as live accounts | High |
+
+Priorities and difficulty are engineering judgments, not survey results or fixed
+delivery estimates. Passing local streaming tests does not establish sustained
+or public-network reliability. Full implementation acceptance still follows
+REQUIREMENTS-STATUS.md and COMPLETION-CHECKLIST.md.
 
 ## Observed feedback
 

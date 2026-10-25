@@ -2,6 +2,7 @@
 #include "UiControls.h"
 #include "SurfaceEffects.h"
 #include "CueSequence.h"
+#include "ComponentLibrary.h"
 
 #include <QUuid>
 #include <QtMath>
@@ -11,7 +12,7 @@ namespace {
 QString newId() { return QUuid::createUuid().toString(QUuid::WithoutBraces).left(8); }
 } // namespace
 
-BuildModel::BuildModel(){connect(uiGesture(),&UiGesture::finished,this,[this](quint64 token,bool cancel){if(token&&token==m_lastGesture&&cancel)cancelToUndo();});}
+BuildModel::BuildModel(){connect(uiGesture(),&UiGesture::finished,this,[this](quint64 token,bool cancel){if(token&&token==m_lastGesture&&cancel)cancelToUndo();});connect(this,&BuildModel::changed,this,[this]{Components::pruneInstanceCues(design);});}
 
 QVector<DObject *> BuildModel::selected() {
     QVector<DObject *> r;
@@ -44,8 +45,8 @@ void BuildModel::reset(const ElementDesign &d) {
 
 // ------------------------------------------------------------------ undo
 
-void BuildModel::pushUndo() {
-    const auto token=uiGesture()->token;if(token&&m_lastGesture==token)return;m_lastGesture=token;
+void BuildModel::pushUndo(bool force) {
+    const auto token=uiGesture()->token;if(!force&&token&&m_lastGesture==token)return;m_lastGesture=token;
     m_undo.append(design.toJson());
     if (m_undo.size() > 80) m_undo.removeFirst();
     m_redo.clear();
@@ -228,7 +229,8 @@ QStringList BuildModel::duplicateSelected() {
     QStringList ids;
     const QVector<DObject *> src = selected();
     if (src.isEmpty()) return ids;
-    pushUndo();
+    if(std::none_of(src.begin(),src.end(),[](auto *o){return o->type!="Camera";}))return ids;
+    pushUndo(true);
     QVector<DObject> copies;
     QHash<QString,QString> remap;
     for (DObject *s : src) {
@@ -247,6 +249,7 @@ QStringList BuildModel::duplicateSelected() {
         sel.insert(c.id);
         ids << c.id;
     }
+    for(auto it=remap.begin();it!=remap.end();++it)Components::duplicateLinks(design,it.key(),it.value());
     if (!ids.isEmpty()) activeId = copiedActive.isEmpty()?ids.last():copiedActive;
     emit selectionChanged();
     emit changed();
@@ -283,6 +286,7 @@ void BuildModel::rename(const QString &id, const QString &name) {
     DObject *o = byId(id);
     const QString n = name.trimmed();
     if (!o || n.isEmpty() || n == o->name) return;
+    if(n.startsWith("::")){emit componentRegistrationRequested(id,n.mid(2).trimmed());return;}
     pushUndo();
     o->name = n;
     emit changed();

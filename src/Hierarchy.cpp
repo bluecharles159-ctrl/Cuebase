@@ -17,8 +17,9 @@ bool ElementDesign::effectiveVisible(const DObject &o) const {
     if(!o.visible)return false;QSet<QString> seen{o.id};const DObject *p=find(o.parentId);
     while(p&&!seen.contains(p->id)){if(!p->visible)return false;seen.insert(p->id);p=find(p->parentId);}return true;
 }
-QPainterPath ElementDesign::overflowClip(const DObject &o,qint64 ms,const ViewCam &cam,const QRectF &rect) const {
-    QPainterPath result;result.addRect(rect);
+QPainterPath ElementDesign::overflowClip(const DObject &o,qint64 ms,const ViewCam &cam,const QRectF &rect,const QRectF &viewport) const {
+    const QRectF bounds=viewport.isValid()?viewport:rect;
+    QPainterPath result;result.addRect(bounds);
     QSet<QString> seen{o.id};const DObject *source=find(o.parentId);
     while(source&&!seen.contains(source->id)){
         seen.insert(source->id);const DObject p=source->evaluated(ms);
@@ -34,7 +35,7 @@ QPainterPath ElementDesign::overflowClip(const DObject &o,qint64 ms,const ViewCa
                 clip=transform.map(shape);
             }else{
                 // Clip the output rectangle against just the requested pair of projected edges.
-                QPolygonF polygon(rect);QPointF center=(quad[0]+quad[1]+quad[2]+quad[3])/4;
+                QPolygonF polygon(bounds);QPointF center=(quad[0]+quad[1]+quad[2]+quad[3])/4;
                 auto side=[](QPointF a,QPointF b,QPointF q){return (b.x()-a.x())*(q.y()-a.y())-(b.y()-a.y())*(q.x()-a.x());};
                 for(int edge:(x?QVector<int>{1,3}:QVector<int>{0,2})){
                     auto a=quad[edge],b=quad[(edge+1)%4];double sign=side(a,b,center)>=0?1:-1;QPolygonF next;

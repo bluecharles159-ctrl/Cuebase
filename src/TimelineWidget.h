@@ -14,6 +14,7 @@
 class Library;
 class Playout;
 class QScrollBar;
+class TimelineMedia;
 
 // Paints the broadcast timeline: programs, break (BR) bumpers and ads on the main lane, a draggable playhead
 // and the hover "cut" tool. Under it sit up to three extra timelines (layers) for screen elements, sounds, ads
@@ -30,10 +31,12 @@ public:
     void zoomView(double factor);
     void revealPlayhead();
     void setFixedPlayhead(bool enabled);
+    Q_INVOKABLE void reloadPreferences();
     bool fixedPlayhead() const { return m_fixedPlayhead; }
     bool followingPlayhead() const { return m_fixedPlayhead && !m_followPaused; }
     int blockX(int index) const { return index >= 0 && index < m_blocks.size() ? m_blocks[index].x : 0; }
     int blockW(int index) const { return index >= 0 && index < m_blocks.size() ? m_blocks[index].w : 0; }
+    QRect placementRect(const QString &id) const { for(const auto &block:m_pblocks)if(block.id==id)return block.rect;return {}; }
 
     // DropTarget
     bool dragMove(const DragPayload &p, const QPoint &globalPos) override;
@@ -74,6 +77,11 @@ private:
     qint64 m_rangeStart=-1,m_rangeEnd=-1;
     double m_pixelsPerSecond=14;
     bool m_fixedPlayhead=true,m_followPaused=false;
+    bool m_thumbnails=true,m_waveforms=true;
+    TimelineMedia *m_media=nullptr;
+    int mainHeight() const { return 40+(m_thumbnails?48:0)+(m_waveforms?20:0); }
+    int labelTop() const { return 36+mainHeight()+4; }
+    int laneTop() const { return labelTop()+20; }
     int m_originX=10;
     QPointer<QScrollBar> m_navigationBar;
     int viewportWidth() const;

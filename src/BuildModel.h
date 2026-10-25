@@ -84,7 +84,7 @@ public:
     void stepFrame(int dir);
 
     // ---- undo
-    void pushUndo();
+    void pushUndo(bool force = false);
     bool undo();
     bool redo();
     void dropUndo();   // forget the last snapshot (a cancelled modal operation)
@@ -116,6 +116,7 @@ public:
     void notify() { emit changed(); }
 
 signals:
+    void componentRegistrationRequested(const QString &objectId,const QString &name);
     void cuePlaybackRequested();
     void cueFramesRequested(qint64 start,qint64 end);
     void cueEditorRequested(const QString &cueId);

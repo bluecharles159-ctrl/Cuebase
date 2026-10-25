@@ -91,7 +91,7 @@ void PropertyInspector::number(QFormLayout *form,const QString &label,const QStr
     });
 }
 void PropertyInspector::choice(QFormLayout *form,const QString &label,const QString &path,const QStringList &options,const QString &fallback){
-    auto *combo=new QComboBox;combo->addItems(options);form->addRow(label,combo);
+    auto *combo=new QComboBox;combo->setObjectName("property_"+path);combo->setAccessibleName(label);combo->addItems(options);form->addRow(label,combo);
     connect(combo,&QComboBox::activated,this,[=, this]{apply([&]{for(auto *o:m->inspected())if(!o->locked)o->style[path]=combo->currentText();});});
     sync.append([=, this]{if(auto *o=m->active()){
         combo->setCurrentText(o->style[path].toString(fallback));combo->setEnabled(!o->locked);
@@ -232,7 +232,7 @@ void PropertyInspector::rebuild(){
         if(o->type=="Text")connect(fit,&QCheckBox::toggled,this,[=,this](bool on){apply([&]{if(auto *x=m->active())x->style["studio.fit"]=on;});});
     }
     if(!multi && o->type=="Text"){
-        auto *text=section("TYPOGRAPHY");auto *content=new QPlainTextEdit(o->text);content->setMaximumHeight(70);text->addRow(content);
+        auto *text=section("TYPOGRAPHY");auto *content=new QPlainTextEdit(o->text);content->setObjectName("textContent");content->setAccessibleName("Text content");content->setMaximumHeight(70);text->addRow(content);
         sync.append([=,this]{if(auto *object=m->active();object&&!content->hasFocus()&&content->toPlainText()!=object->text){QSignalBlocker blocker(content);content->setPlainText(object->text);}});
         connect(content,&QPlainTextEdit::textChanged,this,[=, this]{apply([&]{if(auto *x=m->active()){if(parseStudioText(*x,content->toPlainText())){QSignalBlocker block(content);content->setPlainText(x->text);}}});});
         choice(text,"Formatting","text.format",{"Plain text","Markdown"},"Plain text");
@@ -254,6 +254,17 @@ void PropertyInspector::rebuild(){
         choice(image,"Fit","image.fit",{"Fill","Contain","Cover","None","Scale Down"},"Contain");number(image,"Horizontal","image.x",0,1,.05);number(image,"Vertical","image.y",0,1,.05);
     }
     if(!multi&&(o->type=="Shape"||o->type=="Text"||o->type=="Image")){
+        auto *texture=section("SURFACE TEXTURE",false);
+        auto *enabled=new QCheckBox("Use texture");texture->addRow(enabled);
+        connect(enabled,&QCheckBox::toggled,this,[=,this](bool on){apply([&]{if(auto *object=m->active())object->style["texture.enabled"]=on;});});
+        auto *path=new QLabel;path->setWordWrap(true);texture->addRow(path);
+        sync.append([=,this]{if(auto *object=m->active()){QSignalBlocker block(enabled);enabled->setChecked(object->style["texture.enabled"].toBool(true));const auto file=object->style["texture.file"].toString();path->setText(file.isEmpty()?"Apply a texture from the Material tab.":QFileInfo(file).fileName());path->setToolTip(file);}});
+        choice(texture,"Mapping","texture.mapping",{"Fit","Tile"},"Fit");
+        choice(texture,"Blend","texture.blend",{"Normal","Multiply","Screen","Overlay"},"Normal");
+        number(texture,"Scale X","texture.scaleX",.01,100,.05);number(texture,"Scale Y","texture.scaleY",.01,100,.05);
+        number(texture,"Offset X","texture.offsetX",-10000,10000,1," px");number(texture,"Offset Y","texture.offsetY",-10000,10000,1," px");
+        number(texture,"Rotation","texture.rotation",-3600,3600,1,"°");number(texture,"Opacity","texture.opacity",0,1,.05);color(texture,"Tint","texture.tint","#ffffff");
+        auto *clear=new QPushButton("Remove texture");texture->addRow(clear);connect(clear,&QPushButton::clicked,this,[this]{apply([&]{if(auto *object=m->active())object->style.remove("texture.file");});});
         auto *overflow=section("OVERFLOW",false);choice(overflow,"X","overflow.x",{"Visible","Hidden"},"Visible");choice(overflow,"Y","overflow.y",{"Visible","Hidden"},"Visible");
     }
     if(!multi && o->type=="Mesh"){

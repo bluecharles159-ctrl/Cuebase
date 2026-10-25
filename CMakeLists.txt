@@ -18,8 +18,14 @@ add_library(CuebaseBuildCore STATIC
     src/UiControls.h src/UiControls.cpp
     src/UiIcons.cpp src/UiTheme.h src/UiTheme.cpp assets/icons.qrc
     src/AssetImport.h src/AssetImport.cpp
+    src/DesignAssets.h src/DesignAssets.cpp
+    src/DesignMediaDialog.cpp
+    src/TextureLibrary.h src/TextureLibrary.cpp src/TextureLibraryPanel.cpp
+    src/ComponentLibrary.h src/ComponentLibrary.cpp src/ComponentBrowser.cpp
     src/MediaFrames.h src/MediaFrames.cpp
+    src/TimelineMedia.h src/TimelineMedia.cpp
     src/FrameExport.h src/FrameExport.cpp
+    src/ColorManagement.h src/ColorManagement.cpp
     src/Mesh.h src/Mesh.cpp src/MeshOps.cpp
     src/ElementDesign.h src/ElementDesign.cpp src/Animation.cpp src/DesignTexture.cpp src/Hierarchy.cpp
     src/RigidBodySimulation.h src/RigidBodySimulation.cpp
@@ -27,6 +33,7 @@ add_library(CuebaseBuildCore STATIC
     src/BuildCanvas.h src/BuildCanvas.cpp
     src/BuildWorkspace.h src/BuildWorkspace.cpp
     src/AnimationEditor.h src/AnimationEditor.cpp
+    src/CurveNoise.h src/CurveNoise.cpp
     src/AnimationCuePanel.h src/AnimationCuePanel.cpp
     src/CueSequence.h src/CueSequence.cpp
     src/PropertyInspector.h src/PropertyInspector.cpp
@@ -35,6 +42,7 @@ target_include_directories(CuebaseBuildCore PUBLIC src)
 target_link_libraries(CuebaseBuildCore PUBLIC Qt6::Widgets Qt6::Multimedia Qt6::Svg assimp::assimp PkgConfig::AV PkgConfig::BULLET)
 
 add_library(CuebasePlanningUi STATIC
+    src/PlanHandoff.h src/PlanHandoff.cpp
     src/ProductionPlan.h src/ProductionPlan.cpp
     src/PlanningCanvas.h src/PlanningCanvas.cpp
     src/ProductionBoard.h src/ProductionBoard.cpp)
@@ -59,7 +67,6 @@ add_executable(Cuebase WIN32
     src/StudioElements.h src/StudioElements.cpp src/StudioCueBoard.h src/StudioCueBoard.cpp src/StudioDashboard.h src/StudioDashboard.cpp
     src/ControlPanel.h src/ControlPanel.cpp
     src/NetworkOutputPanel.h src/NetworkOutputPanel.cpp
-    src/ColorManagement.h src/ColorManagement.cpp
     src/DragDrop.h src/DragDrop.cpp)
 add_library(CuebaseStreaming STATIC src/NetworkOutput.h src/NetworkOutput.cpp)
 target_include_directories(CuebaseStreaming PUBLIC src)
@@ -79,6 +86,15 @@ if(BUILD_TESTING)
     add_test(NAME CuebasePlanning COMMAND CuebasePlanningTests)
     add_executable(CuebaseBuildTests tests/BuildTests.cpp)
     target_link_libraries(CuebaseBuildTests PRIVATE CuebaseBuildCore Qt6::Test)
+    add_executable(CuebaseTextureTests tests/TextureTests.cpp)
+    target_link_libraries(CuebaseTextureTests PRIVATE CuebaseBuildCore Qt6::Test)
+    add_test(NAME CuebaseTextures COMMAND CuebaseTextureTests -platform offscreen)
+    add_executable(CuebaseComponentTests tests/ComponentTests.cpp)
+    target_link_libraries(CuebaseComponentTests PRIVATE CuebaseBuildCore Qt6::Test)
+    add_executable(CuebaseEditorInteractionTests tests/EditorInteractionTests.cpp)
+    target_link_libraries(CuebaseEditorInteractionTests PRIVATE CuebaseBuildCore Qt6::Test)
+    add_test(NAME CuebaseEditorInteractions COMMAND CuebaseEditorInteractionTests -platform offscreen)
+    add_test(NAME CuebaseComponents COMMAND CuebaseComponentTests -platform offscreen)
     add_test(NAME CuebaseBuild COMMAND CuebaseBuildTests -platform offscreen
         -o test-results.txt,txt -o test-results.xml,junitxml)
     add_executable(CuebaseStreamTests tests/StreamTests.cpp
@@ -92,8 +108,7 @@ if(BUILD_TESTING)
     src/Replay.h src/Replay.cpp
         src/CrewWorkspace.h src/CrewWorkspace.cpp src/CrewPortal.h
         src/TimelineWidget.h src/TimelineWidget.cpp src/DragDrop.h src/DragDrop.cpp
-        src/Playout.h src/Playout.cpp src/ViewportWidget.h src/ViewportWidget.cpp
-        src/ColorManagement.h src/ColorManagement.cpp)
+        src/Playout.h src/Playout.cpp src/ViewportWidget.h src/ViewportWidget.cpp)
     target_link_libraries(CuebaseStreamTests PRIVATE CuebaseStreaming CuebaseBuildCore CuebasePlanningUi Qt6::Test Qt6::Widgets)
     if(WIN32)
         target_link_libraries(CuebaseStreamTests PRIVATE psapi)

@@ -1,5 +1,6 @@
 #include "ElementDesign.h"
 #include <algorithm>
+#include <cmath>
 
 QStringList transformChannels() {
     return {"position.x", "position.y", "position.z", "rotation.x", "rotation.y", "rotation.z",
@@ -35,6 +36,41 @@ void PropertyTrack::setKey(int ms, double value, const QString &interpolation) {
     }
 }
 double PropertyTrack::evaluate(qint64 ms, double fallback) const {
+    const double base=evaluateBase(ms,fallback);
+    if(noise.isEmpty()||!noise["enabled"].toBool(true))return base;
+    auto number=[&](const char *key,double def,double lo,double hi){const double v=noise[key].toDouble(def);return std::isfinite(v)?qBound(lo,v,hi):def;};
+    double influence=number("influence",1,0,1);
+    const double seconds=double(ms)/1000.;
+    if(noise["restricted"].toBool()){
+        const double start=number("start",0,0,1e9),end=number("end",1,0,1e9);
+        if(seconds<start||seconds>end||end<start)return base;
+        const double fadeIn=number("fadeIn",0,0,1e9),fadeOut=number("fadeOut",0,0,1e9);
+        if(fadeIn>0)influence*=qBound(0.,(seconds-start)/fadeIn,1.);
+        if(fadeOut>0)influence*=qBound(0.,(end-seconds)/fadeOut,1.);
+    }
+    if(influence==0)return base;
+    const double scale=number("scale",1,.001,1e9),offset=number("offset",0,-1e9,1e9);
+    const auto seed=quint32(number("seed",1,0,2147483647));
+    const int depth=int(number("depth",0,0,8));
+    const double roughness=number("roughness",.5,0,1),lacunarity=number("lacunarity",2,1,4);
+    auto sample=[&](double x,int octave){
+        // Bounded coordinates and unsigned integer mixing give stable random-access playback.
+        x=std::fmod(x,1048576.);const auto cell=qint64(std::floor(x));const double t=x-std::floor(x),smooth=t*t*t*(t*(t*6-15)+10);
+        auto hash=[&](qint64 i){quint32 h=quint32(i)^seed^(quint32(octave+1)*0x9e3779b9U);h^=h>>16;h*=0x7feb352dU;h^=h>>15;h*=0x846ca68bU;h^=h>>16;return double(h)/4294967295.;};
+        return hash(cell)*(1-smooth)+hash(cell+1)*smooth;
+    };
+    double x=(seconds-offset)/scale,value=0,weight=1,total=0;
+    for(int octave=0;octave<=depth;++octave){value+=sample(x,octave)*weight;total+=weight;weight*=roughness;x*=lacunarity;}
+    value/=total;
+    const double strength=number("strength",1,-1e6,1e6);
+    const QString blend=noise["blend"].toString("Replace");
+    double result=base+(value-.5)*strength;
+    if(blend=="Add")result=base+value*strength;
+    else if(blend=="Subtract")result=base-value*strength;
+    else if(blend=="Multiply")result=base*value*strength;
+    return base+(result-base)*influence;
+}
+double PropertyTrack::evaluateBase(qint64 ms, double fallback) const {
     if (keys.isEmpty()) return fallback;
     if (ms <= keys.first().ms) return keys.first().value;
     if (ms >= keys.last().ms) return keys.last().value;
@@ -107,6 +143,7 @@ void DObject::refreshLegacyKeys() {
 }
 
 double DObject::propertyBase(const QString &path) const {
+    if(path=="texture.scaleX"||path=="texture.scaleY"||path=="texture.opacity")return style[path].toDouble(1);
     if(path=="effects.revealBlock")return style[path].toDouble(32);
     if(path=="effects.revealSpread")return style[path].toDouble(1);
     if(path=="effects.revealSteps")return style[path].toDouble(8);

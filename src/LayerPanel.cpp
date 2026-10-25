@@ -23,15 +23,16 @@ LayerPanel::LayerPanel(BuildModel *model,QWidget *parent):QTreeWidget(parent),m(
     connect(this,&QTreeWidget::itemChanged,this,[this](QTreeWidgetItem *item,int col){if(!syncing&&col==0)m->rename(item->data(0,Qt::UserRole).toString(),item->text(0));});refresh();
 }
 void LayerPanel::refresh(){
-    QString sig;for(const auto &o:m->design.objects)sig+=o.id+o.name+o.parentId+QString::number(o.visible)+QString::number(o.locked);
+    QString sig;for(const auto &o:m->design.objects)sig+=o.id+o.name+o.parentId+QString::number(o.visible)+QString::number(o.locked)+o.style["component.id"].toString()+o.style["component.role"].toString();
     syncing=true;
     if(sig!=signature){
         QSet<QString> closed;for(QTreeWidgetItemIterator it(this);*it;++it)if((*it)->childCount()&&!(*it)->isExpanded())closed.insert((*it)->data(0,Qt::UserRole).toString());
         signature=sig;clear();QHash<QString,QTreeWidgetItem*> items;
         for(const auto &o:m->design.objects){auto *item=new QTreeWidgetItem(QStringList{o.name});item->setData(0,Qt::UserRole,o.id);items[o.id]=item;
             item->setFlags(item->flags()|Qt::ItemIsEditable|Qt::ItemIsDragEnabled|Qt::ItemIsDropEnabled);
-            item->setIcon(0,uiIcon(o.type));item->setIcon(1,uiIcon(o.visible?"eye":"hidden",o.visible));item->setIcon(2,uiIcon(o.locked?"lock":"unlock",o.locked));
+            const bool component=!o.style["component.id"].toString().isEmpty();item->setIcon(0,uiIcon(component?"component":o.type));item->setIcon(1,uiIcon(o.visible?"eye":"hidden",o.visible));item->setIcon(2,uiIcon(o.locked?"lock":"unlock",o.locked));
             item->setToolTip(0,o.type+" · F2 to rename · Ctrl+P to parent to the active layer");item->setToolTip(1,o.visible?"Hide layer":"Show layer");item->setToolTip(2,o.locked?"Unlock layer":"Lock layer");
+            if(component)item->setToolTip(0,o.style["component.role"].toString()+" · "+o.type+" · / opens Components");
         }
         for(const auto &o:m->design.objects){auto *item=items[o.id];QSet<QString> seen{o.id};auto *parent=m->byId(o.parentId);bool cycle=false;
             while(parent){if(seen.contains(parent->id)){cycle=true;break;}seen.insert(parent->id);parent=m->byId(parent->parentId);}

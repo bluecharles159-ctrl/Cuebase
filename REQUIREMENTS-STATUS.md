@@ -1,6 +1,8 @@
 # Cuebase completion ledger
 
-Updated 2026-10-13. This is a development record, not a release certificate.
+Updated 2026-10-24. This is a development record, not a release certificate.
+The fixed user-facing counter is in COMPLETION-CHECKLIST.md: 80 acceptance groups.
+Update that counter after each verified completion; partial work remains open.
 The user requires the complete requested scope before final delivery. A successful
 compile, a prototype, an interface control, or a source archive does not satisfy
 that requirement by itself. Do not label a package complete while items below
@@ -16,23 +18,90 @@ Do not convert an untested feature into a completed item merely because it exist
 
 ## Immediate repair pass
 
+2026-10-24: recorded the completed October 22 component verification from the
+first brief's section 8. Tasks 61–62 pass 12 component cases, 55 editor cases,
+9 texture cases and 4 focused Studio cases. Reusable objects have stable IDs,
+:: registration, searchable insertion, source revisions, group links, local
+overrides and explicit selective propagation with undo. The fixed counter is
+23 of 80 completed, 57 remaining. See REUSABLE-OBJECTS.md for the precise scope.
+
+2026-10-22: resumed the two long briefs with the first brief's section 2 texture
+library. Implementation adds imported managed assets, stable IDs, thumbnails,
+collections/favorites/search, reusable surface presets, scene application/undo,
+portable preset sharing, missing-texture repair and evaluated texture controls.
+Task 52 passes 9 texture workflow cases and all 55 editor regression cases; the
+fixed counter is now 21 of 80 completed, 59 remaining. Ordered material layers, masks,
+painting remain separate open tasks, not implied by this library. Components were
+verified separately as recorded above.
+The light-hierarchy fix is verified by 55 editor and 6 Studio cases; see VERIFICATION.
+
+Display-color follow-up: Final and clean Build previews and PNG still/sequence
+exports share Studio's view/look/exposure/gamma transform; Work and Material stay
+ungraded. Display changes repaint both previews. The full editor suite passes
+54 cases and focused Studio output checks pass 6, including actual color-managed
+program frames. See COLOR-MANAGEMENT.md and VERIFICATION.md. Wider lighting and
+performance acceptance remains under item 50; the counter is unchanged at 20/80.
+
+Background parity is verified for Solid/Gradient/Media with translucent backdrop
+effects through Inspector, Build Final, PNG export and Studio. The editor suite
+passes 53 cases and the focused Studio suite passes 6. PNG still/sequence export
+also retains project motion blur. See VERIFICATION.md for logs and alpha-format
+comparison details. **20 of 80 completed — 60 remaining.** Display color grading,
+broader lighting and native UI acceptance remain open.
+
+Surface-reveal acceptance completed: five styles × five timing modes verified
+through Inspector controls and exact PNG export comparisons, with undo/redo and
+repeatable seeking. Rendered proof sheet inspected. See REVEAL-EFFECTS.md and
+`reveal-workflow-results.txt` (5 passing cases). This earlier pass brought the
+counter to 19 of 80. Mesh/volume/fluid simulation remains separate work.
+
+Current priority from the user: Build's plain working appearance and finished
+preview, before resuming the broader backlog. Work / Material / Final modes and a
+separate Wireframe option are implemented and verified by the 48-case editor suite
+(`build-modes-results.txt`, zero failures). Work strips
+finishing style from temporary evaluated surfaces, preserving source data. The
+mode selector and keyboard cycling share state and persist locally. Work and Final
+captures were inspected; switching preserves source JSON and final rendered pixels. See
+BUILD-VIEW-MODES.md. Item 50 remains open for adaptive quality and full output
+acceptance; no completion count is awarded for controls alone.
+
+Following pass: 50 editor cases pass in `composition-guides-results.txt`. Auto/
+Full/Half/Quarter quality, bounded zoom buffers and image-backed backdrop rendering
+are implemented. Final and the clean preview use project motion-blur settings.
+Custom ruler guides now save normalized coordinates with each composition and
+support undo, movement, clearing and reopening. Rounded guide settings expose safe
+insets, grid spacing and guide color. Actual dialogs/canvas captures inspected;
+complete performance/lighting and responsive object-layout acceptance remain open.
+
+2026-10-20: Channel identity workflow verified with imported and built logos,
+circular preview/header containers, rounded profile editor, draft cancellation and
+save/reopen. Seven focused Studio cases passed, followed by three final-polish
+cases. See VERIFICATION.md. Fixed counter: **18 of 80 completed — 62 remaining**.
+
+Build's ordinary screen-element save now confirms persistence before reporting
+success. Failed writes restore the library, category list and channel-logo
+selection while retaining the unsaved edit for retry. The full editor suite passes
+47 cases in `element-save-editor-results.txt`, including forced failure, retry,
+main-logo naming, persisted identity and break-screen categorization. The supported
+composition tags are documented in ELEMENT-NAMING.md; broader shorthand work stays
+open.
+
 | Request | Current evidence / remaining work |
 |---|---|
-| Object origins and overlay toggle | Implemented; image-difference check passed within the focused test before its later selection assertion failed. Native visual inspection outstanding. |
-| Apply modifier icon and shortcut | Implemented; mesh equality, undo, stack order and Edit Mode rejection assertions passed before a later assertion failed. Full regression rerun pending. |
-| Mirror reference object picker | Implemented; viewport pick/cancel assertions passed. Exercise the actual modifier-card button as well. |
-| Enter commits and removes input focus | Focused test found direct-spinbox focus retention. Handler added; rebuild and verification pending. |
-| Select All feedback / unexpected gizmo movement | Feedback and hidden-object filtering implemented. Test corrected to actually hide camera/light overlays. Rerun pending. |
-| Parented Edit Mode coordinates | World-transform fix implemented; assertion was not reached in the failed focused test. Must rerun. |
-| Preserve shape appearance when entering Edit Mode | Outline conversion implemented; triangle/shadeless assertion awaits rerun. |
-| Rounded cue modal and clean numeric fields | Saving/persistence passed. Captured modal exposes inherited label backgrounds; visual cleanup still required. |
-| Loop count and different holds for individual plays | Cue compiler and modal persistence focused tests passed. Studio timing editor still needs direct interaction coverage. |
-| Manual cue hold in Build | Continue control and state transition implemented; new checks pending rebuild. |
+| Object origins and overlay toggle | Origin overlay image-difference check passed in the 38-case Build baseline. Native visual inspection outstanding. |
+| Apply modifier icon and shortcut | Mesh equality, undo, stack order and Edit Mode rejection passed in modifierApplyAndPicking. Native shortcut review remains. |
+| Mirror reference object picker | Actual modifier-card button, viewport selection, Escape cancel, undo/redo and saved reference passed in mirror-card-results.txt. |
+| Enter commits and removes input focus | ValueInput and native QSpinBox Enter/Return commit-and-blur checks passed in horizontalInputs. |
+| Select All feedback / unexpected gizmo movement | Feedback, hidden-object filtering and unchanged-scene assertions passed in modifierApplyAndPicking. |
+| Parented Edit Mode coordinates | World-transform vertex-selection check passed in modifierApplyAndPicking. |
+| Preserve shape appearance when entering Edit Mode | Triangle conversion and shadeless preservation passed in modifierApplyAndPicking. |
+| Rounded cue modal and clean numeric fields | Persistence and shared theme checks passed after the Studio Blue styling update; native modal review remains. |
+| Loop count and different holds for individual plays | Build modal and Studio controls verified: finite/infinite counts, independent holds, disable/re-enable and save retain timings. Latest editor suite 44 passed; focused Studio suite 7 passed. Task 10 complete; native appearance review remains separate. |
+| Manual cue hold in Build | Per-play manual hold/continue transitions passed in independentCuePlays. |
 
 ## Earlier requested workflows
 
-The last committed verification baseline is described in VERIFICATION.md. Its
-29 Build and 23 Studio test cases predate the current repair pass.
+The latest evidence is described in VERIFICATION.md: 44 Build cases and 7 focused Studio cue cases passed; the earlier handoff/replay suite passed 12 cases. Reviewed handoff, per-object inspector state and independent cue-loop timing are verified. Portable composition media is implemented and tested; broader packaging and native/release gates remain open. Markdown Inspector edits, undo/redo and PNG/render parity also passed the six-case workflow suite. Mirror card picking, cancel, undo/redo and saved references passed four focused checks. Per-placement overlap ordering passed five focused checks. The corrected full editor rerun passed all 46 cases on 2026-10-20. Current counter: 17 of 80 completed, 63 remaining.
 
 | Area | Remaining acceptance work |
 |---|---|
@@ -43,7 +112,7 @@ The last committed verification baseline is described in VERIFICATION.md. Its
 | Screen-element browser, saved-scene switching, crops, playlists, metadata and presets | Existing workflows require a full visual and persistence review. |
 | Editable general text/media fields preserving animations | Existing text and media validation coverage; audit naming syntax, labels and all supported object types. |
 | Recursive cue boards, duplication, holds/loops, delay scheduling, durations and on-air edit protection | Existing compiler/Studio coverage; verify per-play changes and nested UI, preview highlighting, trim/extension semantics and live edit boundaries together. |
-| Studio timeline, removable main-track items, exact clip duration, fixed playhead and navigation | Fixed-center navigation exists; waveform/thumbnail strips and the requested primary-sequence architecture remain open. |
+| Studio timeline, removable main-track items, exact clip duration, fixed playhead and navigation | Source-aligned waveform/thumbnail strips and persistent settings passed focused verification, including both trim modes. Fixed-center navigation exists; the requested primary-sequence architecture and native/performance review remain open. |
 | Replay effects, private scrubbing with live picture-in-picture, return-to-live and emergency content | Partial implementation and regression coverage. Verify full UX, transitions, editable error messages and recovery. Live-camera DVR replay is not implemented. |
 | Channel identity, circular imported logos, onboarding, isolated channels and multiple windows | Circular logo treatment exists; production accounts and isolated multi-channel workspaces remain open. |
 | Timed multi-source split screens and transition presets | Open. |
@@ -89,7 +158,7 @@ EXPANSION” document. CREATIVE-STUDIO-PLAN.md records implementation dependenci
   scrollbars throughout. Theme changes must affect existing and newly opened UI.
 - Use an actual licensed icon library with distinct Inspector, View/Align,
   Graph, Animation Cues and Modifier symbols. Lucide subset has been downloaded
-  with provenance/license; integration is pending.
+  with provenance/license; shared theme/icon checks passed. Native panel audit remains.
 - Dropdown option lists, context menus and option-selection dialogs should use
   the supplied object-context-menu reference: rounded padded rows, clear hover
   highlight and consistent nested-menu styling. Form dialogs share the theme.
