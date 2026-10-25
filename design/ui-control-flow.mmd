@@ -1,0 +1,35 @@
+flowchart LR
+action(["Choose an action"]) --> kind{"What needs editing?"}
+subgraph panels ["Continuous work stays beside the canvas"]
+ inspector["Inspect selected object"] --> groups["Open relevant section"]
+ groups --> change["Edit and preview"]
+ change --> undo["Commit with undo"]
+end
+subgraph dialogs ["Bounded setup uses a focused modal"]
+ modal["Open rounded modal"] --> sections["General and relevant options"]
+ sections --> decision{"Save or cancel?"}
+ decision -->|"Save"| validate{"Inputs valid?"}
+ validate -->|"Yes"| apply["Apply and restore focus"]
+ validate -->|"No"| error["Show field errors"]
+ error --> sections
+ decision -->|"Cancel"| discard["Discard draft"]
+end
+subgraph cues ["Animation cues"]
+ selectedKeys["Select keyframes"] --> createCue["Cue Animation modal"]
+ createCue --> cueList["Save to cue list"]
+ cueList --> cueInspector["Inspect selected cue"]
+ cueInspector --> plays["Edit individual plays"]
+end
+subgraph curves ["Graph modifiers"]
+ selectedCurve["Select animation curve"] --> noise["Noise controls"]
+ noise --> curvePreview["Preview curve result"]
+end
+kind -->|"Object property"| inspector
+kind -->|"Import, export, account"| modal
+kind -->|"Independent playback"| selectedKeys
+kind -->|"Curve behavior"| selectedCurve
+style panels fill:#C2E5FF,stroke:#3DADFF
+style dialogs fill:#DCCCFF,stroke:#874FFF
+style cues fill:#C6FAF6,stroke:#5AD8CC
+style curves fill:#FFE0C2,stroke:#FF9E42
+style error fill:#FFCDC2,stroke:#FF7556

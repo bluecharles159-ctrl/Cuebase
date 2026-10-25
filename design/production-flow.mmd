@@ -1,0 +1,45 @@
+flowchart LR
+subgraph access ["01 · Enter a workspace"]
+ launch(["Open Cuebase"]) --> mode{"Choose use mode"}
+ mode -->|"Studio default"| signIn["Sign in"]
+ signIn --> channel["Create or select channel"]
+ mode -->|"Editing"| localProject["Open local project"]
+end
+subgraph prepare ["02 · Prepare and create"]
+ library["Programs and asset library"] --> build["Build graphics and animation"]
+ library --> audio["Audio editing and mix"]
+ build --> finalView["Review final camera"]
+ audio --> finalView
+ finalView --> reusable["Save assets and variants"]
+end
+subgraph planning ["03 · Plan off air"]
+ planner["Open Planning Board"] --> sequence["Arrange primary sequence"]
+ sequence --> notes["Attach notes and links"]
+ notes --> rehearse["Preview planned sequence"]
+ rehearse --> valid{"Plan ready?"}
+ valid -->|"Revise"| sequence
+end
+subgraph production ["04 · Broadcast"]
+ handoff["Send reviewed plan"] --> studio["Studio timeline and cues"]
+ studio --> output["Live program output"]
+ output --> inspect{"Inspect another time?"}
+ inspect -->|"Yes"| privatePreview["Private preview + live inset"]
+ privatePreview --> returnLive["Return to Live"]
+ returnLive --> output
+end
+subgraph delivery ["05 · Deliver"]
+ export["Export settings modal"] --> render["Render and validate"]
+ render --> files(["Media or project package"])
+end
+channel --> library
+localProject --> library
+library --> planner
+reusable --> planner
+valid -->|"Yes"| handoff
+finalView --> export
+inspect -->|"No"| output
+style access fill:#D9D9D9,stroke:#B3B3B3
+style prepare fill:#DCCCFF,stroke:#874FFF
+style planning fill:#C2E5FF,stroke:#3DADFF
+style production fill:#CDF4D3,stroke:#66D575
+style delivery fill:#FFE0C2,stroke:#FF9E42

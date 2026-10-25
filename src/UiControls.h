@@ -32,6 +32,13 @@ UiGesture *uiGesture();
 // Horizontal scrub input: drag to adjust, double-click to type; vertical wheel passes to scrolling.
 template<class Base> class ScrubInput : public Base {
     QPoint press,last;double initial=0,total=0;bool pressed=false,dragged=false,typing=false;
+    void layoutEditor(){
+        // This buttonless control owns its content insets. Some stylesheet /
+        // native-style combinations return a one-pixel spin edit subcontrol.
+        // Lay out the real editor after Qt, without replacing its editing logic.
+        if(this->buttonSymbols()==QAbstractSpinBox::NoButtons)
+            this->lineEdit()->setGeometry(this->contentsRect().adjusted(5,2,-5,-3));
+    }
 public:
     explicit ScrubInput(QWidget *parent=nullptr):Base(parent){
         this->setButtonSymbols(QAbstractSpinBox::NoButtons);this->setKeyboardTracking(false);
@@ -43,6 +50,9 @@ public:
         this->setToolTip("Drag horizontally or scroll horizontally to adjust. Shift for precision. Double-click to type.");
     }
 protected:
+    void resizeEvent(QResizeEvent *event) override {Base::resizeEvent(event);layoutEditor();}
+    void showEvent(QShowEvent *event) override {Base::showEvent(event);layoutEditor();}
+    void changeEvent(QEvent *event) override {Base::changeEvent(event);layoutEditor();}
     void keyPressEvent(QKeyEvent *event) override {
         if(event->key()==Qt::Key_Return||event->key()==Qt::Key_Enter){
             this->interpretText();typing=false;this->lineEdit()->deselect();

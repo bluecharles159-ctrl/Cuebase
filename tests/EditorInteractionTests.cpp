@@ -26,6 +26,17 @@ class EditorInteractionTests:public QObject{
     ElementDesign scene(){auto design=ElementDesign::defaultScene();DObject object;object.id="plate";object.name="Plate";object.type="Shape";object.w=4;object.h=2;object.base.rot={90,0,0};object.mat.shadeless=true;object.keyChannel("position.x",0,0);object.keyChannel("position.x",1000,2);object.keyChannel("rotation.y",0,0);object.keyChannel("rotation.y",1000,30);design.objects.append(object);return design;}
 private slots:
     void initTestCase(){QStandardPaths::setTestModeEnabled(true);qApp->setApplicationName("CuebaseEditorInteractionTests");installUiBehavior(qApp);applyUiTheme("Studio Blue",false);QDir().mkpath("artifacts");}
+    void themeTextContrast(){
+        auto luminance=[](const QColor &c){auto linear=[](double value){return value<=.04045?value/12.92:std::pow((value+.055)/1.055,2.4);};return .2126*linear(c.redF())+.7152*linear(c.greenF())+.0722*linear(c.blueF());};
+        for(const auto &theme:QStringList{"Studio Blue","Current","Darker","Light"}){
+            applyUiTheme(theme,false);const auto palette=qApp->palette();
+            for(const auto &roles:QList<QPair<QPalette::ColorRole,QPalette::ColorRole>>{{QPalette::WindowText,QPalette::Window},{QPalette::Text,QPalette::Base},{QPalette::ButtonText,QPalette::Button},{QPalette::PlaceholderText,QPalette::Base},{QPalette::PlaceholderText,QPalette::Window},{QPalette::HighlightedText,QPalette::Highlight}}){
+                const double a=luminance(palette.color(roles.first)),b=luminance(palette.color(roles.second));const double ratio=(qMax(a,b)+.05)/(qMin(a,b)+.05);
+                QVERIFY2(ratio>=4.5,qPrintable(QString("%1 text role %2 contrast %3").arg(theme).arg(roles.first).arg(ratio)));
+            }
+        }
+        applyUiTheme("Studio Blue",false);
+    }
     void numericValuesRemainVisible(){
         for(const auto &theme:QStringList{"Studio Blue","Current","Darker","Light"}){
             applyUiTheme(theme,false);
@@ -35,7 +46,7 @@ private slots:
             parent.show();QTest::qWait(30);
             for(auto *input:QList<QAbstractSpinBox*>{&value,&frame})for(bool enabled:{true,false}){
                 input->setEnabled(enabled);input->clearFocus();auto *line=input->findChild<QLineEdit*>();QVERIFY(line);
-                line->deselect();QTest::qWait(10);const auto displayed=line->text();QVERIFY(!displayed.isEmpty());
+                line->deselect();QTest::qWait(10);QVERIFY(line->width()>=input->width()-12);const auto displayed=line->text();QVERIFY(!displayed.isEmpty());
                 const auto withText=input->grab().toImage();line->setText("");const auto withoutText=input->grab().toImage();line->setText(displayed);
                 int changed=0;for(int y=0;y<withText.height();++y)for(int x=0;x<withText.width();++x)if(withText.pixel(x,y)!=withoutText.pixel(x,y))++changed;
                 if(changed<=12){withText.save("artifacts/numeric-with-text.png");withoutText.save("artifacts/numeric-empty.png");}

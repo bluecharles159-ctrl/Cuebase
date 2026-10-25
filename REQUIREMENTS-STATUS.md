@@ -14,6 +14,12 @@ For each feature: inspect the implementation, exercise the actual workflow,
 check undo and save/reopen where applicable, check Build/Studio/export agreement,
 and record evidence. Automated coverage and native visual inspection are separate.
 External service setup must be verified on the real service before calling it live.
+
+UI work must also follow UI-WORKFLOW.md and its linked FigJam board, created from
+the two creative briefs, Planning Board brief and later corrections. Group
+controls by task; use focused modals and contextual inspectors; verify rendered
+text contrast. Consult professional references before designing new surfaces.
+Mobbin gallery access has not been established and must not be claimed.
 Do not convert an untested feature into a completed item merely because it exists.
 
 ## Immediate repair pass

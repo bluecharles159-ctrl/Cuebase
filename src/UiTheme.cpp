@@ -28,17 +28,17 @@ void applyUiTheme(const QString &requested,bool persist){
     p.setColor(QPalette::Base,QColor(blue?"#202f3b":light?"#ffffff":dark?"#29292c":"#454545"));
     p.setColor(QPalette::AlternateBase,QColor(blue?"#172632":light?"#e7e7ea":dark?"#242426":"#383838"));
     p.setColor(QPalette::Button,QColor(blue?"#283641":light?"#e0e0e4":dark?"#333337":"#414141"));
-    const QColor text(light?"#28282d":"#dddddf"),muted(light?"#686870":"#a6a6ae");
+    const QColor text(light?"#28282d":"#dddddf"),muted(light?"#565862":"#b8bcc6");
     for(auto role:{QPalette::WindowText,QPalette::Text,QPalette::ButtonText,QPalette::ToolTipText})p.setColor(role,text);
     p.setColor(QPalette::PlaceholderText,muted);
     p.setColor(QPalette::ToolTipBase,p.color(QPalette::Base));
     p.setColor(QPalette::Mid,QColor(blue?"#344b5c":light?"#c3c3ca":dark?"#414146":"#555555"));
     p.setColor(QPalette::Light,QColor(light?"#fafafa":"#727278"));
     p.setColor(QPalette::Dark,QColor(light?"#d2d2d8":"#18181a"));
-    p.setColor(QPalette::Highlight,QColor(blue?"#168fee":light?"#c8def3":"#2563eb"));
+    p.setColor(QPalette::Highlight,QColor(blue?"#096fbd":light?"#c8def3":"#2563eb"));
     p.setColor(QPalette::HighlightedText,light?text:QColor("#ffffff"));
     p.setColor(QPalette::Link,QColor(light?"#256398":"#83b6e7"));
-    for(auto role:{QPalette::WindowText,QPalette::Text,QPalette::ButtonText})p.setColor(QPalette::Disabled,role,QColor(light?"#919199":"#787880"));
+    for(auto role:{QPalette::WindowText,QPalette::Text,QPalette::ButtonText})p.setColor(QPalette::Disabled,role,QColor(light?"#6b6f79":"#8b97a3"));
     qApp->setProperty("cuebaseTheme",name);qApp->setPalette(p);
     QFont font=qApp->font();font.setPixelSize(10);qApp->setFont(font);
     qApp->setStyleSheet(R"(
@@ -50,11 +50,11 @@ QMenuBar,QMenuBar::item { background:transparent; padding:3px 8px; }
 QMenuBar::item:selected { background:palette(button); border-radius:3px; }
 QToolButton#windowClose:hover { background:#b63b48; color:white; }
 QLineEdit,QComboBox,QSpinBox,QDoubleSpinBox,QPlainTextEdit,QTextEdit { background:palette(base); color:palette(text); border:1px solid palette(mid); border-radius:3px; padding:1px 4px; selection-background-color:palette(highlight); selection-color:palette(highlighted-text); }
-QLineEdit:disabled,QComboBox:disabled,QSpinBox:disabled,QDoubleSpinBox:disabled { color:palette(mid); background:palette(alternate-base); }
+QLineEdit:disabled,QComboBox:disabled,QSpinBox:disabled,QDoubleSpinBox:disabled { color:palette(text); background:palette(alternate-base); }
 QPushButton,QToolButton { background:palette(button); color:palette(button-text); border:0; border-radius:3px; padding:3px 5px; }
 QPushButton:hover,QToolButton:hover { background:palette(mid); }
 QPushButton:checked,QToolButton:checked { background:palette(highlight); }
-QPushButton:disabled,QToolButton:disabled { color:palette(mid); }
+QPushButton:disabled,QToolButton:disabled { color:palette(button-text); }
 QToolButton[sectionHeader="true"] { text-align:left; padding:3px; min-height:16px; }
 QToolButton[sectionHeader="true"]:checked { background:palette(button); }
 QToolButton::menu-indicator,QPushButton::menu-indicator { image:none; }
