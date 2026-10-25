@@ -93,7 +93,7 @@ if(BUILD_TESTING)
     target_link_libraries(CuebaseComponentTests PRIVATE CuebaseBuildCore Qt6::Test)
     add_executable(CuebaseEditorInteractionTests tests/EditorInteractionTests.cpp)
     target_link_libraries(CuebaseEditorInteractionTests PRIVATE CuebaseBuildCore Qt6::Test)
-    add_test(NAME CuebaseEditorInteractions COMMAND CuebaseEditorInteractionTests -platform offscreen)
+    add_test(NAME CuebaseEditorInteractions COMMAND CuebaseEditorInteractionTests -platform offscreen -o editor-results.txt,txt)
     add_test(NAME CuebaseComponents COMMAND CuebaseComponentTests -platform offscreen)
     add_test(NAME CuebaseBuild COMMAND CuebaseBuildTests -platform offscreen
         -o test-results.txt,txt -o test-results.xml,junitxml)

@@ -75,8 +75,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          ctest --test-dir build-cloud --output-on-failure --parallel 1 --timeout 300 --output-junit cloud-tests.xml
-          build-cloud/CuebaseEditorInteractionTests.exe -platform windows -o native-editor-results.txt,txt
+          test_status=0
+          ctest --test-dir build-cloud --output-on-failure --parallel 1 --timeout 300 --output-junit cloud-tests.xml || test_status=$?
+          build-cloud/CuebaseEditorInteractionTests.exe -platform windows -o native-editor-results.txt,txt || test_status=$?
+          exit "$test_status"
       - name: Stage and verify the portable runtime
         env:
           CUEBASE_TOOLCHAIN: ${{ steps.msys.outputs.msys2-location }}/ucrt64

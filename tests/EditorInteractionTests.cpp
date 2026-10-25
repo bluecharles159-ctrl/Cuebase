@@ -38,6 +38,7 @@ private slots:
                 line->deselect();QTest::qWait(10);const auto displayed=line->text();QVERIFY(!displayed.isEmpty());
                 const auto withText=input->grab().toImage();line->setText("");const auto withoutText=input->grab().toImage();line->setText(displayed);
                 int changed=0;for(int y=0;y<withText.height();++y)for(int x=0;x<withText.width();++x)if(withText.pixel(x,y)!=withoutText.pixel(x,y))++changed;
+                if(changed<=12){withText.save("artifacts/numeric-with-text.png");withoutText.save("artifacts/numeric-empty.png");}
                 QVERIFY2(changed>12,qPrintable(QString("Numeric glyphs clipped in %1, enabled=%2, editor=%3x%4, changed=%5").arg(theme).arg(enabled).arg(line->width()).arg(line->height()).arg(changed)));
             }
         }
