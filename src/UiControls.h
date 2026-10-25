@@ -36,6 +36,9 @@ public:
     explicit ScrubInput(QWidget *parent=nullptr):Base(parent){
         this->setButtonSymbols(QAbstractSpinBox::NoButtons);this->setKeyboardTracking(false);
         this->setMaximumWidth(130);this->setMinimumWidth(65);this->setFixedHeight(23);
+        // The spin box owns the frame. Do not apply the global input frame and
+        // padding again to its internal editor, which can clip compact values.
+        this->lineEdit()->setStyleSheet("QLineEdit { border:0; border-radius:0; padding:0; background:transparent; }");
         this->setCursor(Qt::SizeHorCursor);this->lineEdit()->setCursor(Qt::SizeHorCursor);this->lineEdit()->installEventFilter(this);
         this->setToolTip("Drag horizontally or scroll horizontally to adjust. Shift for precision. Double-click to type.");
     }

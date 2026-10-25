@@ -12,6 +12,7 @@
 #include <QTreeWidgetItemIterator>
 #include <QPainter>
 #include <QWheelEvent>
+#include <QVBoxLayout>
 #include "BuildCanvas.h"
 #include "AnimationEditor.h"
 #include "CurveNoise.h"
@@ -25,6 +26,23 @@ class EditorInteractionTests:public QObject{
     ElementDesign scene(){auto design=ElementDesign::defaultScene();DObject object;object.id="plate";object.name="Plate";object.type="Shape";object.w=4;object.h=2;object.base.rot={90,0,0};object.mat.shadeless=true;object.keyChannel("position.x",0,0);object.keyChannel("position.x",1000,2);object.keyChannel("rotation.y",0,0);object.keyChannel("rotation.y",1000,30);design.objects.append(object);return design;}
 private slots:
     void initTestCase(){QStandardPaths::setTestModeEnabled(true);qApp->setApplicationName("CuebaseEditorInteractionTests");installUiBehavior(qApp);applyUiTheme("Studio Blue",false);QDir().mkpath("artifacts");}
+    void numericValuesRemainVisible(){
+        for(const auto &theme:QStringList{"Studio Blue","Current","Darker","Light"}){
+            applyUiTheme(theme,false);
+            QWidget parent;QVBoxLayout layout(&parent);ValueInput value;FrameInput frame;
+            layout.addWidget(&value);layout.addWidget(&frame);
+            value.setRange(-1000,1000);value.setDecimals(3);value.setValue(12.375);frame.setValue(42);
+            parent.show();QTest::qWait(30);
+            for(auto *input:QList<QAbstractSpinBox*>{&value,&frame})for(bool enabled:{true,false}){
+                input->setEnabled(enabled);input->clearFocus();auto *line=input->findChild<QLineEdit*>();QVERIFY(line);
+                line->deselect();QTest::qWait(10);const auto displayed=line->text();QVERIFY(!displayed.isEmpty());
+                const auto withText=input->grab().toImage();line->setText("");const auto withoutText=input->grab().toImage();line->setText(displayed);
+                int changed=0;for(int y=0;y<withText.height();++y)for(int x=0;x<withText.width();++x)if(withText.pixel(x,y)!=withoutText.pixel(x,y))++changed;
+                QVERIFY2(changed>12,qPrintable(QString("Numeric glyphs clipped in %1, enabled=%2, editor=%3x%4, changed=%5").arg(theme).arg(enabled).arg(line->width()).arg(line->height()).arg(changed)));
+            }
+        }
+        applyUiTheme("Studio Blue",false);
+    }
     void noiseEvaluationAndPersistence(){
         auto design=scene();auto *object=design.find("plate");auto *track=object->track("position.x");const auto original=track->keys;track->noise={{"scale",.23},{"strength",3},{"seed",7},{"depth",3},{"roughness",.6}};
         const auto restored=ElementDesign::fromJson(design.toJson());bool changed=false;
