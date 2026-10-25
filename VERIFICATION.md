@@ -1,4 +1,33 @@
-# Verification — updated 2026-10-24
+# Verification — updated 2026-10-25
+
+## Independent GitHub Windows build and functional tests
+
+[Run 40193557415](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/40193557415)
+tested commit `90323611ef98789943b029d88845a1a994a93aaf` on a GitHub-hosted
+Windows runner. All six CTest suites passed: planning, textures, editor
+interactions, components, Build and Studio/streaming. CTest took **30.34 seconds**.
+The Build suite reports **55 passed**, Studio/streaming **40 passed**, and the
+separate native Windows interaction run **9 passed**; none failed or skipped.
+Localhost streaming includes RTMP and SRT, with MediaMTX pinned by checksum.
+
+The staged runtime passed its editor and component tests with MSYS2 removed from
+PATH. Recursive PE import checking resolved required DLLs, and ZIP integrity was
+checked before upload. Artifact **Cuebase-Windows-1.zip**, 134,563,950 bytes:
+SHA-256 `c751aab902727c08d233be31453bc547cb45fad89d314d167800f30c14d10f4a`.
+
+Interaction checks cover deterministic noise and JSON persistence, independent
+curve drafts, cancel/remove/undo, toolbar entry and frame export, duplicate
+cancellation, mouse ownership, single-click selection, Alt-wheel history, and
+off-camera workspace visibility with Final cropping. The off-camera regression
+exposed the shared renderer's implicit camera-sized overflow clip; it now uses
+the actual paint viewport when outer clipping is disabled, preserving parent
+overflow constraints. The duplicate fixture counts original objects rather than
+assuming the default scene has no light.
+
+The initial local test compile failure and two failing local assertions are
+superseded by this passing GitHub run. Native QTest interactions are automated;
+they are not a manual visual audit or hardware compatibility certification.
+Task 81 is complete. The corrected ledger is **23 of 84 completed, 61 remaining**.
 
 ## Reusable objects — first long brief, section 8
 

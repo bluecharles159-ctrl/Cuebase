@@ -1,6 +1,6 @@
 # Cuebase completion counter
 
-Updated 2026-10-25. **22 of 84 tasks completed — 62 remaining.**
+Updated 2026-10-25. **23 of 84 tasks completed — 61 remaining.**
 
 The Claude transcript adds four distinct acceptance groups (81–84). Row 06 is
 reopened: earlier checks covered transforms/material color, but inspection shows
@@ -116,11 +116,9 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 - [x] 79. Persistent completion ledger and dependency-based architecture plan; retain unfinished scope.
 - [x] 80. Local regression infrastructure for Build, Studio, rendering and localhost streaming evidence.
 
-## Completion evidence
-
 ## Additional Claude transcript requirements — 2026-10-25
 
-- [ ] 81. Non-destructive curve noise, selected-key/channel entry points, per-curve controls, persistence, undo and shared-renderer output.
+- [x] 81. Non-destructive curve noise, selected-key/channel entry points, per-curve controls, persistence, undo and shared-renderer output. GitHub run 40193557415 passes the interaction suite in offscreen and native Windows modes, plus packaged-runtime checks. ANIMATION-NOISE.md documents the single-modifier scope and time units.
 - [ ] 82. Front/middle/back sub-layers, G/Z steps, delayed NEW-layer boundaries, cancellation, layer colors and overlap-only broadcast stacking.
 - [ ] 83. Dual-camera layout, side-view toggle and final-camera aspect presets.
 - [ ] 84. Boolean effects for text with preserved appearance and editable controls.

@@ -1,7 +1,7 @@
 # Cuebase completion ledger
 
-Updated 2026-10-24. This is a development record, not a release certificate.
-The fixed user-facing counter is in COMPLETION-CHECKLIST.md: 80 acceptance groups.
+Updated 2026-10-25. This is a development record, not a release certificate.
+The user-facing counter is in COMPLETION-CHECKLIST.md: 84 acceptance groups.
 Update that counter after each verified completion; partial work remains open.
 The user requires the complete requested scope before final delivery. A successful
 compile, a prototype, an interface control, or a source archive does not satisfy
@@ -18,12 +18,21 @@ Do not convert an untested feature into a completed item merely because it exist
 
 ## Immediate repair pass
 
+2026-10-25: moved builds, tests and packaging to GitHub at the user's request.
+Run 40193557415 passes all six CTest suites, nine native Windows interaction
+cases and packaged-runtime tests with the development toolchain removed from
+PATH. Added whole-curve animation noise and corrected duplicate cancellation,
+single-click selection, transform mouse capture, timeline history and off-camera
+workspace rendering. Task 81 is verified. Four distinct Claude transcript groups
+were added (81–84); task 06 was reopened after identifying incomplete shape
+surface preservation in Edit Mode. Current count: **23 of 84, 61 remaining**.
+
 2026-10-24: recorded the completed October 22 component verification from the
 first brief's section 8. Tasks 61–62 pass 12 component cases, 55 editor cases,
 9 texture cases and 4 focused Studio cases. Reusable objects have stable IDs,
 :: registration, searchable insertion, source revisions, group links, local
 overrides and explicit selective propagation with undo. The fixed counter is
-23 of 80 completed, 57 remaining. See REUSABLE-OBJECTS.md for the precise scope.
+23 of 80 completed, 57 remaining at that checkpoint. See REUSABLE-OBJECTS.md for the precise scope.
 
 2026-10-22: resumed the two long briefs with the first brief's section 2 texture
 library. Implementation adds imported managed assets, stable IDs, thumbnails,

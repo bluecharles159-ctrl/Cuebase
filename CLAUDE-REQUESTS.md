@@ -9,7 +9,12 @@ Claude's remote `/mnt/user-data/outputs/Cuebase-Layers.zip` and
 `Cuebase-Fixes.zip` were not available on this computer. Their claimed tests are
 not Cuebase verification evidence.
 
-## Implemented in this recovery, awaiting current build/test evidence
+## Implemented in this recovery
+
+GitHub run [40193557415](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/40193557415)
+compiled the full source and passed all six CTest suites on Windows, followed by
+nine native interaction cases and packaged-runtime tests. See VERIFICATION.md.
+These checks validate the workflows below, not the unfinished transcript items.
 
 - Non-destructive per-curve animation noise: context menu, toolbar, independent
   settings, deterministic evaluation, saved tracks, undo and export integration.
