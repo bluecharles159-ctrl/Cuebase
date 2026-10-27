@@ -6,6 +6,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QSaveFile>
+#include <QScopedValueRollback>
 #include <QJsonObject>
 
 qint64 Element::lengthMs() const {
@@ -26,7 +27,9 @@ qint64 Element::lengthMs() const {
 #include <QtMath>
 #include <algorithm>
 
-Library::Library(QObject *parent) : QObject(parent) {}
+Library::Library(QObject *parent) : QObject(parent) {
+    connect(this,&Library::programsChanged,this,[this]{if(!m_cutEdit){m_cutUndo.clear();m_cutRedo.clear();}});
+}
 
 // ---- transitions ------------------------------------------------------------
 
@@ -111,6 +114,8 @@ QString Library::cutProgram(const QString &id, int atSec, bool slot) {
     if (i < 0) return {};
     ProgramItem b = programs[i];
     if (b.isAdSpot() || !b.elementId.isEmpty() || atSec < 1 || qint64(atSec)*1000 >= b.lengthMs()) return {};
+    m_cutUndo.append(programs);if(m_cutUndo.size()>100)m_cutUndo.removeFirst();m_cutRedo.clear();
+    QScopedValueRollback<bool> transaction(m_cutEdit,true);
 
     // second half: the rest of the media, keeps the ad and breaks and any "+" that was after the program
     b.id = newId();
@@ -132,6 +137,14 @@ QString Library::cutProgram(const QString &id, int atSec, bool slot) {
     return newId2;
 }
 
+bool Library::undoProgramCut(){
+    if(m_cutUndo.isEmpty())return false;QScopedValueRollback<bool> transaction(m_cutEdit,true);
+    m_cutRedo.append(programs);programs=m_cutUndo.takeLast();commitPrograms();return true;
+}
+bool Library::redoProgramCut(){
+    if(m_cutRedo.isEmpty())return false;QScopedValueRollback<bool> transaction(m_cutEdit,true);
+    m_cutUndo.append(programs);programs=m_cutRedo.takeLast();commitPrograms();return true;
+}
 void Library::insertAfter(const QString &afterId, ProgramItem item) {
     if (item.id.isEmpty()) item.id = newId();
     const int i = programIndex(afterId);
@@ -205,6 +218,7 @@ void Library::shiftPlacements(qint64 from, qint64 by) {
 }
 
 void Library::load() {
+    m_cutUndo.clear();m_cutRedo.clear();
     QFile f(filePath());
     if (!f.open(QIODevice::ReadOnly)) {
         seed();

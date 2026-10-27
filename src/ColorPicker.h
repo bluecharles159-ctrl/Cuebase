@@ -29,7 +29,7 @@ protected:
     void mousePressEvent(QMouseEvent *e) override{if(e->button()==Qt::LeftButton)pick(e->position());}
     void mouseMoveEvent(QMouseEvent *e) override{if(e->buttons()&Qt::LeftButton)pick(e->position());}
 };
-inline QColor getColor(const QColor &initial=Qt::white,QWidget *parent=nullptr,const QString &title="Color",QColorDialog::ColorDialogOptions options={}) {
+inline QColor getColor(const QColor &initial=Qt::white,QWidget *parent=nullptr,const QString &title="Color",QColorDialog::ColorDialogOptions options={},std::function<void(QColor)> onPreview={}) {
     Q_UNUSED(options);
     QDialog dialog(parent);dialog.setWindowTitle(title);dialog.setModal(true);
     dialog.setStyleSheet("QDialog{background:#303030;border-radius:10px;} QLabel{color:#ddd;font-size:11px;} QLineEdit{background:#454545;color:white;border:0;border-radius:4px;padding:5px;} QPushButton{padding:5px 12px;border-radius:4px;background:#505050;color:white;} QSlider::groove:horizontal{height:9px;border-radius:4px;background:#555;} QSlider::handle:horizontal{width:10px;margin:-3px 0;border-radius:5px;background:#ddd;}");
@@ -41,10 +41,13 @@ inline QColor getColor(const QColor &initial=Qt::white,QWidget *parent=nullptr,c
     auto *hex=new QLineEdit(initial.name(QColor::HexArgb));hex->setToolTip("Hex color: #RRGGBB or #AARRGGBB");layout->addWidget(hex);
     auto *preview=new QLabel;preview->setFixedHeight(24);layout->addWidget(preview);
     auto refresh=[=]{QSignalBlocker h(hue),a(alpha);hue->setValue(qMax(0,spectrum->color.hsvHue()));alpha->setValue(spectrum->color.alpha());hex->setText(spectrum->color.name(QColor::HexArgb));preview->setStyleSheet("border-radius:4px;background:"+spectrum->color.name(QColor::HexArgb)+";");spectrum->update();};
-    spectrum->changed=[=](QColor){refresh();};
-    QObject::connect(hue,&QSlider::valueChanged,&dialog,[=](int v){spectrum->color.setHsv(v,spectrum->color.hsvSaturation(),spectrum->color.value(),spectrum->color.alpha());refresh();});
-    QObject::connect(alpha,&QSlider::valueChanged,&dialog,[=](int v){spectrum->color.setAlpha(v);refresh();});
-    QObject::connect(hex,&QLineEdit::editingFinished,&dialog,[=]{QColor value(hex->text());if(value.isValid())spectrum->color=value;refresh();});
+    dialog.setObjectName("colorPicker");hex->setObjectName("colorHex");
+    auto publish=[=]{if(onPreview)onPreview(spectrum->color);};
+    spectrum->changed=[=](QColor){refresh();publish();};
+    QObject::connect(hue,&QSlider::valueChanged,&dialog,[=](int v){spectrum->color.setHsv(v,spectrum->color.hsvSaturation(),spectrum->color.value(),spectrum->color.alpha());refresh();publish();});
+    QObject::connect(alpha,&QSlider::valueChanged,&dialog,[=](int v){spectrum->color.setAlpha(v);refresh();publish();});
+    QObject::connect(hex,&QLineEdit::textEdited,&dialog,[=](const QString &text){QColor value(text);if(value.isValid()){spectrum->color=value;QSignalBlocker h(hue),a(alpha);hue->setValue(qMax(0,value.hsvHue()));alpha->setValue(value.alpha());spectrum->update();preview->setStyleSheet("border-radius:4px;background:"+value.name(QColor::HexArgb)+";");publish();}});
+    QObject::connect(hex,&QLineEdit::editingFinished,&dialog,[=]{refresh();});
     auto *buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);layout->addWidget(buttons);
     QObject::connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);QObject::connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);refresh();
     return dialog.exec()==QDialog::Accepted?spectrum->color:QColor();

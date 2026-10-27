@@ -20,6 +20,7 @@
 #include "FrameExport.h"
 #include "UiControls.h"
 #include "UiTheme.h"
+#include "PropertyInspector.h"
 
 class EditorInteractionTests:public QObject{
     Q_OBJECT
@@ -36,6 +37,36 @@ private slots:
             }
         }
         applyUiTheme("Studio Blue",false);
+    }
+    void drawShapesAndCancel(){
+        Library library;BuildModel model;model.reset(scene());BuildCanvas canvas(&model,&library);canvas.resize(800,500);canvas.show();QTest::qWait(20);
+        const auto before=model.design.toJson();const auto count=model.design.objects.size();
+        canvas.startDrawShape("Rectangle");QTest::mousePress(&canvas,Qt::LeftButton,Qt::NoModifier,QPoint(250,180));QTest::mouseRelease(&canvas,Qt::LeftButton,Qt::NoModifier,QPoint(450,280));
+        QCOMPARE(model.design.objects.size(),count+1);QCOMPARE(model.active()->type,QString("Shape"));QVERIFY(qAbs(model.active()->w/model.active()->h-2)<.01);
+        model.undo();QCOMPARE(model.design.toJson(),before);model.redo();QCOMPARE(model.design.objects.size(),count+1);
+        canvas.startDrawShape("Ellipse");QTest::mousePress(&canvas,Qt::LeftButton,Qt::NoModifier,QPoint(250,180));QTest::mouseRelease(&canvas,Qt::LeftButton,Qt::ShiftModifier,QPoint(400,230));QVERIFY(qAbs(model.active()->w-model.active()->h)<.01);QCOMPARE(model.active()->style["shape"].toString(),QString("Ellipse"));
+        const auto drawn=model.design.toJson();canvas.startDrawShape("Rectangle");QTest::mousePress(&canvas,Qt::LeftButton,Qt::NoModifier,QPoint(250,180));QTest::keyClick(&canvas,Qt::Key_Escape);QCOMPARE(model.design.toJson(),drawn);QVERIFY(QWidget::mouseGrabber()!=&canvas);
+    }
+    void colorPreviewIsTransactional(){
+        Library library;BuildModel model;model.reset(scene());model.select("plate");PropertyInspector inspector(&model,&library);inspector.show();QTest::qWait(20);
+        auto *button=inspector.findChild<QPushButton*>("color_fill.color");QVERIFY(button);const QColor original=model.active()->mat.color;
+        auto choose=[&](bool accept){QTimer::singleShot(0,[&model,accept]{auto *dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());QVERIFY(dialog);auto *hex=dialog->findChild<QLineEdit*>("colorHex");QVERIFY(hex);hex->selectAll();QTest::keyClicks(hex,"#ff336699");QCOMPARE(model.active()->mat.color,QColor("#ff336699"));accept?dialog->accept():dialog->reject();});button->click();};
+        choose(false);QCOMPARE(model.active()->mat.color,original);choose(true);QCOMPARE(model.active()->mat.color,QColor("#ff336699"));model.undo();QCOMPARE(model.active()->mat.color,original);model.redo();QCOMPARE(model.active()->mat.color,QColor("#ff336699"));
+    }
+    void programCutsUndoAndRedo(){
+        Library library;ProgramItem program;program.id="cut-test";program.title="Test";program.seconds=12;program.offsetMs=700;library.programs.append(program);
+        const auto second=library.cutProgram(program.id,4);QVERIFY(!second.isEmpty());QCOMPARE(library.programs.size(),2);QCOMPARE(library.programs[1].offsetMs,4700);
+        QVERIFY(library.undoProgramCut());QCOMPARE(library.programs.size(),1);QCOMPARE(library.programs[0].lengthMs(),12000);QVERIFY(library.redoProgramCut());QCOMPARE(library.programs[1].id,second);
+        library.programs[0].title="New edit";library.commitPrograms();QVERIFY(!library.undoProgramCut());QCOMPARE(library.programs[0].title,QString("New edit"));
+    }
+    void snappingAlignsEdgesAndOffCameraPicking(){
+        Library library;BuildModel model;auto design=scene();design.find("plate")->tracks.clear();auto second=*design.find("plate");second.id="target";second.base.loc={5,0,0};design.objects.append(second);model.reset(design);model.select("plate");
+        BuildCanvas canvas(&model,&library);canvas.resize(900,650);canvas.setShading(BuildCanvas::Solid);canvas.show();QTest::qWait(30);canvas.grab();
+        const auto frame=canvas.property("compositionFrame").toRectF();const auto camera=model.design.sceneCamera(0,library.display.aspect());QPointF start,end;
+        QVERIFY(camera.toScreen(QVector3D(),frame,&start));QVERIFY(camera.toScreen(QVector3D(1,0,0),frame,&end));
+        QTest::mouseMove(&canvas,start.toPoint());canvas.startMove();QTest::mouseMove(&canvas,(end-QPointF(3,0)).toPoint());QTest::keyClick(&canvas,Qt::Key_Return);QVERIFY(qAbs(model.byId("plate")->at(0).loc.x()-1)<.03);
+        model.byId("target")->base.loc={9.2f,0,0};model.byId("target")->w=2;model.notify();QPointF outside;QVERIFY(camera.toScreen(QVector3D(9.2f,0,0),frame,&outside));QVERIFY(!frame.contains(outside));QTest::mouseClick(&canvas,Qt::LeftButton,Qt::NoModifier,outside.toPoint());QCOMPARE(model.activeId,QString("target"));
+        canvas.grab().save("artifacts/build-draw-and-align.png");
     }
     void numericValuesRemainVisible(){
         for(const auto &theme:QStringList{"Studio Blue","Current","Darker","Light"}){

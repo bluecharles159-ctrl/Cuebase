@@ -183,6 +183,8 @@ public:
     // Splits a program in two at atSec. Returns the id of the second half ("" if it can't be cut).
     // slot = true leaves a "+" insert point between the halves.
     QString cutProgram(const QString &id, int atSec, bool slot = true);
+    bool undoProgramCut();
+    bool redoProgramCut();
     // Inserts an item right after another one; the "+" insert point stays in front of what followed.
     void insertAfter(const QString &afterId, ProgramItem item);
     // Inserts an item right in front of another one ("" = at the very end).
@@ -229,6 +231,8 @@ signals:
     void openProgramRequested(const QString &programId);
 
 private:
+    QList<QList<ProgramItem>> m_cutUndo,m_cutRedo;
+    bool m_cutEdit=false;
     void seed();
     static QString filePath();
 };

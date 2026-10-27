@@ -420,7 +420,7 @@ void BuildCanvas::paintEvent(QPaintEvent *) {
             QPainter editor(&surround);PaintOpts options;options.shade=PaintOpts::Shade(m_shading);options.clip=false;options.background=false;
             d.paint(editor,QRectF(r.topLeft()*factor,r.size()*factor),cam,m_m->t,options);editor.end();
             QPainterPath outside;outside.addRect(rect());QPainterPath camera;camera.addRect(r);outside=outside.subtracted(camera);
-            p.save();p.setClipPath(outside);p.drawImage(rect(),surround);p.fillRect(rect(),QColor(0,0,0,135));p.restore();
+            p.save();p.setClipPath(outside);p.drawImage(rect(),surround);p.fillRect(rect(),QColor(0,0,0,165));p.restore();
         }
     }
 
@@ -528,6 +528,7 @@ void BuildCanvas::paintEvent(QPaintEvent *) {
     QPointF cursorPoint;if(showCursor&&cam.toScreen(d.cursor,r,&cursorPoint)){
         p.setBrush(Qt::NoBrush);p.setPen(QPen(QColor("#eeeeee"),1));p.drawEllipse(cursorPoint,7,7);p.setPen(QPen(QColor("#d65e5e"),1.4));p.drawArc(QRectF(cursorPoint-QPointF(7,7),QSizeF(14,14)),0,180*16);p.drawLine(cursorPoint-QPointF(12,0),cursorPoint+QPointF(12,0));p.drawLine(cursorPoint-QPointF(0,12),cursorPoint+QPointF(0,12));
     }
+    if(m_drawingShape){p.setPen(QPen(QColor("#71c4ff"),1.5));p.setBrush(QColor(113,196,255,50));if(m_drawShape=="Ellipse")p.drawEllipse(m_drawRect);else p.drawRect(m_drawRect);}
     drawHud(p, QRectF(rect()));
 }
 
@@ -583,7 +584,7 @@ QString BuildCanvas::pickObject(const QPointF &pos, bool cycle) {
     for (const DObject &source : d.objects) {
         best.clear();bestDepth=1e18;
         const DObject o = source.evaluated(m_m->t);
-        if (!d.effectiveVisible(o) || o.locked || !d.overflowClip(o,m_m->t,cam,r).contains(pos)) continue;
+        if (!d.effectiveVisible(o) || o.locked || !d.overflowClip(o,m_m->t,cam,r,m_shading==Rendered?r:QRectF(rect())).contains(pos)) continue;
         const QMatrix4x4 W = d.worldMatrix(o, m_m->t);
         if (o.type == "Light" || o.type == "Camera") {
             QPointF c;
@@ -829,6 +830,7 @@ void BuildCanvas::startModal(Modal::Kind k, bool fromButton, bool skipUndo) {
     QPointF ps;
     md.pivotScreen = cam.toScreen(md.pivot, r, &ps) ? ps : QPointF(width() / 2.0, height() / 2.0);
     md.startAngle = qAtan2(md.startMouse.y() - md.pivotScreen.y(), md.startMouse.x() - md.pivotScreen.x());
+    md.moveBounds=selectionBounds(cam,r);
     m_modal = md;
     setFocus();
     if(!fromButton)grabMouse();
@@ -968,9 +970,14 @@ void BuildCanvas::applyModal(const QPointF &mouse) {
                 for(double g:m_verticalGuides)xs.append(r.left()+g*r.width());
                 for(double g:m_horizontalGuides)ys.append(r.top()+g*r.height());
                 for(const auto &o:m_m->design.objects)if(o.visible&&!m_m->sel.contains(o.id)&&o.isRenderable()){auto box=objectBounds(o,cam,r);xs<<box.left()<<box.center().x()<<box.right();ys<<box.top()<<box.center().y()<<box.bottom();}
-                double dx=7,dy=7;for(double x:xs)if(qAbs(x-target.x())<qAbs(dx))dx=x-target.x();for(double y:ys)if(qAbs(y-target.y())<qAbs(dy))dy=y-target.y();
+                // Match the entire selection's edges and centre, using the gesture's
+                // original bounds so snapping never accumulates on repeated moves.
+                const auto moving=m_modal.moveBounds.translated(target-m_modal.pivotScreen);
+                double dx=7,dy=7,gx=target.x(),gy=target.y();
+                for(double x:xs)for(double anchor:{moving.left(),moving.center().x(),moving.right()})if(qAbs(x-anchor)<qAbs(dx)){dx=x-anchor;gx=x;}
+                for(double y:ys)for(double anchor:{moving.top(),moving.center().y(),moving.bottom()})if(qAbs(y-anchor)<qAbs(dy)){dy=y-anchor;gy=y;}
                 if(qAbs(dx)<7)target.rx()+=dx;if(qAbs(dy)<7)target.ry()+=dy;
-                m_modal.snapX=qAbs(dx)<7;m_modal.snapY=qAbs(dy)<7;m_modal.snapPoint=target;
+                m_modal.snapX=qAbs(dx)<7;m_modal.snapY=qAbs(dy)<7;m_modal.snapPoint=QPointF(gx,gy);
                 bool ok=false;auto snapped=rayPlane(target,m_modal.pivot,fwd,&ok);if(ok)delta=snapped-m_modal.pivot;
             }
         } else {
@@ -1084,7 +1091,22 @@ void BuildCanvas::pickSceneObject(std::function<void(QString)> picked){
     cancelModal();m_objectPicker=std::move(picked);setCursor(Qt::CrossCursor);setFocus();emit message("Pick a mirror reference object · Escape or right-click cancels");
 }
 
+void BuildCanvas::startDrawShape(const QString &kind){
+    if(kind!="Rectangle"&&kind!="Ellipse")return;
+    cancelModal();if(m_m->editMode)m_m->toggleEdit();
+    m_drawShape=kind;m_drawingShape=false;setCursor(Qt::CrossCursor);setFocus();
+    emit message("Drag to draw "+kind.toLower()+" · Shift: equal sides · Alt: from centre · Escape: cancel");update();
+}
+void BuildCanvas::updateDrawShape(QPointF point,Qt::KeyboardModifiers modifiers){
+    QPointF delta=point-m_drawStart;
+    if(modifiers&Qt::ShiftModifier){const auto side=qMax(qAbs(delta.x()),qAbs(delta.y()));delta=QPointF(delta.x()<0?-side:side,delta.y()<0?-side:side);}
+    m_drawRect=QRectF((modifiers&Qt::AltModifier)?m_drawStart-delta:m_drawStart,m_drawStart+delta).normalized();update();
+}
 void BuildCanvas::mousePressEvent(QMouseEvent *e) {
+    if(!m_drawShape.isEmpty()){
+        if(e->button()==Qt::RightButton){m_drawShape.clear();m_drawingShape=false;releaseMouse();unsetCursor();update();return;}
+        if(e->button()==Qt::LeftButton){setFocus();m_drawStart=e->position();m_drawingShape=true;updateDrawShape(e->position(),e->modifiers());grabMouse();}return;
+    }
     if(m_objectPicker){
         if(e->button()==Qt::RightButton){m_objectPicker={};unsetCursor();emit message("Object picking cancelled");return;}
         if(e->button()==Qt::LeftButton){const auto id=pickObject(e->position(),true);if(!id.isEmpty()){auto callback=std::move(m_objectPicker);m_objectPicker={};unsetCursor();callback(id);}else emit message("No object here · click a visible object or Escape to cancel");return;}
@@ -1168,6 +1190,7 @@ void BuildCanvas::mousePressEvent(QMouseEvent *e) {
 }
 
 void BuildCanvas::mouseMoveEvent(QMouseEvent *e) {
+    if(!m_drawShape.isEmpty()){if(m_drawingShape)updateDrawShape(e->position(),e->modifiers());return;}
     if(m_objectPicker){setCursor(Qt::CrossCursor);return;}
     const QPointF pos = e->position();
     const QPointF d = pos - m_last;
@@ -1220,6 +1243,21 @@ void BuildCanvas::mouseMoveEvent(QMouseEvent *e) {
 }
 
 void BuildCanvas::mouseReleaseEvent(QMouseEvent *e) {
+    if(!m_drawShape.isEmpty()){
+        if(e->button()!=Qt::LeftButton||!m_drawingShape)return;
+        updateDrawShape(e->position(),e->modifiers());releaseMouse();
+        if(m_drawRect.width()>=3&&m_drawRect.height()>=3){
+            QRectF frame;const auto camera=activeCam(&frame);bool aOk=false,bOk=false;
+            const auto a=rayPlane(m_drawRect.topLeft(),m_m->design.cursor,camera.forward(),&aOk),b=rayPlane(m_drawRect.bottomRight(),m_m->design.cursor,camera.forward(),&bOk);
+            if(aOk&&bOk){
+                m_m->pushUndo(true);DObject object;object.id=Library::newId();object.name=m_m->uniqueName(m_drawShape);object.type="Shape";
+                const auto local=camera.view.mapVector(b-a);object.w=qAbs(local.x());object.h=qAbs(local.y());object.base.loc=(a+b)*.5f;
+                object.base.rot=QQuaternion::fromRotationMatrix(camera.view.inverted().normalMatrix()).toEulerAngles();object.mat.color=Qt::white;object.mat.shadeless=true;object.style["shape"]=m_drawShape;object.captureDefaults();
+                m_m->design.objects.append(object);m_m->select(object.id);m_m->notify();emit message(object.name+" added");
+            }
+        }
+        m_drawShape.clear();m_drawingShape=false;unsetCursor();update();return;
+    }
     if(m_dragGuide>=0){
         QRectF frame;activeCam(&frame);if(!frame.contains(e->position())){auto &guides=m_guideVertical?m_verticalGuides:m_horizontalGuides;guides.removeAt(m_dragGuide);}
         if(auto *camera=m_m->design.camera()){
@@ -1267,6 +1305,7 @@ void BuildCanvas::wheelEvent(QWheelEvent *e) {
 // ------------------------------------------------------------------ keyboard
 
 void BuildCanvas::keyPressEvent(QKeyEvent *e) {
+    if(!m_drawShape.isEmpty()){if(e->key()==Qt::Key_Escape){m_drawShape.clear();m_drawingShape=false;releaseMouse();unsetCursor();update();emit message("Drawing cancelled");}e->accept();return;}
     const int k = e->key();
     const Qt::KeyboardModifiers mod = e->modifiers();
     const bool ctrl = mod & Qt::ControlModifier, shift = mod & Qt::ShiftModifier, alt = mod & Qt::AltModifier, keypad = mod & Qt::KeypadModifier;

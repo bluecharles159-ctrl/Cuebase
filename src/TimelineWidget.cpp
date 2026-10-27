@@ -246,7 +246,7 @@ bool TimelineWidget::cutTarget(int *segment, int *atSec, int *lineX) const {
 bool TimelineWidget::overScissors(const QPoint &pos) const {
     int seg, at, lx;
     if (!cutTarget(&seg, &at, &lx)) return false;
-    return QLineF(pos, QPointF(lx, kMainTop + mainHeight() / 2)).length() <= kBadge;
+    return QLineF(pos, QPointF(lx, kMainTop + 12)).length() <= kBadge;
 }
 
 // ---------------------------------------------------------------- dragging onto the timeline
@@ -383,9 +383,8 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
     const QRect visible(hbar()?hbar()->value():0,0,viewportWidth(),height());
     auto drawWave=[&](const QRect &area,const QString &file,qint64 offset,qint64 duration){
         const auto shown=area.intersected(visible);if(shown.isEmpty()||file.isEmpty()||duration<=0)return;
-        const auto sourceStart=offset+qint64(double(shown.left()-area.left())/qMax(1,area.width())*duration);
-        const auto sourceLength=qMax<qint64>(1,qint64(double(shown.width())/qMax(1,area.width())*duration));
-        const auto wave=m_media->waveform(file,sourceStart,sourceLength);if(wave.peaks.isEmpty())return;
+        // Decode the source range once; zoom and scroll only resample it.
+        const auto wave=m_media->waveform(file,offset,duration);if(wave.peaks.isEmpty())return;
         p.save();p.setClipRect(area,Qt::IntersectClip);p.fillRect(shown,QColor(0,0,0,60));p.setPen(QColor("#69ddb1"));
         for(int x=shown.left();x<=shown.right();++x){const auto time=offset+qint64(double(x-area.left())/qMax(1,area.width())*duration);const double next=offset+double(x+1-area.left())/qMax(1,area.width())*duration;
             const int first=qBound(0,int((time-wave.startMs)*wave.peaks.size()/qMax<qint64>(1,wave.durationMs)),int(wave.peaks.size())-1);
@@ -404,7 +403,7 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
         if(!s.file.isEmpty()&&r.intersects(visible)){
             p.save();QPainterPath clip;clip.addRoundedRect(r.adjusted(1,1,-1,-1),7,7);p.setClipPath(clip,Qt::IntersectClip);
             if(m_thumbnails){const QRect strip(r.left()+1,r.top()+23,r.width()-2,48);const auto shown=strip.intersected(visible);
-                for(int x=strip.left()+qMax(0,(shown.left()-strip.left())/85)*85;x<shown.right();x+=85){const QRect tile(x,strip.top(),85,48);const auto time=s.offsetMs+qint64(qBound(0.,double(tile.center().x()-r.left())/qMax(1,r.width()),1.)*qMax(0,s.ms-1));const auto frame=m_media->thumbnail(s.file,time);if(!frame.isNull())p.drawImage(tile,frame);}
+                for(int x=strip.left()+qMax(0,(shown.left()-strip.left())/85)*85;x<shown.right();x+=85){const QRect tile(x,strip.top(),85,48);const double fraction=qBound(0.,double(tile.center().x()-r.left())/qMax(1,r.width()),1.);const int sample=qBound(0,int(fraction*8),7);const auto time=s.offsetMs+qint64((sample+.5)/8*qMax(0,s.ms-1));const auto frame=m_media->thumbnail(s.file,time);if(!frame.isNull())p.drawImage(tile,frame);}
             }
             if(m_waveforms)drawWave(QRect(r.left()+1,r.bottom()-20,r.width()-2,20),s.file,s.offsetMs,s.ms);
             p.restore();
@@ -535,19 +534,16 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
     // ---- the cut tool: dashed line through the program and a scissors in the middle of it
     int cutSeg, cutSec, cutX;
     if (!DragController::instance()->active() && cutTarget(&cutSeg, &cutSec, &cutX)) {
-        p.setPen(QPen(QColor(255, 255, 255, 215), 1.5, Qt::DashLine));
+        p.setPen(QPen(QColor(255, 255, 255, 85), 1, Qt::DashLine));
         p.drawLine(cutX, kMainTop - 2, cutX, kMainTop + mainHeight() + 2);
-        const QPointF c(cutX, kMainTop + mainHeight() / 2);
+        const QPointF c(cutX, kMainTop + 12);
         const bool hot = QLineF(m_hover, c).length() <= kBadge;
-        p.setPen(Qt::NoPen);
-        p.setBrush(hot ? QColor("#ffffff") : QColor("#e2e8f0"));
-        p.drawEllipse(c, double(kBadge), double(kBadge));
         QFont sf("Segoe UI Symbol");
         sf.setPixelSize(15);
         p.setFont(sf);
-        p.setPen(QColor("#0b1220"));
+        p.setPen(QColor(255,255,255,hot?255:155));
         p.drawText(QRectF(c.x() - kBadge, c.y() - kBadge, kBadge * 2, kBadge * 2), Qt::AlignCenter, QString(QChar(0x2702)));
-        drawPill(p, cutX, "Cut at " + formatDuration(int((m_play->segmentStartMs(cutSeg) + qint64(cutSec) * 1000) / 1000)),
+        drawPill(p, cutX, formatDuration(int((m_play->segmentStartMs(cutSeg) + qint64(cutSec) * 1000) / 1000)),
                  QColor("#475569"), width());
     }
 
@@ -801,4 +797,9 @@ void TimelineWidget::wheelEvent(QWheelEvent *e) {
 void TimelineWidget::zoomView(double factor){auto *bar=hbar();int center=(bar?bar->value():0)+viewportWidth()/2;auto time=xToMs(center);m_pixelsPerSecond=qBound(.1,m_pixelsPerSecond*factor,800.);QSettings().setValue("studio/timelineScale",m_pixelsPerSecond);relayout();if(bar)bar->setValue(msToX(time)-viewportWidth()/2);followPlayhead();update();}
 void TimelineWidget::fitView(){pauseFollowing();qint64 end=m_play->totalMs();for(const auto &p:m_lib->placements)end=qMax(end,p.startMs+p.lengthMs());m_pixelsPerSecond=qBound(.1,(viewportWidth()-30)/qMax(1.,end/1000.),800.);QSettings().setValue("studio/timelineScale",m_pixelsPerSecond);relayout();if(auto *bar=hbar())bar->setValue(qMax(0,m_originX-15));update();}
 void TimelineWidget::revealPlayhead(){m_followPaused=false;if(auto *bar=hbar())bar->setValue(qMax(0,playheadX()-viewportWidth()/2));emit navigationChanged();update();}
-void TimelineWidget::keyPressEvent(QKeyEvent *e){if(e->key()==Qt::Key_Home){fitView();e->accept();}else if(e->key()==Qt::Key_F){revealPlayhead();e->accept();}else QWidget::keyPressEvent(e);}
+void TimelineWidget::keyPressEvent(QKeyEvent *e){
+    if(e->key()==Qt::Key_C&&e->modifiers()==Qt::NoModifier&&!e->isAutoRepeat()){
+        int segment,seconds,x;if(cutTarget(&segment,&seconds,&x)){emit cutRequested(m_play->segments()[segment].programId,seconds);e->accept();return;}
+    }
+    if(e->key()==Qt::Key_Home){fitView();e->accept();}else if(e->key()==Qt::Key_F){revealPlayhead();e->accept();}else QWidget::keyPressEvent(e);
+}

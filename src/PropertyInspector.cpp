@@ -99,9 +99,20 @@ void PropertyInspector::choice(QFormLayout *form,const QString &label,const QStr
     }});
 }
 void PropertyInspector::color(QFormLayout *form,const QString &label,const QString &path,const QString &fallback){
-    auto *button=new QPushButton;form->addRow(label,button);
+    auto *button=new QPushButton;button->setObjectName("color_"+path);form->addRow(label,button);
     auto get=[=, this]{auto *o=m->active();return o?(path=="fill.color"?o->mat.color:path=="light.color"?o->light.color:QColor(o->style[path].toString(fallback))):QColor(fallback);};
-    connect(button,&QPushButton::clicked,this,[=, this]{QColor c=ColorPicker::getColor(get(),this,label,QColorDialog::ShowAlphaChannel);if(c.isValid())apply([&]{for(auto *o:m->inspected())if(!o->locked){if(path=="fill.color")o->mat.color=c;else if(path=="light.color")o->light.color=c;else o->style[path]=c.name(QColor::HexArgb);}});});
+    connect(button,&QPushButton::clicked,this,[=, this]{
+        QHash<QString,QColor> colors;QHash<QString,QJsonValue> styles;
+        for(auto *o:m->inspected())if(!o->locked){colors[o->id]=path=="light.color"?o->light.color:o->mat.color;styles[o->id]=o->style.value(path);}
+        auto preview=[&](QColor c){for(auto it=colors.cbegin();it!=colors.cend();++it)if(auto *o=m->byId(it.key())){if(path=="fill.color")o->mat.color=c;else if(path=="light.color")o->light.color=c;else o->style[path]=c.name(QColor::HexArgb);}m->notify();};
+        const QColor c=ColorPicker::getColor(get(),this,label,QColorDialog::ShowAlphaChannel,preview);
+        bool changed=false;
+        for(auto it=colors.cbegin();it!=colors.cend();++it)if(auto *o=m->byId(it.key())){
+            const QColor old=path=="fill.color"||path=="light.color"?it.value():QColor(styles[it.key()].toString(fallback));changed|=c.isValid()&&c!=old;
+            if(path=="fill.color")o->mat.color=it.value();else if(path=="light.color")o->light.color=it.value();else if(styles[it.key()].isUndefined())o->style.remove(path);else o->style[path]=styles[it.key()];
+        }
+        if(changed){m->pushUndo(true);preview(c);}else m->notify();
+    });
     sync.append([=, this]{QColor c=get();button->setText(c.name(QColor::HexArgb));button->setStyleSheet("background:"+c.name()+";color:"+(c.lightness()>140?"#111":"#fff")+";");});
 }
 void PropertyInspector::refresh(){syncing=true;for(const auto &fn:sync)fn();syncing=false;}

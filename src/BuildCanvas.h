@@ -46,6 +46,7 @@ public:
     void startLoopCut();
     void cancelModal();
     void pickSceneObject(std::function<void(QString)> picked);
+    void startDrawShape(const QString &kind);
 
 signals:
     void componentBrowserRequested();
@@ -69,6 +70,11 @@ protected:
     void dropEvent(QDropEvent *) override;
 
 private:
+    QString m_drawShape;
+    bool m_drawingShape=false;
+    QPointF m_drawStart;
+    QRectF m_drawRect;
+    void updateDrawShape(QPointF point, Qt::KeyboardModifiers modifiers);
     struct Modal {
         enum Kind { None, Move, Rotate, Scale, Inset } kind = None;
         int axis = -1;  // -1 free, 0 X, 1 Y, 2 Z, 3 custom (customAxis)
@@ -85,6 +91,7 @@ private:
         bool fromMouseButton = false;  // middle drag / tweak: ends when the button is let go
         int resizeHandle = -1;
         QRectF resizeBounds;
+        QRectF moveBounds;
         bool snapX=false, snapY=false;
         QPointF snapPoint;
     };

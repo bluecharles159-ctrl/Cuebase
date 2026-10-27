@@ -1,5 +1,6 @@
 #include <QSignalBlocker>
 #include "UiControls.h"
+#include "Toast.h"
 #include "BuildWorkspace.h"
 #include "TextureLibrary.h"
 #include "ComponentLibrary.h"
@@ -77,7 +78,7 @@ public:
     }
 protected:
     void paintEvent(QPaintEvent *) override {
-        QPainter p(this);p.setRenderHint(QPainter::Antialiasing);p.fillRect(rect(),QColor("#262626"));
+        QPainter p(this);p.setRenderHint(QPainter::Antialiasing);QPainterPath rounded;rounded.addRoundedRect(QRectF(rect()).adjusted(.5,.5,-.5,-.5),10,10);p.setClipPath(rounded);p.fillRect(rect(),QColor("#262626"));
         QSizeF size=QSizeF(width()-16,height()-16);const double aspect=lib->display.aspect();
         if(size.width()/size.height()>aspect)size.setWidth(size.height()*aspect);else size.setHeight(size.width()/aspect);
         QRectF frame(QPointF((width()-size.width())/2,(height()-size.height())/2),size);
@@ -750,6 +751,9 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     auto *addMenu = new QMenu(this);
     {
         QMenu *shapes = addMenu->addMenu("2D Shapes");
+        shapes->addAction("Draw rectangle…",this,[canvas]{canvas->startDrawShape("Rectangle");});
+        shapes->addAction("Draw ellipse…",this,[canvas]{canvas->startDrawShape("Ellipse");});
+        shapes->addSeparator();
         for (const QString &kind : {"Rectangle", "Ellipse"}) shapes->addAction(kind, this, [m, kind] {
             m->pushUndo();
             DObject o; o.id = Library::newId(); o.name = m->uniqueName(kind); o.type = "Shape";
@@ -1421,6 +1425,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
 }
 
 void BuildWorkspace::say(const QString &text, bool error) {
+    if(!error&&text.startsWith("Saved",Qt::CaseInsensitive))ToastHost::notify(this,"save",text);
     m_msg->setStyleSheet(error ? "color:#f87171;" : "color:palette(placeholder-text);");
     m_msg->setText("   " + text);
     QTimer::singleShot(4500, this, [this, text] { if (m_msg->text().trimmed() == text) m_msg->clear(); });
@@ -1437,7 +1442,7 @@ bool BuildWorkspace::importFile(const QString &path){
         connect(probe,&QMediaPlayer::durationChanged,this,[=,this](qint64 duration){if(*imported||duration<=0)return;*imported=true;
             DObject object;object.id=Library::newId();object.type="Audio";object.name=m_model->uniqueName(QFileInfo(path).completeBaseName());
             object.style["audio.file"]=path;object.style["audio.duration"]=double(duration);object.style["audio.start"]=double(m_model->t);object.style["audio.volume"]=1.;object.captureDefaults();
-            m_model->pushUndo();m_model->design.objects.append(object);m_model->design.durationMs=qMax(m_model->design.durationMs,int(qMin<qint64>(2147483647,m_model->t+duration)));m_model->select(object.id);m_model->notify();probe->deleteLater();
+            m_model->pushUndo();m_model->design.objects.append(object);m_model->design.durationMs=qMax(m_model->design.durationMs,int(qMin<qint64>(2147483647,m_model->t+duration)));m_model->select(object.id);m_model->notify();ToastHost::notify(this,"audio","Audio added successfully",object.name);probe->deleteLater();
         });connect(probe,&QMediaPlayer::errorOccurred,this,[=,this](QMediaPlayer::Error,const QString &error){say(error,true);probe->deleteLater();});probe->setSource(QUrl::fromLocalFile(path));return true;
     }
     if(QStringList{"fbx","obj","gltf","glb","dae","stl","ply"}.contains(suffix)){

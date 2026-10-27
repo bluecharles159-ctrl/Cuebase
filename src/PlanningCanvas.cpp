@@ -102,7 +102,10 @@ void PlanningCanvas::drawBackground(QPainter *p,const QRectF &visible){
     p->setPen(palette().color(QPalette::PlaceholderText));p->drawText(QPointF(22,148),"NOTES  ·  Drag empty space to create a card. Middle-drag to pan; Ctrl+wheel to zoom.");
     QSet<QString> connected;
     for(const auto &link:d->doc.links){connected.insert(portKey(link.from));connected.insert(portKey(link.to));QPen pen(palette().color(QPalette::Highlight),2);pen.setStyle(link.style=="Dotted"?Qt::DotLine:link.style=="Dashed"?Qt::DashLine:Qt::SolidLine);p->setPen(pen);p->setBrush(Qt::NoBrush);p->drawPath(connection(d->port(link.from),link.from.port,d->port(link.to),link.to.port));}
-    for(const auto &card:d->doc.cards){if(!card.rect.intersects(visible)||card.id==d->editingId)continue;p->setBrush(card.background);const bool empty=card.html.isEmpty()&&card.image.isEmpty();QPen border(card.id==d->selected?palette().color(QPalette::Highlight):palette().color(QPalette::Mid),card.id==d->selected?1.8:1);if(empty){border.setStyle(Qt::DashLine);border.setDashOffset(d->phase);}p->setPen(border);p->drawRoundedRect(card.rect,10,10);
+    for(const auto &card:d->doc.cards){if(!card.rect.adjusted(-8,-8,8,14).intersects(visible)||card.id==d->editingId)continue;
+        // Retain Cursor's raised, solid notes in the full linked planning board.
+        p->setPen(Qt::NoPen);for(int spread=6;spread>=1;--spread){p->setBrush(QColor(0,0,0,9));p->drawRoundedRect(card.rect.translated(0,5).adjusted(-spread,-spread,spread,spread),10+spread,10+spread);}
+        QColor paper=card.background;paper.setAlpha(255);p->setBrush(paper);const bool empty=card.html.isEmpty()&&card.image.isEmpty();QPen border(card.id==d->selected?palette().color(QPalette::Highlight):palette().color(QPalette::Mid),card.id==d->selected?1.8:1);if(empty){border.setStyle(Qt::DashLine);border.setDashOffset(d->phase);}p->setPen(border);p->drawRoundedRect(card.rect,10,10);
         p->save();QPainterPath clip;clip.addRoundedRect(card.rect.adjusted(1,1,-1,-1),9,9);p->setClipPath(clip);
         if(!card.image.isEmpty()){
             if(!d->images.contains(card.image)){
