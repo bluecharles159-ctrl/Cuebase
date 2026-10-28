@@ -42,6 +42,7 @@
 #include <QTabWidget>
 #include <QTimer>
 #include <QToolButton>
+#include <QWidgetAction>
 #include <QVBoxLayout>
 #include <QtMath>
 #include <algorithm>
@@ -280,15 +281,29 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     auto *helpers = new QToolButton;
     helpers->setText("View / Align");helpers->setPopupMode(QToolButton::InstantPopup);
     auto *helperMenu = new QMenu(helpers);
+    auto *overlayButton=new QToolButton;
+    overlayButton->setObjectName("viewportOverlays");overlayButton->setText("Overlays");overlayButton->setIcon(uiIcon("composition"));overlayButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);overlayButton->setPopupMode(QToolButton::InstantPopup);
+    overlayButton->setToolTip("Viewport helpers · never included in broadcast or export");
+    auto *overlayMenu=new QMenu(overlayButton);overlayMenu->setObjectName("viewportOverlayPanel");
+    auto *overlayPanel=new QWidget;overlayPanel->setMinimumWidth(250);auto *overlayLayout=new QVBoxLayout(overlayPanel);overlayLayout->setContentsMargins(14,12,14,12);overlayLayout->setSpacing(7);
+    auto *heading=new QLabel("Viewport overlays");heading->setStyleSheet("font-weight:600;");overlayLayout->addWidget(heading);
+    auto *master=new QCheckBox("Show overlays");master->setObjectName("overlayMaster");canvas->showOverlays=QSettings().value("build/overlays/enabled",true).toBool();master->setChecked(canvas->showOverlays);overlayLayout->addWidget(master);
+    auto *overlayOptions=new QWidget;auto *optionsLayout=new QVBoxLayout(overlayOptions);optionsLayout->setContentsMargins(12,4,0,4);optionsLayout->setSpacing(6);overlayLayout->addWidget(overlayOptions);overlayOptions->setEnabled(master->isChecked());
+    connect(master,&QCheckBox::toggled,canvas,[=](bool on){canvas->showOverlays=on;overlayOptions->setEnabled(on);QSettings().setValue("build/overlays/enabled",on);canvas->update();});
+    auto section=[&](const QString &label){auto *title=new QLabel(label);title->setStyleSheet("font-weight:600;margin-top:6px;");optionsLayout->addWidget(title);};
     auto overlay = [&](const QString &label, bool *value) {
-        auto *action=helperMenu->addAction(label);action->setCheckable(true);action->setChecked(*value);
-        connect(action,&QAction::toggled,canvas,[canvas,value](bool on){*value=on;canvas->update();});
+        const QString key="build/overlays/"+label;*value=QSettings().value(key,*value).toBool();
+        auto *check=new QCheckBox(label);check->setChecked(*value);optionsLayout->addWidget(check);
+        connect(check,&QCheckBox::toggled,canvas,[canvas,value,key](bool on){*value=on;QSettings().setValue(key,on);canvas->update();});
     };
+    section("Composition");
     overlay("Title safe",&canvas->showTitleSafe);overlay("Action safe",&canvas->showActionSafe);
-    overlay("Object origins",&canvas->showOrigins);
-    overlay("All overlays",&canvas->showOverlays);overlay("Placement cursor",&canvas->showCursor);overlay("Lights",&canvas->showLights);overlay("Camera",&canvas->showCamera);
     overlay("Center guides",&canvas->showAxes);overlay("Grid",&canvas->showGrid);overlay("Rulers · drag to create guides",&canvas->showRulers);
-    overlay("Snap · Alt temporarily bypasses",&canvas->snapping);
+    section("Objects");
+    overlay("Object origins",&canvas->showOrigins);
+    overlay("Placement cursor",&canvas->showCursor);overlay("Lights",&canvas->showLights);overlay("Camera",&canvas->showCamera);overlay("Gizmos",&canvas->showGizmos);
+    auto *panelAction=new QWidgetAction(overlayMenu);panelAction->setDefaultWidget(overlayPanel);overlayMenu->addAction(panelAction);overlayButton->setMenu(overlayMenu);tb->addWidget(overlayButton);
+    auto *snapAction=helperMenu->addAction("Snap · Ctrl or Alt temporarily bypasses");snapAction->setCheckable(true);snapAction->setChecked(canvas->snapping);connect(snapAction,&QAction::toggled,canvas,[canvas](bool on){canvas->snapping=on;canvas->update();});
     auto *guideSettings=helperMenu->addAction("Composition guides…");guideSettings->setObjectName("compositionGuideSettings");
     connect(guideSettings,&QAction::triggered,this,[=,this]{
         const auto *camera=m->design.camera();if(!camera)return;const auto cameraId=camera->id;const auto original=camera->style;

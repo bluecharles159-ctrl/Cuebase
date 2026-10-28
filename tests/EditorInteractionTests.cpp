@@ -78,6 +78,9 @@ private slots:
     }
     void modifierCategoriesAndNotices(){
         Library library;BuildWorkspace workspace(&library);workspace.resize(1200,800);workspace.show();QTest::qWait(30);
+        auto *overlayButton=workspace.findChild<QToolButton*>("viewportOverlays");QVERIFY(overlayButton);QVERIFY(overlayButton->menu());
+        auto *master=workspace.findChild<QCheckBox*>("overlayMaster");QVERIFY(master);auto *canvas=workspace.findChild<BuildCanvas*>();QVERIFY(canvas);
+        const bool original=master->isChecked();master->setChecked(false);QVERIFY(!canvas->showOverlays);master->setChecked(true);QVERIFY(canvas->showOverlays);master->setChecked(original);
         auto *filter=workspace.findChild<QComboBox*>("modifierCategory");QVERIFY(filter);QCOMPARE(filter->currentText(),QString("Modifiers"));filter->setCurrentIndex(1);QCOMPARE(filter->currentText(),QString("Physics"));
         ToastHost::notify(&workspace,"audio","Audio added successfully",QString(200,'x'));auto *host=workspace.findChild<ToastHost*>();QVERIFY(host);QVERIFY(host->isVisible());auto *card=host->findChild<QWidget*>("noticeCard");QVERIFY(card);QVERIFY(card->width()<=460);workspace.resize(500,600);QTest::qWait(20);QVERIFY(host->geometry()==workspace.rect());QVERIFY(card->geometry().right()<=host->width());
         workspace.grab().save("artifacts/build-modifier-categories.png");
