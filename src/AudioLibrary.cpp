@@ -47,10 +47,12 @@ QString AudioLibrary::addToScene(BuildModel &model,const Library &library,const 
     audio.style["audio.speed"]=a["speed"].toDouble(1);audio.style["audio.volume"]=a["volume"].toDouble(1);for(const auto &key:{"fadeIn","fadeOut","offset"})audio.style["audio."+QString(key)]=a[key].toDouble()*1000;
     audio.captureDefaults();model.design.objects.append(audio);const auto length=qMax<qint64>(1,qRound64(qMax(0.,duration(a)-a["offset"].toDouble()*1000)/qBound(.1,a["speed"].toDouble(1),4.)));model.design.durationMs=qMax(model.design.durationMs,int(qMin<qint64>(2147483647,model.t+length)));model.select(audio.id);model.notify();return audio.id;
 }
-QString AudioLibrary::addToTimeline(Library &library,const QString &id,qint64 start,int layer){
+QString AudioLibrary::addToTimeline(Library &library,const QString &id,qint64 start,int layer,QString *error){
     const auto a=asset(library,id);if(a.isEmpty()||!QFileInfo(a["file"].toString()).isFile())return {};
     Placement clip;clip.id=Library::newId();clip.type="Sound";clip.refId=id;clip.name=a["name"].toString();clip.file=a["file"].toString();clip.startMs=qMax<qint64>(0,start);clip.layer=qBound(1,layer,3);clip.offsetMs=qBound<qint64>(0,qRound64(a["offset"].toDouble()*1000),duration(a)-1);clip.durationMs=qMax<qint64>(1,qRound64((duration(a)-clip.offsetMs)/qBound(.1,a["speed"].toDouble(1),4.)));clip.seconds=int((clip.durationMs+999)/1000);
-    auto settings=library.production["audioPlacementSettings"].toObject();settings[clip.id]=a;library.production["audioPlacementSettings"]=settings;library.placements.append(clip);library.commitPlacements();return clip.id;
+    const auto previous=library.production;auto settings=library.production["audioPlacementSettings"].toObject();settings[clip.id]=a;library.production["audioPlacementSettings"]=settings;library.placements.append(clip);
+    if(!library.saveChecked(error)){library.placements.removeLast();library.production=previous;return {};}
+    emit library.placementsChanged();return clip.id;
 }
 AudioLibraryPanel::AudioLibraryPanel(Library *library,BuildModel *model,QWidget *parent):QWidget(parent),m_library(library),m_model(model){
     setObjectName(model?"buildAudioLibrary":"studioAudioLibrary");auto *layout=new QVBoxLayout(this);layout->setContentsMargins(8,8,8,8);layout->setSpacing(8);
@@ -59,6 +61,8 @@ AudioLibraryPanel::AudioLibraryPanel(Library *library,BuildModel *model,QWidget 
     connect(m_assets,&QListWidget::currentItemChanged,this,[this](QListWidgetItem *item){if(m_syncing||!item)return;m_assetId=item->data(Qt::UserRole).toString();m_sceneId.clear();m_placementId.clear();loadControls();});
     if(model){layout->addWidget(new QLabel("In scene"));auto *scene=new AudioList;scene->setDragEnabled(false);scene->setAcceptDrops(true);scene->dropped=[this](const QString &id){const auto added=AudioLibrary::addToScene(*m_model,*m_library,id);if(!added.isEmpty())ToastHost::notify(this,"audio","Audio added successfully",m_model->byId(added)->name);};m_scene=scene;layout->addWidget(scene);
         auto *add=new QPushButton(uiIcon("audio"),"Add selected audio to scene");layout->addWidget(add);connect(add,&QPushButton::clicked,this,[this,scene]{if(!m_assetId.isEmpty())scene->dropped(m_assetId);});
+        m_removeScene=new QPushButton(uiIcon("delete"),"Remove from scene");m_removeScene->setObjectName("removeSceneAudio");m_removeScene->setToolTip("Remove this scene instance; keep the stored audio and source file. Undo restores it.");layout->addWidget(m_removeScene);
+        connect(m_removeScene,&QPushButton::clicked,this,[this]{auto *audio=m_model->byId(m_sceneId);if(!audio||audio->type!="Audio"||audio->locked)return;const auto name=audio->name;m_model->select(audio->id);m_model->deleteSelected();m_sceneId.clear();loadControls();ToastHost::notify(this,"audio","Audio removed from scene",name);});
         connect(scene,&QListWidget::currentItemChanged,this,[this](QListWidgetItem *item){if(m_syncing||!item)return;m_sceneId=item->data(Qt::UserRole).toString();m_placementId.clear();m_model->select(m_sceneId);loadControls();});connect(model,&BuildModel::changed,this,[this]{refresh();});
         connect(model,&BuildModel::selectionChanged,this,[this]{if(auto *o=m_model->active();o&&o->type=="Audio"){m_sceneId=o->id;refresh();}});
     }
@@ -75,6 +79,7 @@ void AudioLibraryPanel::refresh(){
 void AudioLibraryPanel::selectPlacement(const QString &id){m_placementId=id;m_sceneId.clear();loadControls();}
 void AudioLibraryPanel::loadControls(){
     m_syncing=true;QJsonObject settings;QString name;
+    if(m_removeScene){const auto *audio=m_model->byId(m_sceneId);m_removeScene->setEnabled(audio&&audio->type=="Audio"&&!audio->locked);}
     double sourceSeconds=86400.;
     if(!m_sceneId.isEmpty()&&m_model){if(auto *audio=m_model->byId(m_sceneId))sourceSeconds=audio->style.value("audio.duration").toDouble()/1000.;}
     else if(!m_placementId.isEmpty()){if(auto *clip=m_library->placement(m_placementId)){const auto source=AudioLibrary::asset(*m_library,clip->refId);if(!source.isEmpty())sourceSeconds=duration(source)/1000.;}}
@@ -87,14 +92,17 @@ void AudioLibraryPanel::loadControls(){
     m_context->setText(name.isEmpty()?"Select audio to edit":name);for(auto *spin:{m_speed,m_volume,m_offset,m_fadeIn,m_fadeOut})spin->setEnabled(!name.isEmpty());m_speed->setValue(settings["speed"].toDouble(1));m_volume->setValue(settings["volume"].toDouble(1));m_offset->setValue(settings["offset"].toDouble());m_fadeIn->setValue(settings["fadeIn"].toDouble());m_fadeOut->setValue(settings["fadeOut"].toDouble());m_syncing=false;
 }
 void AudioLibraryPanel::saveControls(){
+    const auto previousProduction=m_library->production;
+    const auto previousPlacements=m_library->placements;
+    auto persist=[&]{QString error;if(m_library->saveChecked(&error))return true;m_library->production=previousProduction;m_library->placements=previousPlacements;loadControls();ToastHost::notify(this,"audio","Audio changes could not be saved",error);return false;};
     QJsonObject fields{{"speed",m_speed->value()},{"volume",m_volume->value()},{"offset",m_offset->value()},{"fadeIn",m_fadeIn->value()},{"fadeOut",m_fadeOut->value()}};
     if(!m_sceneId.isEmpty()&&m_model){if(auto *audio=m_model->byId(m_sceneId);audio&&audio->type=="Audio"){m_model->pushUndo();for(auto it=fields.begin();it!=fields.end();++it)m_model->editProperty(audio->id,"audio."+it.key(),it.value().toDouble()*(it.key()=="speed"||it.key()=="volume"?1:1000));m_model->notify();}return;}
-    if(!m_placementId.isEmpty()){auto *clip=m_library->placement(m_placementId);if(!clip)return;const auto old=AudioLibrary::placementSettings(*m_library,m_placementId);const double span=clip->lengthMs()*qBound(.1,old["speed"].toDouble(1),4.);const auto offset=qRound64(m_offset->value()*1000);clip->durationMs=qMax<qint64>(1,qRound64(qMax(1.,span-(offset-clip->offsetMs))/m_speed->value()));auto all=m_library->production["audioPlacementSettings"].toObject();all[m_placementId]=fields;m_library->production["audioPlacementSettings"]=all;clip->offsetMs=offset;m_library->commitPlacements();return;}
-    auto all=m_library->production["audioLibrary"].toArray();for(int i=0;i<all.size();++i){auto a=all[i].toObject();if(a["id"].toString()!=m_assetId)continue;for(auto it=fields.begin();it!=fields.end();++it)a[it.key()]=it.value();all[i]=a;}m_library->production["audioLibrary"]=all;m_library->save();emit m_library->productionChanged();
+    if(!m_placementId.isEmpty()){auto *clip=m_library->placement(m_placementId);if(!clip)return;const auto old=AudioLibrary::placementSettings(*m_library,m_placementId);const double span=clip->lengthMs()*qBound(.1,old["speed"].toDouble(1),4.);const auto offset=qRound64(m_offset->value()*1000);clip->durationMs=qMax<qint64>(1,qRound64(qMax(1.,span-(offset-clip->offsetMs))/m_speed->value()));auto all=m_library->production["audioPlacementSettings"].toObject();all[m_placementId]=fields;m_library->production["audioPlacementSettings"]=all;clip->offsetMs=offset;if(persist())emit m_library->placementsChanged();return;}
+    auto all=m_library->production["audioLibrary"].toArray();for(int i=0;i<all.size();++i){auto a=all[i].toObject();if(a["id"].toString()!=m_assetId)continue;for(auto it=fields.begin();it!=fields.end();++it)a[it.key()]=it.value();all[i]=a;}m_library->production["audioLibrary"]=all;if(persist())emit m_library->productionChanged();
 }
 void AudioLibraryPanel::importFile(const QString &path){
     if(!QFileInfo(path).isFile())return;auto *probe=new QMediaPlayer(this);auto done=std::make_shared<bool>(false);
     connect(probe,&QMediaPlayer::durationChanged,this,[=,this](qint64 length){if(*done||length<=0)return;*done=true;auto all=m_library->production["audioLibrary"].toArray();QString id;for(const auto &value:all)if(value.toObject()["file"].toString()==QFileInfo(path).absoluteFilePath())id=value.toObject()["id"].toString();
-        if(id.isEmpty()){id=Library::newId();auto a=defaults();a["id"]=id;a["name"]=QFileInfo(path).completeBaseName();a["file"]=QFileInfo(path).absoluteFilePath();a["seconds"]=int((length+999)/1000);a["durationMs"]=double(length);a["echo"]=0.;all.append(a);m_library->production["audioLibrary"]=all;m_library->save();}m_assetId=id;emit m_library->productionChanged();ToastHost::notify(this,"audio","Audio imported",QFileInfo(path).completeBaseName());probe->deleteLater();});
+        if(id.isEmpty()){const auto previous=m_library->production;id=Library::newId();auto a=defaults();a["id"]=id;a["name"]=QFileInfo(path).completeBaseName();a["file"]=QFileInfo(path).absoluteFilePath();a["seconds"]=int((length+999)/1000);a["durationMs"]=double(length);a["echo"]=0.;all.append(a);m_library->production["audioLibrary"]=all;QString error;if(!m_library->saveChecked(&error)){m_library->production=previous;ToastHost::notify(this,"audio","Audio import could not be saved",error);probe->deleteLater();return;}}m_assetId=id;emit m_library->productionChanged();ToastHost::notify(this,"audio","Audio imported",QFileInfo(path).completeBaseName());probe->deleteLater();});
     connect(probe,&QMediaPlayer::errorOccurred,this,[=,this](QMediaPlayer::Error,const QString &error){if(*done)return;*done=true;ToastHost::notify(this,"audio",error);probe->deleteLater();});QTimer::singleShot(30000,probe,[=,this]{if(!*done){*done=true;ToastHost::notify(this,"audio","Unable to read audio duration",QFileInfo(path).fileName());probe->deleteLater();}});probe->setSource(QUrl::fromLocalFile(path));
 }

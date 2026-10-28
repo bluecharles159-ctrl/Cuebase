@@ -32,6 +32,20 @@ class EditorInteractionTests:public QObject{
     Q_OBJECT
     ElementDesign scene(){auto design=ElementDesign::defaultScene();DObject object;object.id="plate";object.name="Plate";object.type="Shape";object.w=4;object.h=2;object.base.rot={90,0,0};object.mat.shadeless=true;object.keyChannel("position.x",0,0);object.keyChannel("position.x",1000,2);object.keyChannel("rotation.y",0,0);object.keyChannel("rotation.y",1000,30);design.objects.append(object);return design;}
 private slots:
+    void audioSaveFailureRestoresDataAndControls(){
+        const auto previousName=qApp->applicationName();qApp->setApplicationName(previousName+"-audio-save-failure");
+        const auto restoreName=qScopeGuard([&]{qApp->setApplicationName(previousName);});
+        const auto destination=QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)+"/cuebase.json";
+        QVERIFY(QDir().mkpath(destination));const auto cleanup=qScopeGuard([&]{QDir().rmdir(destination);});
+        QTemporaryDir temporary;QFile file(temporary.filePath("audio.wav"));QVERIFY(file.open(QIODevice::WriteOnly));file.write("fixture");file.close();
+        Library library;library.production["audioLibrary"]=QJsonArray{QJsonObject{{"id","audio"},{"name","Sound"},{"file",file.fileName()},{"durationMs",4000},{"speed",1.}}};
+        const auto before=library.production;QSignalSpy placements(&library,&Library::placementsChanged),production(&library,&Library::productionChanged);QString error;
+        QVERIFY(AudioLibrary::addToTimeline(library,"audio",0,1,&error).isEmpty());QVERIFY(!error.isEmpty());QVERIFY(library.placements.isEmpty());QCOMPARE(library.production,before);QCOMPARE(placements.size(),0);
+        AudioLibraryPanel panel(&library);panel.findChild<QListWidget*>("audioStored")->setCurrentRow(0);auto *speed=panel.findChild<QDoubleSpinBox*>("audioSpeed");QVERIFY(speed);speed->setValue(2);
+        QCOMPARE(speed->value(),1.);QCOMPARE(library.production,before);QCOMPARE(production.size(),0);
+        Placement clip;clip.id="placed";clip.type="Sound";clip.refId="audio";clip.durationMs=4000;library.placements.append(clip);panel.selectPlacement(clip.id);speed->setValue(2);
+        QCOMPARE(speed->value(),1.);QCOMPARE(library.placement(clip.id)->lengthMs(),qint64(4000));QCOMPARE(library.production,before);QCOMPARE(placements.size(),0);
+    }
     void layerOrderActionsPreserveSelectionAndLocks(){
         BuildModel model;auto design=scene();auto first=*design.find("plate");first.id="second";first.style["zIndex"]=3;design.objects.append(first);auto locked=first;locked.id="locked";locked.locked=true;locked.style["zIndex"]=8;design.objects.append(locked);model.reset(design);
         LayerPanel panel(&model);model.setSelection(QSet<QString>{"plate","second","locked"},"plate");panel.shiftOrder(1,true);
@@ -113,6 +127,7 @@ private slots:
         model.selectAll();QVERIFY(!model.sel.contains(id));model.select(id);QCOMPARE(model.activeId,id);
         const auto placement=AudioLibrary::addToTimeline(library,"asset",2000,2);QVERIFY(!placement.isEmpty());QCOMPARE(library.placement(placement)->lengthMs(),qint64(1500));AudioLibraryPanel studio(&library),build(&library,&model);QCOMPARE(studio.findChild<QListWidget*>("audioStored")->count(),1);QCOMPARE(build.findChild<QListWidget*>("audioStored")->count(),1);
         studio.selectPlacement(placement);QCOMPARE(studio.findChild<QDoubleSpinBox*>("audioOffset")->maximum(),3.99);studio.findChild<QDoubleSpinBox*>("audioSpeed")->setValue(1);QCOMPARE(library.placement(placement)->lengthMs(),qint64(3000));QCOMPARE(AudioLibrary::placementSettings(library,placement)["speed"].toDouble(),1.);QCOMPARE(AudioLibrary::asset(library,"asset")["speed"].toDouble(),2.);
+        model.select(id);auto *remove=build.findChild<QPushButton*>("removeSceneAudio");QVERIFY(remove);QVERIFY(remove->isEnabled());remove->click();QVERIFY(!model.byId(id));QVERIFY(model.byId("plate"));QVERIFY(QFileInfo::exists(file.fileName()));QVERIFY(!AudioLibrary::asset(library,"asset").isEmpty());QVERIFY(model.undo());QVERIFY(model.byId(id));
     }
     void numericValuesRemainVisible(){
         for(const auto &theme:QStringList{"Studio Blue","Current","Darker","Light"}){
