@@ -26,10 +26,22 @@ Cloud tests are required before calling these integrations verified. No local
 compilation is being run. This is a partial integration record, not a claim that
 the full backlog or all Cursor features are complete.
 
-Additional requests still open: shared audio panel and non-object scene audio,
-professional logo, right-side settings, default readable timeline width policy,
-full color-preview coverage outside the Inspector, persistent media cache,
-and notice coverage for all media actions.
+Update, 28 October: the shared Studio/Build audio library, in-scene audio list,
+drag-to-place audio, instance speed/volume/offset/fades, modifier/physics filter,
+and persistent decoded thumbnail/waveform cache are implemented. Scene audio is
+kept out of visual layer lists and canvas selection; its stored representation
+remains compatible with existing projects. Echo processing remains unfinished.
+
+Cloud run 40633835200 compiled successfully: both editor runs passed 17 checks
+and Build passed 55. Streaming passed 40 checks with one screenshot assertion
+failure caused by the newly tinted background. The correction and additional
+audio-selection/offset guards await the next batched verification run.
+
+Additional requests still open include professional logo, right-side settings,
+default readable timeline width policy, full color-preview coverage outside the
+Inspector, and notice coverage for all media actions. The table above records
+the initial integration state; this update supersedes its pending audio, cache,
+and modifier-filter entries. Overall verified completion remains 23 of 84.
 
 References: [Figma snapping](https://help.figma.com/hc/en-us/articles/360039956914-Adjust-alignment-rotation-position-and-dimensions)
 and [shape tools](https://help.figma.com/hc/en-us/articles/360040450133-Shape-tools).

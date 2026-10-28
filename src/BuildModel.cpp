@@ -348,7 +348,7 @@ void BuildModel::setSelection(const QSet<QString> &ids, const QString &act) {
 
 void BuildModel::selectAll() {
     sel.clear();
-    for (const DObject &o : design.objects) sel.insert(o.id);
+    for (const DObject &o : design.objects) if (o.type != "Audio") sel.insert(o.id);
     if (!sel.contains(activeId)) activeId = sel.isEmpty() ? QString() : *sel.begin();
     emit selectionChanged();
     emit changed();

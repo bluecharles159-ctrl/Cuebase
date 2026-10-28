@@ -167,7 +167,7 @@ QRectF BuildCanvas::objectBounds(const DObject &source, const ViewCam &cam, cons
 }
 QRectF BuildCanvas::selectionBounds(const ViewCam &cam,const QRectF &frame) const {
     QRectF result;
-    for (const auto &o:m_m->design.objects) if(m_m->sel.contains(o.id)&&o.visible&&!o.locked)result=result.united(objectBounds(o,cam,frame));
+    for (const auto &o:m_m->design.objects) if(o.type!="Audio"&&m_m->sel.contains(o.id)&&o.visible&&!o.locked)result=result.united(objectBounds(o,cam,frame));
     return result;
 }
 void BuildCanvas::frameSelected() {
@@ -320,7 +320,7 @@ void BuildCanvas::drawGizmos(QPainter &p, const ViewCam &cam, const QRectF &r) {
 
 void BuildCanvas::drawSelection(QPainter &p,const ViewCam &cam,const QRectF &r){
     p.setBrush(Qt::NoBrush);p.setPen(QPen(QColor("#60a5fa"),1));
-    for(const auto &o:m_m->design.objects)if(m_m->sel.contains(o.id)&&o.visible)p.drawRect(objectBounds(o,cam,r));
+    for(const auto &o:m_m->design.objects)if(o.type!="Audio"&&m_m->sel.contains(o.id)&&o.visible)p.drawRect(objectBounds(o,cam,r));
     const auto box=selectionBounds(cam,r);if(box.isEmpty())return;
     const QPointF handles[]={box.topLeft(),box.topRight(),box.bottomLeft(),box.bottomRight(),QPointF(box.center().x(),box.top()),QPointF(box.center().x(),box.bottom()),QPointF(box.left(),box.center().y()),QPointF(box.right(),box.center().y())};
     p.setBrush(QColor("#292929"));
@@ -752,7 +752,7 @@ void BuildCanvas::boxSelect(const QRectF &box, bool additive) {
     QSet<QString> ids = additive ? m_m->sel : QSet<QString>();
     QString act = m_m->activeId;
     for (const DObject &o : m_m->design.objects) {
-        if (!o.visible || o.locked) continue;
+        if (!o.visible || o.locked || o.type == "Audio") continue;
         if (box.intersects(objectBounds(o, cam, r))) {
             ids.insert(o.id);
             act = o.id;
@@ -818,7 +818,7 @@ void BuildCanvas::startModal(Modal::Kind k, bool fromButton, bool skipUndo) {
         md.pivot = editWorld().map(mesh->selCenter(m_m->esel));
     } else {
         auto objs = m_m->selected();
-        objs.removeIf([](auto *o){return o->locked;});
+        objs.removeIf([](auto *o){return o->locked||o->type=="Audio";});
         if (objs.isEmpty()) {
             emit message("Select an object first");
             return;

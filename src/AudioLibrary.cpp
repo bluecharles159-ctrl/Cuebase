@@ -75,6 +75,12 @@ void AudioLibraryPanel::refresh(){
 void AudioLibraryPanel::selectPlacement(const QString &id){m_placementId=id;m_sceneId.clear();loadControls();}
 void AudioLibraryPanel::loadControls(){
     m_syncing=true;QJsonObject settings;QString name;
+    double sourceSeconds=86400.;
+    if(!m_sceneId.isEmpty()&&m_model){if(auto *audio=m_model->byId(m_sceneId))sourceSeconds=audio->style.value("audio.duration").toDouble()/1000.;}
+    else if(!m_placementId.isEmpty()){if(auto *clip=m_library->placement(m_placementId)){const auto source=AudioLibrary::asset(*m_library,clip->refId);if(!source.isEmpty())sourceSeconds=duration(source)/1000.;}}
+    else{const auto source=AudioLibrary::asset(*m_library,m_assetId);if(!source.isEmpty())sourceSeconds=duration(source)/1000.;}
+    // Keep at least one editable centisecond of source after the offset.
+    m_offset->setMaximum(qMax(0.,sourceSeconds-.01));
     if(!m_sceneId.isEmpty()&&m_model){if(auto *audio=m_model->byId(m_sceneId);audio&&audio->type=="Audio"){name="In scene · "+audio->name;settings={{"speed",audio->propertyValue("audio.speed",m_model->t)},{"volume",audio->propertyValue("audio.volume",m_model->t)}};for(const auto &key:{"fadeIn","fadeOut","offset"})settings[key]=audio->propertyValue("audio."+QString(key),m_model->t)/1000.;}}
     else if(!m_placementId.isEmpty()){if(auto *clip=m_library->placement(m_placementId);clip&&clip->type=="Sound"){name="Timeline · "+clip->name;settings=AudioLibrary::placementSettings(*m_library,m_placementId);settings["offset"]=clip->offsetMs/1000.;}}
     else{settings=AudioLibrary::asset(*m_library,m_assetId);if(!settings.isEmpty())name="Stored audio · "+settings["name"].toString();}

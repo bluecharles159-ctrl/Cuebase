@@ -87,8 +87,9 @@ private slots:
         Library library;library.production["audioLibrary"]=QJsonArray{QJsonObject{{"id","asset"},{"name","Thunder"},{"file",file.fileName()},{"durationMs",4000},{"speed",2.},{"offset",1.},{"volume",.8},{"fadeIn",1.},{"fadeOut",.2}}};
         BuildModel model;model.reset(scene());const auto id=AudioLibrary::addToScene(model,library,"asset");QVERIFY(!id.isEmpty());LayerPanel layers(&model);for(QTreeWidgetItemIterator it(&layers);*it;++it)QVERIFY((*it)->data(0,Qt::UserRole).toString()!=id);
         const auto cues=designAudioCues(model.design,500,true,{},1,false);QCOMPARE(cues.size(),1);QCOMPARE(cues[0].position,qint64(2000));QCOMPARE(cues[0].rate,2.);QVERIFY(qAbs(cues[0].volume-.4)<.0001);QVERIFY(model.undo());QVERIFY(!model.byId(id));QVERIFY(model.redo());QVERIFY(model.byId(id));
+        model.selectAll();QVERIFY(!model.sel.contains(id));model.select(id);QCOMPARE(model.activeId,id);
         const auto placement=AudioLibrary::addToTimeline(library,"asset",2000,2);QVERIFY(!placement.isEmpty());QCOMPARE(library.placement(placement)->lengthMs(),qint64(1500));AudioLibraryPanel studio(&library),build(&library,&model);QCOMPARE(studio.findChild<QListWidget*>("audioStored")->count(),1);QCOMPARE(build.findChild<QListWidget*>("audioStored")->count(),1);
-        studio.selectPlacement(placement);studio.findChild<QDoubleSpinBox*>("audioSpeed")->setValue(1);QCOMPARE(library.placement(placement)->lengthMs(),qint64(3000));QCOMPARE(AudioLibrary::placementSettings(library,placement)["speed"].toDouble(),1.);QCOMPARE(AudioLibrary::asset(library,"asset")["speed"].toDouble(),2.);
+        studio.selectPlacement(placement);QCOMPARE(studio.findChild<QDoubleSpinBox*>("audioOffset")->maximum(),3.99);studio.findChild<QDoubleSpinBox*>("audioSpeed")->setValue(1);QCOMPARE(library.placement(placement)->lengthMs(),qint64(3000));QCOMPARE(AudioLibrary::placementSettings(library,placement)["speed"].toDouble(),1.);QCOMPARE(AudioLibrary::asset(library,"asset")["speed"].toDouble(),2.);
     }
     void numericValuesRemainVisible(){
         for(const auto &theme:QStringList{"Studio Blue","Current","Darker","Light"}){
