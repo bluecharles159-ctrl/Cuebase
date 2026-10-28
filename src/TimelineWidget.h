@@ -67,6 +67,9 @@ protected:
     void contextMenuEvent(QContextMenuEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dragMoveEvent(QDragMoveEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
 
 private:
     struct Block { int x, w; };
@@ -79,6 +82,7 @@ private:
     bool m_fixedPlayhead=true,m_followPaused=false;
     bool m_thumbnails=true,m_waveforms=true;
     TimelineMedia *m_media=nullptr;
+    QString m_selectedPlacement;
     int mainHeight() const { return 40+(m_thumbnails?48:0)+(m_waveforms?20:0); }
     int labelTop() const { return 36+mainHeight()+4; }
     int laneTop() const { return labelTop()+20; }

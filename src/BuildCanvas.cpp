@@ -2,6 +2,8 @@
 #include "ColorManagement.h"
 #include "SceneEffects.h"
 #include "TextureLibrary.h"
+#include "AudioLibrary.h"
+#include "Toast.h"
 #include <QDragEnterEvent>
 #include <QMimeData>
 
@@ -74,14 +76,17 @@ BuildCanvas::BuildCanvas(BuildModel *m, Library *lib, QWidget *parent) : QWidget
 }
 
 void BuildCanvas::dragEnterEvent(QDragEnterEvent *event){
+    if(!modalActive()&&event->mimeData()->hasFormat(AudioLibrary::mimeType)&&!AudioLibrary::asset(*m_lib,QString::fromUtf8(event->mimeData()->data(AudioLibrary::mimeType))).isEmpty()){event->acceptProposedAction();return;}
     if(!modalActive()&&!m_m->editMode&&event->mimeData()->hasFormat(TextureLibrary::mimeType)&&
        !TextureLibrary::entry(*m_lib,QString::fromUtf8(event->mimeData()->data(TextureLibrary::mimeType))).isEmpty())event->acceptProposedAction();
 }
 void BuildCanvas::dragMoveEvent(QDragMoveEvent *event){
+    if(!modalActive()&&event->mimeData()->hasFormat(AudioLibrary::mimeType)){event->acceptProposedAction();return;}
     const auto *object=m_m->byId(pickObject(event->position()));
     if(!modalActive()&&!m_m->editMode&&event->mimeData()->hasFormat(TextureLibrary::mimeType)&&object&&!object->locked&&TextureLibrary::compatible(*object))event->acceptProposedAction();else event->ignore();
 }
 void BuildCanvas::dropEvent(QDropEvent *event){
+    if(!modalActive()&&event->mimeData()->hasFormat(AudioLibrary::mimeType)){const auto id=AudioLibrary::addToScene(*m_m,*m_lib,QString::fromUtf8(event->mimeData()->data(AudioLibrary::mimeType)));if(!id.isEmpty()){event->acceptProposedAction();ToastHost::notify(this,"audio","Audio added successfully",m_m->byId(id)->name);emit message("Audio added successfully {"+m_m->byId(id)->name+"}");}return;}
     if(modalActive()||m_m->editMode||!event->mimeData()->hasFormat(TextureLibrary::mimeType))return;
     const auto target=pickObject(event->position());if(target.isEmpty())return;
     QString error;if(TextureLibrary::apply(*m_m,*m_lib,QString::fromUtf8(event->mimeData()->data(TextureLibrary::mimeType)),target,&error)){

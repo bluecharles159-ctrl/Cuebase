@@ -5,6 +5,7 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include "EditorPanel.h"
+#include "AudioLibrary.h"
 #include "Replay.h"
 #include "SceneEffects.h"
 #include "CrewWorkspace.h"
@@ -1048,6 +1049,7 @@ EditorPanel::EditorPanel(Library *lib, Playout *play, QWidget *parent) : QFrame(
         {"image", "Screen Elements", makeElementsPage(lib, play)},
         {"graph", "Monitor", studioDashboard(play)},
         {"crew", "Production / Crew", crewWorkspace(lib)},
+        {"audio", "Audio", new AudioLibraryPanel(lib)},
     };
     for (int i = 0; i < tools.size(); ++i) {
         auto *b = new QToolButton;
@@ -1068,6 +1070,7 @@ EditorPanel::EditorPanel(Library *lib, Playout *play, QWidget *parent) : QFrame(
     showTool(2); // open on Programs
     // pressing a program card opens that program here
     connect(lib, &Library::openProgramRequested, this, [this] { showTool(2); });
+    connect(lib,&Library::openAudioRequested,this,[this](const QString &id){showTool(6);if(auto *panel=findChild<AudioLibraryPanel*>("studioAudioLibrary"))panel->selectPlacement(id);});
 }
 
 void EditorPanel::showTool(int index) {

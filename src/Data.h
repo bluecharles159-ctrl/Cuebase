@@ -229,6 +229,7 @@ signals:
     void openCuePlacementRequested(const QString &placementId);
     void effectRequested();
     void openProgramRequested(const QString &programId);
+    void openAudioRequested(const QString &placementId);
 
 private:
     QList<QList<ProgramItem>> m_cutUndo,m_cutRedo;

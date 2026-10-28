@@ -1,4 +1,5 @@
 #include "Playout.h"
+#include "AudioLibrary.h"
 #include "Continuity.h"
 #include "Replay.h"
 #include "DesignAudio.h"
@@ -512,7 +513,9 @@ void Playout::setMuted(bool m) {
 void Playout::layerAudio(const Placement &pl, Sfx &s) const {
     if (!s.out) return;
     const LayerState &ls = m_lib->layers.value(qBound(0, pl.layer, 3));
-    s.out->setVolume(float(m_volume * ls.volume / 100.0 * (1-m_replayMix)));
+    double gain=1;
+    if(pl.type=="Sound"){const auto settings=AudioLibrary::placementSettings(*m_lib,pl.id);gain=qBound(0.,settings["volume"].toDouble(1),1.);const auto elapsed=timelinePosMs()-pl.startMs;const double fadeIn=settings["fadeIn"].toDouble()*1000,fadeOut=settings["fadeOut"].toDouble()*1000;if(fadeIn>0)gain*=qBound(0.,elapsed/fadeIn,1.);if(fadeOut>0)gain*=qBound(0.,(pl.lengthMs()-elapsed)/fadeOut,1.);}
+    s.out->setVolume(float(m_volume * ls.volume / 100.0 * (1-m_replayMix)*gain));
     s.out->setMuted(m_muted || ls.muted || (m_continuity&&m_continuity->active()));
 }
 
@@ -553,6 +556,8 @@ void Playout::syncSounds() {
         } else if (!active && fired) {
             m_soundsOn.remove(pl.id);
             stopSound(pl.id);
+        } else if(active&&fired&&pl.type=="Sound"){
+            auto &sound=m_sfx[pl.id];layerAudio(pl,sound);if(sound.player){const auto settings=AudioLibrary::placementSettings(*m_lib,pl.id);const double rate=qBound(.1,settings["speed"].toDouble(1),4.);sound.player->setPlaybackRate(rate);const auto expected=pl.offsetMs+qRound64((pos-pl.startMs)*rate);if(qAbs(sound.player->position()-expected)>250)sound.player->setPosition(expected);}
         }
     }
 }
@@ -573,7 +578,8 @@ void Playout::playSound(const Placement &pl, qint64 inMs) {
         emit audioSourceCreated(s.player,s.out);
     }
     layerAudio(pl, s);
-    inMs += pl.offsetMs;  // a clip on an extra timeline can start part-way into its media
+    const double rate=pl.type=="Sound"?qBound(.1,AudioLibrary::placementSettings(*m_lib,pl.id)["speed"].toDouble(1),4.):1.;
+    s.player->setPlaybackRate(rate);inMs=qRound64(inMs*rate)+pl.offsetMs;
     QMediaPlayer *player = s.player;
     const QUrl url = QUrl::fromLocalFile(pl.file);
     if (player->source() != url) {

@@ -49,6 +49,7 @@ jobs:
             mingw-w64-ucrt-x86_64-ffmpeg
             mingw-w64-ucrt-x86_64-python
       - name: Restore compiled-object cache
+        id: object-cache
         uses: actions/cache@v4
         with:
           path: .ccache
@@ -65,6 +66,7 @@ jobs:
           if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne 'FAA97974861EB75A68B5AA326C78E7E7A6F670B5EF191BACE78E715130381F23') { throw 'MediaMTX checksum mismatch' }
           Expand-Archive -LiteralPath $archive -DestinationPath tools/mediamtx -Force
       - name: Configure and compile
+        id: compile
         run: |
           set -euo pipefail
           ccache --max-size=700M
@@ -95,6 +97,12 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+      - name: Retain compiled objects when tests fail
+        if: failure() && steps.compile.outcome == 'success' && steps.object-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: windows-ucrt64-v1-${{ hashFiles('CMakeLists.txt', '.github/workflows/windows-build.yml') }}-${{ github.sha }}
       - name: Upload test reports and screenshots, including failures
         if: always()
         uses: actions/upload-artifact@v4

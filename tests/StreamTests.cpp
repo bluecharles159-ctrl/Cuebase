@@ -62,6 +62,11 @@
 class StreamTests:public QObject{
     Q_OBJECT
 private slots:
+    void hoverCutUsesProgramHistory(){
+        Library library;ProgramItem program;program.id="hover-cut";program.title="Cut me";program.seconds=8;library.programs={program};Playout play(&library);TimelineWidget timeline(&play,&library);timeline.resize(800,240);timeline.show();QTest::qWait(20);
+        QSignalSpy cuts(&timeline,&TimelineWidget::cutRequested);connect(&timeline,&TimelineWidget::cutRequested,&library,[&](const QString &id,int seconds){library.cutProgram(id,seconds);});
+        QTest::mouseMove(&timeline,QPoint(timeline.blockX(0)+timeline.blockW(0)/2,50));QTest::keyClick(&timeline,Qt::Key_C);QCOMPARE(cuts.size(),1);QCOMPARE(library.programs.size(),2);QVERIFY(library.undoProgramCut());QCOMPARE(library.programs.size(),1);QVERIFY(library.redoProgramCut());QCOMPARE(library.programs.size(),2);
+    }
     void timelineSourcePreviews(){
         applyUiTheme("Studio Blue",false);
         QTemporaryDir temp;QVERIFY(temp.isValid());const auto file=temp.filePath("aligned.mkv");QProcess generate;

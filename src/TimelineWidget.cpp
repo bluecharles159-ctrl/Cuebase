@@ -6,6 +6,10 @@
 #include <QPainterPath>
 #include "TimelineWidget.h"
 #include "TimelineMedia.h"
+#include "AudioLibrary.h"
+#include "Toast.h"
+#include <QDragEnterEvent>
+#include <QMimeData>
 #include "StudioElements.h"
 
 #include <QApplication>
@@ -76,6 +80,7 @@ TimelineWidget::TimelineWidget(Playout *play, Library *lib, QWidget *parent)
     connect(lib, &Library::elementsChanged, this, [this] { update(); });
     connect(lib, &Library::layersChanged, this, [this] { update(); });
     setMouseTracking(true);
+    setAcceptDrops(true);
     setFocusPolicy(Qt::StrongFocus);setToolTip("Wheel: zoom · middle-drag / Shift-wheel: pan · Alt-wheel: step playhead · Home: fit · F: reveal playhead");
     DragController::instance()->setTarget(this);
     relayout();
@@ -398,8 +403,9 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
         p.setOpacity(opacity);
         const QColor c = segColor(s);
         p.setPen(current ? QPen(Qt::white, 2) : Qt::NoPen);
-        p.setBrush(current ? c : c.darker(160));
+        p.setBrush(palette().color(QPalette::Base).darker(125));
         p.drawRoundedRect(r, 8, 8);
+        p.setPen(QPen(c,2));p.drawLine(r.topLeft()+QPoint(9,1),r.topRight()+QPoint(-9,1));
         if(!s.file.isEmpty()&&r.intersects(visible)){
             p.save();QPainterPath clip;clip.addRoundedRect(r.adjusted(1,1,-1,-1),7,7);p.setClipPath(clip,Qt::IntersectClip);
             if(m_thumbnails){const QRect strip(r.left()+1,r.top()+23,r.width()-2,48);const auto shown=strip.intersected(visible);
@@ -492,9 +498,11 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
         const bool lifted = pb.id == m_liftedId;
         p.setOpacity(lifted ? 0.3 : (ls.muted && pb.type != "Element") || !ls.visible ? 0.55 : 1.0);
         p.setPen(Qt::NoPen);
-        p.setBrush(c.darker(125));
+        p.setBrush(palette().color(QPalette::Base).darker(145));
         p.drawRoundedRect(pb.rect, 4, 4);
-        if(m_waveforms&&pb.type!="Element"){QString file=pl->file;if(file.isEmpty()&&pb.type=="Ad")if(const auto *ad=m_lib->ad(pl->refId))file=ad->file;drawWave(pb.rect.adjusted(1,1,-1,-1),file,pl->offsetMs,pl->lengthMs());}
+        if(pb.id==m_selectedPlacement){p.save();p.setPen(QPen(palette().color(QPalette::Highlight),2));p.setBrush(Qt::NoBrush);p.drawRoundedRect(pb.rect.adjusted(1,1,-1,-1),4,4);p.restore();}
+        p.fillRect(QRect(pb.rect.left()+1,pb.rect.top()+4,2,qMax(1,pb.rect.height()-8)),c);
+        if(m_waveforms&&pb.type!="Element"){QString file=pl->file;if(file.isEmpty()&&pb.type=="Ad")if(const auto *ad=m_lib->ad(pl->refId))file=ad->file;const double rate=pb.type=="Sound"?qBound(.1,AudioLibrary::placementSettings(*m_lib,pl->id)["speed"].toDouble(1),4.):1.;drawWave(pb.rect.adjusted(1,1,-1,-1),file,pl->offsetMs,qRound64(pl->lengthMs()*rate));}
         if(!pl->boardSnapshot.isEmpty()){
             p.save();QPainterPath glass;glass.addRoundedRect(pb.rect,4,4);p.setClipPath(glass,Qt::IntersectClip);QLinearGradient surface(pb.rect.topLeft(),pb.rect.bottomLeft());surface.setColorAt(0,QColor(195,220,235,90));surface.setColorAt(.45,QColor(85,120,160,10));surface.setColorAt(1,QColor(190,220,245,45));p.fillRect(pb.rect,surface);const double progress=(m_glassClock.elapsed()%3000)/3000.;const double center=pb.rect.left()-30+(pb.rect.width()+60)*progress;QLinearGradient shine(center-22,0,center+22,0);shine.setColorAt(0,QColor(255,255,255,0));shine.setColorAt(.5,QColor(225,247,255,120));shine.setColorAt(1,QColor(255,255,255,0));p.fillRect(pb.rect,shine);p.restore();
         }
@@ -621,6 +629,7 @@ void TimelineWidget::mousePressEvent(QMouseEvent *e) {
     // 4. something on an extra timeline: picks it up
     if (const PBlock *pb = hitPlacement(pos)) {
         if (const Placement *pl = m_lib->placement(pb->id)) {
+            m_selectedPlacement=pl->id;if(pl->type=="Sound")emit m_lib->openAudioRequested(pl->id);update();
             if(qAbs(pos.x()-pb->rect.left())<6||qAbs(pos.x()-pb->rect.right())<6){m_trimProgram=false;m_trimId=pl->id;m_trimStart=pl->startMs;m_trimLength=pl->lengthMs();m_trimOffset=pl->offsetMs;m_drag=qAbs(pos.x()-pb->rect.left())<6?Drag::TrimLeft:Drag::TrimRight;setCursor(Qt::SizeHorCursor);return;}
             m_cand.kind = "placement";
             m_cand.id = pb->id;
@@ -666,7 +675,7 @@ void TimelineWidget::mouseMoveEvent(QMouseEvent *e) {
         emit m_lib->programsChanged();autoScroll(pos.x());update();return;}if(auto *placement=m_lib->placement(m_trimId)){
         const double frame=1000.*m_lib->display.fpsBase/qMax(1,m_lib->display.fps);qint64 at=qRound64(xToMs(pos.x())/frame)*frame;
         if(m_drag==Drag::TrimRight)placement->durationMs=qMax<qint64>(qRound64(frame),at-m_trimStart);
-        else{const auto end=m_trimStart+m_trimLength;at=qBound<qint64>(qMax<qint64>(0,m_trimStart-m_trimOffset),at,end-qRound64(frame));placement->startMs=at;placement->durationMs=end-at;placement->offsetMs=m_trimOffset+at-m_trimStart;}
+        else{const double rate=placement->type=="Sound"?qBound(.1,AudioLibrary::placementSettings(*m_lib,placement->id)["speed"].toDouble(1),4.):1.;const auto end=m_trimStart+m_trimLength;at=qBound<qint64>(qMax<qint64>(0,m_trimStart-qRound64(m_trimOffset/rate)),at,end-qRound64(frame));placement->startMs=at;placement->durationMs=end-at;placement->offsetMs=m_trimOffset+qRound64((at-m_trimStart)*rate);}
         placement->seconds=qMax(1,int(qCeil(placement->lengthMs()/1000.)));layoutPlacements();update();autoScroll(pos.x());}return;}
     if (m_drag == Drag::Playhead) {
         if (!m_moved && (pos - m_pressPos).manhattanLength() < 4) return;
@@ -803,3 +812,6 @@ void TimelineWidget::keyPressEvent(QKeyEvent *e){
     }
     if(e->key()==Qt::Key_Home){fitView();e->accept();}else if(e->key()==Qt::Key_F){revealPlayhead();e->accept();}else QWidget::keyPressEvent(e);
 }
+void TimelineWidget::dragEnterEvent(QDragEnterEvent *e){if(e->mimeData()->hasFormat(AudioLibrary::mimeType)&&!AudioLibrary::asset(*m_lib,QString::fromUtf8(e->mimeData()->data(AudioLibrary::mimeType))).isEmpty())e->acceptProposedAction();}
+void TimelineWidget::dragMoveEvent(QDragMoveEvent *e){if(e->mimeData()->hasFormat(AudioLibrary::mimeType))e->acceptProposedAction();}
+void TimelineWidget::dropEvent(QDropEvent *e){if(!e->mimeData()->hasFormat(AudioLibrary::mimeType))return;const int layer=qBound(1,1+int((e->position().y()-laneTop())/(kLaneH+kLaneGap)),3);const auto id=AudioLibrary::addToTimeline(*m_lib,QString::fromUtf8(e->mimeData()->data(AudioLibrary::mimeType)),xToMs(e->position().x()),layer);if(!id.isEmpty()){m_selectedPlacement=id;e->acceptProposedAction();emit m_lib->openAudioRequested(id);ToastHost::notify(this,"audio","Audio added successfully",m_lib->placement(id)->name);update();}}

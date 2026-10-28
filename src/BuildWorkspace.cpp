@@ -2,6 +2,7 @@
 #include "UiControls.h"
 #include "Toast.h"
 #include "CurveNoise.h"
+#include "AudioLibrary.h"
 #include "BuildWorkspace.h"
 #include "TextureLibrary.h"
 #include "ComponentLibrary.h"
@@ -417,7 +418,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     sideL->setSpacing(6);
     auto *tabs = new QVBoxLayout;
     tabs->setSpacing(4);
-    const QStringList tabNames{"Inspector", "Modifiers", "Material", "World", "Animation Cues", "Effects"};
+    const QStringList tabNames{"Inspector", "Modifiers", "Material", "World", "Animation Cues", "Effects", "Audio"};
     QVector<QPushButton *> tabBtns;
     for (const QString &n : tabNames) {
         auto *b = new QPushButton(n);
@@ -696,11 +697,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     wl->setSpacing(8);
     QVBoxLayout *wbl;
     auto *worldBox = box("BACKGROUND", &wbl);
-    auto *addAudio=new QPushButton(uiIcon("audio"),QString());addAudio->setFixedSize(24,22);addAudio->setToolTip("Add background audio tracks");wbl->addWidget(addAudio,0,Qt::AlignRight);
-    connect(addAudio,&QPushButton::clicked,this,[this]{for(const auto &path:QFileDialog::getOpenFileNames(this,"Add background audio",{},"Audio (*.wav *.mp3 *.aac *.m4a *.flac *.ogg)"))importFile(path);});
-    auto *audioTracks=new QListWidget;audioTracks->setMaximumHeight(110);audioTracks->setToolTip("Select an audio track to edit its mix, timing and fades in the inspector");wbl->addWidget(audioTracks);
-    connect(m,&BuildModel::changed,audioTracks,[=]{QSignalBlocker block(audioTracks);audioTracks->clear();for(const auto &o:m->design.objects)if(o.type=="Audio"){auto *item=new QListWidgetItem(uiIcon("audio"),o.name,audioTracks);item->setData(Qt::UserRole,o.id);}audioTracks->setVisible(audioTracks->count()>0);});
-    connect(audioTracks,&QListWidget::itemClicked,this,[=](QListWidgetItem *item){m->select(item->data(Qt::UserRole).toString());tabBtns[0]->click();});
+    auto *openAudio=new QPushButton(uiIcon("audio"),"Open audio library");wbl->addWidget(openAudio);connect(openAudio,&QPushButton::clicked,this,[=]{tabBtns[6]->click();});
     auto *wTransparent = new QCheckBox("Transparent (film): lay the scene over the video");
     auto *wColor = new QPushButton;
     auto *wGrad = new QCheckBox("Sky gradient");
@@ -754,6 +751,8 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     stack->addWidget(scrollPage(worldPage));
     stack->addWidget(scrollPage(animationCueEditor(m)));
     stack->addWidget(scrollPage(sceneEffectEditor(m)));
+    stack->addWidget(scrollPage(new AudioLibraryPanel(lib,m)));
+    connect(m,&BuildModel::selectionChanged,this,[=]{if(auto *object=m->active();object&&object->type=="Audio")tabBtns[6]->click();});
 
     // ================================================================ menus
     auto *addMenu = new QMenu(this);
@@ -1446,12 +1445,7 @@ bool BuildWorkspace::saveForClose(){save();return !m_editingId.isEmpty()&&!hasUn
 bool BuildWorkspace::importFile(const QString &path){
     const auto suffix=QFileInfo(path).suffix().toLower();
     if(QStringList{"wav","mp3","flac","ogg","aac","m4a","opus","aiff"}.contains(suffix)){
-        auto *probe=new QMediaPlayer(this);auto imported=std::make_shared<bool>(false);
-        connect(probe,&QMediaPlayer::durationChanged,this,[=,this](qint64 duration){if(*imported||duration<=0)return;*imported=true;
-            DObject object;object.id=Library::newId();object.type="Audio";object.name=m_model->uniqueName(QFileInfo(path).completeBaseName());
-            object.style["audio.file"]=path;object.style["audio.duration"]=double(duration);object.style["audio.start"]=double(m_model->t);object.style["audio.volume"]=1.;object.captureDefaults();
-            m_model->pushUndo();m_model->design.objects.append(object);m_model->design.durationMs=qMax(m_model->design.durationMs,int(qMin<qint64>(2147483647,m_model->t+duration)));m_model->select(object.id);m_model->notify();ToastHost::notify(this,"audio","Audio added successfully",object.name);probe->deleteLater();
-        });connect(probe,&QMediaPlayer::errorOccurred,this,[=,this](QMediaPlayer::Error,const QString &error){say(error,true);probe->deleteLater();});probe->setSource(QUrl::fromLocalFile(path));return true;
+        if(auto *panel=findChild<AudioLibraryPanel*>("buildAudioLibrary")){panel->importFile(path);if(auto *tab=findChild<QPushButton*>("buildTab_Audio"))tab->click();return true;}return false;
     }
     if(QStringList{"fbx","obj","gltf","glb","dae","stl","ply"}.contains(suffix)){
         QString error;auto objects=AssetImport::meshes(path,&error);

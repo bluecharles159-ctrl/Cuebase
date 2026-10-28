@@ -47,7 +47,7 @@ inline QColor getColor(const QColor &initial=Qt::white,QWidget *parent=nullptr,c
     QObject::connect(hue,&QSlider::valueChanged,&dialog,[=](int v){spectrum->color.setHsv(v,spectrum->color.hsvSaturation(),spectrum->color.value(),spectrum->color.alpha());refresh();publish();});
     QObject::connect(alpha,&QSlider::valueChanged,&dialog,[=](int v){spectrum->color.setAlpha(v);refresh();publish();});
     QObject::connect(hex,&QLineEdit::textEdited,&dialog,[=](const QString &text){QColor value(text);if(value.isValid()){spectrum->color=value;QSignalBlocker h(hue),a(alpha);hue->setValue(qMax(0,value.hsvHue()));alpha->setValue(value.alpha());spectrum->update();preview->setStyleSheet("border-radius:4px;background:"+value.name(QColor::HexArgb)+";");publish();}});
-    QObject::connect(hex,&QLineEdit::editingFinished,&dialog,[=]{refresh();});
+    QObject::connect(hex,&QLineEdit::editingFinished,&dialog,[=]{const QColor value(hex->text());if(value.isValid()){spectrum->color=value;publish();}refresh();});
     auto *buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);layout->addWidget(buttons);
     QObject::connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);QObject::connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);refresh();
     return dialog.exec()==QDialog::Accepted?spectrum->color:QColor();

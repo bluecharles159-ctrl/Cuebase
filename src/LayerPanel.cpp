@@ -28,13 +28,13 @@ void LayerPanel::refresh(){
     if(sig!=signature){
         QSet<QString> closed;for(QTreeWidgetItemIterator it(this);*it;++it)if((*it)->childCount()&&!(*it)->isExpanded())closed.insert((*it)->data(0,Qt::UserRole).toString());
         signature=sig;clear();QHash<QString,QTreeWidgetItem*> items;
-        for(const auto &o:m->design.objects){auto *item=new QTreeWidgetItem(QStringList{o.name});item->setData(0,Qt::UserRole,o.id);items[o.id]=item;
+        for(const auto &o:m->design.objects){if(o.type=="Audio")continue;auto *item=new QTreeWidgetItem(QStringList{o.name});item->setData(0,Qt::UserRole,o.id);items[o.id]=item;
             item->setFlags(item->flags()|Qt::ItemIsEditable|Qt::ItemIsDragEnabled|Qt::ItemIsDropEnabled);
             const bool component=!o.style["component.id"].toString().isEmpty();item->setIcon(0,uiIcon(component?"component":o.type));item->setIcon(1,uiIcon(o.visible?"eye":"hidden",o.visible));item->setIcon(2,uiIcon(o.locked?"lock":"unlock",o.locked));
             item->setToolTip(0,o.type+" · F2 to rename · Ctrl+P to parent to the active layer");item->setToolTip(1,o.visible?"Hide layer":"Show layer");item->setToolTip(2,o.locked?"Unlock layer":"Lock layer");
             if(component)item->setToolTip(0,o.style["component.role"].toString()+" · "+o.type+" · / opens Components");
         }
-        for(const auto &o:m->design.objects){auto *item=items[o.id];QSet<QString> seen{o.id};auto *parent=m->byId(o.parentId);bool cycle=false;
+        for(const auto &o:m->design.objects){if(o.type=="Audio")continue;auto *item=items[o.id];QSet<QString> seen{o.id};auto *parent=m->byId(o.parentId);bool cycle=false;
             while(parent){if(seen.contains(parent->id)){cycle=true;break;}seen.insert(parent->id);parent=m->byId(parent->parentId);}
             if(!cycle&&items.contains(o.parentId))items[o.parentId]->addChild(item);else addTopLevelItem(item);
         }
@@ -51,6 +51,7 @@ void LayerPanel::dropEvent(QDropEvent *event){
     }
     m->pushUndo();syncing=true;QTreeWidget::dropEvent(event);QVector<DObject> objects;
     for(QTreeWidgetItemIterator it(this);*it;++it)if(auto *o=m->byId((*it)->data(0,Qt::UserRole).toString()))objects.append(*o);
+    for(const auto &object:m->design.objects)if(object.type=="Audio")objects.append(object);
     if(objects.size()==m->design.objects.size())m->design.objects=objects;else m->dropUndo();
     syncing=false;signature.clear();m->notify();
 }

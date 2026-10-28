@@ -9,6 +9,7 @@
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTreeWidget>
+#include <QListWidget>
 #include <QTreeWidgetItemIterator>
 #include <QPainter>
 #include <QWheelEvent>
@@ -23,6 +24,9 @@
 #include "PropertyInspector.h"
 #include "Toast.h"
 #include "BuildWorkspace.h"
+#include "AudioLibrary.h"
+#include "DesignAudio.h"
+#include "LayerPanel.h"
 
 class EditorInteractionTests:public QObject{
     Q_OBJECT
@@ -67,7 +71,8 @@ private slots:
         QWheelEvent zoom(QPointF(450,325),QPointF(canvas.mapToGlobal(QPoint(450,325))),{},QPoint(0,-240),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);QApplication::sendEvent(&canvas,&zoom);canvas.grab();
         const auto frame=canvas.property("compositionFrame").toRectF();const auto camera=model.design.sceneCamera(0,library.display.aspect());QPointF start,end;
         QVERIFY(camera.toScreen(QVector3D(),frame,&start));QVERIFY(camera.toScreen(QVector3D(1,0,0),frame,&end));
-        QTest::mouseMove(&canvas,start.toPoint());canvas.startMove();QTest::mouseMove(&canvas,(end-QPointF(3,0)).toPoint());QTest::keyClick(&canvas,Qt::Key_Return);QVERIFY(qAbs(model.byId("plate")->at(0).loc.x()-1)<.03);
+        auto move=[&](QPointF point){QMouseEvent event(QEvent::MouseMove,point,QPointF(canvas.mapToGlobal(point.toPoint())),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QApplication::sendEvent(&canvas,&event);};
+        move(start);canvas.startMove();move(end-QPointF(3,0));QTest::keyClick(&canvas,Qt::Key_Return);QVERIFY2(qAbs(model.byId("plate")->at(0).loc.x()-1)<.03,qPrintable(QString::number(model.byId("plate")->at(0).loc.x())));
         model.byId("target")->base.loc={9.2f,0,0};model.byId("target")->w=2;model.notify();QPointF outside;QVERIFY(camera.toScreen(QVector3D(9.2f,0,0),frame,&outside));QVERIFY(!frame.contains(outside));QTest::mouseClick(&canvas,Qt::LeftButton,Qt::NoModifier,outside.toPoint());QCOMPARE(model.activeId,QString("target"));
         canvas.grab().save("artifacts/build-draw-and-align.png");
     }
@@ -76,6 +81,14 @@ private slots:
         auto *filter=workspace.findChild<QComboBox*>("modifierCategory");QVERIFY(filter);QCOMPARE(filter->currentText(),QString("Modifiers"));filter->setCurrentIndex(1);QCOMPARE(filter->currentText(),QString("Physics"));
         ToastHost::notify(&workspace,"audio","Audio added successfully",QString(200,'x'));auto *host=workspace.findChild<ToastHost*>();QVERIFY(host);QVERIFY(host->isVisible());auto *card=host->findChild<QWidget*>("noticeCard");QVERIFY(card);QVERIFY(card->width()<=460);workspace.resize(500,600);QTest::qWait(20);QVERIFY(host->geometry()==workspace.rect());QVERIFY(card->geometry().right()<=host->width());
         workspace.grab().save("artifacts/build-modifier-categories.png");
+    }
+    void sharedAudioRemainsSeparateFromVisualLayers(){
+        QTemporaryDir temporary;QFile file(temporary.filePath("sound.wav"));QVERIFY(file.open(QIODevice::WriteOnly));file.write("fixture");file.close();
+        Library library;library.production["audioLibrary"]=QJsonArray{QJsonObject{{"id","asset"},{"name","Thunder"},{"file",file.fileName()},{"durationMs",4000},{"speed",2.},{"offset",1.},{"volume",.8},{"fadeIn",1.},{"fadeOut",.2}}};
+        BuildModel model;model.reset(scene());const auto id=AudioLibrary::addToScene(model,library,"asset");QVERIFY(!id.isEmpty());LayerPanel layers(&model);for(QTreeWidgetItemIterator it(&layers);*it;++it)QVERIFY((*it)->data(0,Qt::UserRole).toString()!=id);
+        const auto cues=designAudioCues(model.design,500,true,{},1,false);QCOMPARE(cues.size(),1);QCOMPARE(cues[0].position,qint64(2000));QCOMPARE(cues[0].rate,2.);QVERIFY(qAbs(cues[0].volume-.4)<.0001);QVERIFY(model.undo());QVERIFY(!model.byId(id));QVERIFY(model.redo());QVERIFY(model.byId(id));
+        const auto placement=AudioLibrary::addToTimeline(library,"asset",2000,2);QVERIFY(!placement.isEmpty());QCOMPARE(library.placement(placement)->lengthMs(),qint64(1500));AudioLibraryPanel studio(&library),build(&library,&model);QCOMPARE(studio.findChild<QListWidget*>("audioStored")->count(),1);QCOMPARE(build.findChild<QListWidget*>("audioStored")->count(),1);
+        studio.selectPlacement(placement);studio.findChild<QDoubleSpinBox*>("audioSpeed")->setValue(1);QCOMPARE(library.placement(placement)->lengthMs(),qint64(3000));QCOMPARE(AudioLibrary::placementSettings(library,placement)["speed"].toDouble(),1.);QCOMPARE(AudioLibrary::asset(library,"asset")["speed"].toDouble(),2.);
     }
     void numericValuesRemainVisible(){
         for(const auto &theme:QStringList{"Studio Blue","Current","Darker","Light"}){
