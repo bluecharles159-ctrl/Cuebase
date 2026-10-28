@@ -25,6 +25,20 @@ def main():
         raise SystemExit('Destination must be the separate existing Cuebase checkout.')
     if git(target, 'remote', 'get-url', 'origin') != git(ROOT, 'remote', 'get-url', 'origin'):
         raise SystemExit('Repositories have different origins; no changes made.')
+    branch = 'codex/cursor-integration'
+    revision = git(ROOT, 'rev-parse', 'HEAD')
+    if git(target, 'branch', '--show-current') == branch:
+        # Subsequent updates are fast-forward only. Never stash or overwrite new work.
+        if git(target, 'status', '--porcelain', '--untracked-files=all'):
+            raise SystemExit('Editor checkout has local changes. Preserve and review them before updating.')
+        print(f'Clean integration checkout: {target}\nUpdate revision: {revision}')
+        if args.apply:
+            git(target, 'fetch', str(ROOT), revision)
+            git(target, 'merge', '--ff-only', revision)
+            print('Editor checkout updated:', git(target, 'rev-parse', 'HEAD'))
+        else:
+            print('Dry run passed. Apply will allow only a fast-forward update.')
+        return
     if git(target, 'rev-parse', '--short=7', 'HEAD') != '8a45503':
         raise SystemExit('Cursor checkout has new commits. Review them before synchronizing.')
     expected = {'src/' + path.name for path in REFERENCE.iterdir() if path.is_file()}
@@ -38,10 +52,8 @@ def main():
             normalize = lambda data: data.replace(b'\r\n', b'\n')
             if normalize((target / relative).read_bytes()) != normalize((REFERENCE / Path(relative).name).read_bytes()):
                 raise SystemExit(f'Cursor has newer edits in {relative}; no changes made.')
-    branch = 'codex/cursor-integration'
     if git(target, 'branch', '--list', branch):
         raise SystemExit('Integration branch already exists; inspect it before updating.')
-    revision = git(ROOT, 'rev-parse', 'HEAD')
     print(f'Reviewed {len(expected)} Cursor files. Target: {target}\nIntegration revision: {revision}')
     if not args.apply:
         print('Dry run passed. No files changed.')

@@ -32,6 +32,16 @@ class EditorInteractionTests:public QObject{
     Q_OBJECT
     ElementDesign scene(){auto design=ElementDesign::defaultScene();DObject object;object.id="plate";object.name="Plate";object.type="Shape";object.w=4;object.h=2;object.base.rot={90,0,0};object.mat.shadeless=true;object.keyChannel("position.x",0,0);object.keyChannel("position.x",1000,2);object.keyChannel("rotation.y",0,0);object.keyChannel("rotation.y",1000,30);design.objects.append(object);return design;}
 private slots:
+    void layerOrderActionsPreserveSelectionAndLocks(){
+        BuildModel model;auto design=scene();auto first=*design.find("plate");first.id="second";first.style["zIndex"]=3;design.objects.append(first);auto locked=first;locked.id="locked";locked.locked=true;locked.style["zIndex"]=8;design.objects.append(locked);model.reset(design);
+        LayerPanel panel(&model);model.setSelection(QSet<QString>{"plate","second","locked"},"plate");panel.shiftOrder(1,true);
+        QCOMPARE(model.byId("plate")->style["zIndex"].toInt(),9);QCOMPARE(model.byId("second")->style["zIndex"].toInt(),12);QCOMPARE(model.byId("locked")->style["zIndex"].toInt(),8);QCOMPARE(model.sel.size(),3);
+        QVERIFY(model.undo());QCOMPARE(model.byId("plate")->style["zIndex"].toInt(),0);QCOMPARE(model.byId("second")->style["zIndex"].toInt(),3);
+        panel.shiftOrder(-1,true);QCOMPARE(model.byId("second")->style["zIndex"].toInt(),3); // already behind the locked layer
+        panel.shiftOrder(-1);QCOMPARE(model.byId("plate")->style["zIndex"].toInt(),-1);QCOMPARE(model.byId("second")->style["zIndex"].toInt(),2);
+        for(QTreeWidgetItemIterator it(&panel);*it;++it)if((*it)->data(0,Qt::UserRole).toString()=="locked"){(*it)->setData(3,Qt::EditRole,99);QCOMPARE((*it)->data(3,Qt::EditRole).toInt(),8);break;}
+        QCOMPARE(model.byId("locked")->style["zIndex"].toInt(),8);
+    }
     void explicitLayerOrderPreservesGeometry(){
         BuildModel model;auto design=scene();auto *plate=design.find("plate");plate->tracks.clear();plate->mat.color=Qt::red;
         auto front=*plate;front.id="front";front.name="Front";front.mat.color=Qt::blue;design.objects.append(front);model.reset(design);

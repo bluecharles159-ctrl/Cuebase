@@ -1,4 +1,21 @@
-# Verification — updated 2026-10-25
+# Verification — updated 2026-10-28
+
+## Latest verified checkpoint
+
+[Run 40699925329](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/40699925329)
+completed successfully for `61e898abb2d98c2663c74e695ddbf3fe1e614b67`.
+This includes the shared audio integration, cached media previews, shape drawing,
+overlay visibility panel, and explicit object Z-index rendering/picking.
+The layer regression checks overlap colors, unchanged geometry, undo/redo and
+project serialization. Passing tests do not imply completion of the broader backlog.
+
+[Windows package, Cuebase-Windows-10](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/40699925329/artifacts/12820434542)
+and [test evidence](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/40699925329/artifacts/12821382389).
+The subsequent layer context actions and locked-editor guards require a new run.
+
+The editor checkout at `C:/Users/JusticeNick/Documents/GitHub/Cuebase` uses
+`codex/cursor-integration`. Original Cursor edits are retained in recovery stash
+`76c6ea00ef9ac125dbad7a5d65ec6e888938f0e8` and versioned reference files.
 
 ## Independent GitHub Windows build and functional tests
 
