@@ -505,6 +505,7 @@ const Mesh &ElementDesign::evalMesh(const DObject &o, qint64 ms) const {
 namespace {
 
 struct Item {
+    int zIndex = 0;
     QPainterPath backdropClip;double backdrop=0,brightness=1;
     QPainterPath clip;
     double depth = 0;
@@ -693,7 +694,7 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
                     }
                 }
                 if (clipped.size() < 3) continue;
-                Item it;it.clip=clip;
+                Item it;it.clip=clip;it.zIndex=obj.style["zIndex"].toInt();
                 double depth = 0;
                 for (const QVector3D &c : clipped) {
                     QPointF pt;
@@ -744,7 +745,7 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
             if (!ok || tex.isNull()) continue;
             QPolygonF src;
             src << QPointF(0, 0) << QPointF(tex.width(), 0) << QPointF(tex.width(), tex.height()) << QPointF(0, tex.height());
-            Item it;it.clip=clip;
+            Item it;it.clip=clip;it.zIndex=obj.style["zIndex"].toInt();
             if (!QTransform::quadToQuad(src, dst, it.tr)) continue;
             it.backdrop=preview.propertyBase("backdrop.blur");it.brightness=preview.propertyBase("backdrop.brightness");
             const double px=paddingX*kPxPerUnit,py=paddingY*kPxPerUnit;
@@ -758,7 +759,7 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
         }
     }
 
-    std::stable_sort(items.begin(), items.end(), [](const Item &a, const Item &b) { return a.depth > b.depth; });  // far first
+    std::stable_sort(items.begin(), items.end(), [](const Item &a, const Item &b) { return a.zIndex!=b.zIndex?a.zIndex<b.zIndex:a.depth>b.depth; });  // explicit stacking, then far first
     const QTransform base = p.transform();
     for (const Item &it : items) {
         p.save();p.setClipPath(it.clip,Qt::IntersectClip);

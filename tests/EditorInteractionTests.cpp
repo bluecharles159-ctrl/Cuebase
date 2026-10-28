@@ -32,6 +32,16 @@ class EditorInteractionTests:public QObject{
     Q_OBJECT
     ElementDesign scene(){auto design=ElementDesign::defaultScene();DObject object;object.id="plate";object.name="Plate";object.type="Shape";object.w=4;object.h=2;object.base.rot={90,0,0};object.mat.shadeless=true;object.keyChannel("position.x",0,0);object.keyChannel("position.x",1000,2);object.keyChannel("rotation.y",0,0);object.keyChannel("rotation.y",1000,30);design.objects.append(object);return design;}
 private slots:
+    void explicitLayerOrderPreservesGeometry(){
+        BuildModel model;auto design=scene();auto *plate=design.find("plate");plate->tracks.clear();plate->mat.color=Qt::red;
+        auto front=*plate;front.id="front";front.name="Front";front.mat.color=Qt::blue;design.objects.append(front);model.reset(design);
+        auto pixel=[&]{QImage image(320,180,QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);QPainter painter(&image);model.design.render(painter,image.rect(),0);painter.end();return image.pixelColor(160,90);};
+        QVERIFY(pixel().blue()>200);const auto original=model.byId("plate")->base.loc;LayerPanel layers(&model);
+        QTreeWidgetItem *row=nullptr;for(QTreeWidgetItemIterator it(&layers);*it;++it)if((*it)->data(0,Qt::UserRole).toString()=="plate")row=*it;QVERIFY(row);
+        row->setData(3,Qt::EditRole,2);QCOMPARE(model.byId("plate")->style["zIndex"].toInt(),2);QCOMPARE(model.byId("plate")->base.loc,original);QVERIFY(pixel().red()>200);
+        QVERIFY(model.undo());QVERIFY(pixel().blue()>200);QVERIFY(model.redo());QVERIFY(pixel().red()>200);
+        const auto restored=ElementDesign::fromJson(model.design.toJson());QCOMPARE(restored.find("plate")->style["zIndex"].toInt(),2);
+    }
     void initTestCase(){QStandardPaths::setTestModeEnabled(true);qApp->setApplicationName("CuebaseEditorInteractionTests");installUiBehavior(qApp);applyUiTheme("Studio Blue",false);QDir().mkpath("artifacts");}
     void themeTextContrast(){
         auto luminance=[](const QColor &c){auto linear=[](double value){return value<=.04045?value/12.92:std::pow((value+.055)/1.055,2.4);};return .2126*linear(c.redF())+.7152*linear(c.greenF())+.0722*linear(c.blueF());};

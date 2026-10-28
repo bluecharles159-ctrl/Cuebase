@@ -4,9 +4,22 @@
 #include <QDropEvent>
 #include <QHeaderView>
 #include <QTreeWidgetItemIterator>
+#include <QStyledItemDelegate>
+#include <QSpinBox>
+
+namespace {
+class LayerOrderDelegate final:public QStyledItemDelegate {
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+    QWidget *createEditor(QWidget *parent,const QStyleOptionViewItem &,const QModelIndex &)const override{auto *input=new FrameInput(parent);input->setRange(-10000,10000);return input;}
+    void setEditorData(QWidget *editor,const QModelIndex &index)const override{static_cast<QSpinBox*>(editor)->setValue(index.data(Qt::EditRole).toInt());}
+    void setModelData(QWidget *editor,QAbstractItemModel *model,const QModelIndex &index)const override{auto *input=static_cast<QSpinBox*>(editor);input->interpretText();model->setData(index,input->value(),Qt::EditRole);}
+};
+}
 
 LayerPanel::LayerPanel(BuildModel *model,QWidget *parent):QTreeWidget(parent),m(model){
-    setColumnCount(3);setHeaderLabels({"Layers","", ""});setRootIsDecorated(true);setIndentation(13);
+    setColumnCount(4);setHeaderLabels({"Layers","", "", "Z"});setRootIsDecorated(true);setIndentation(13);
+    setItemDelegateForColumn(3,new LayerOrderDelegate(this));setColumnWidth(3,48);headerItem()->setToolTip(3,"Overlap order · higher values appear in front without changing size or position. Double-click to edit.");
     setStyleSheet("QTreeWidget{background:palette(window);color:#b8c5d6;border:0;font-size:10px;} QTreeWidget::item{height:23px;} QTreeWidget::item:selected{background:#28466a;} QHeaderView::section{background:#343434;color:#8392a6;border:0;padding:4px;font-size:10px;}");
     setSelectionMode(QAbstractItemView::ExtendedSelection);setDragDropMode(QAbstractItemView::InternalMove);
     setDefaultDropAction(Qt::MoveAction);setEditTriggers(QAbstractItemView::EditKeyPressed);
@@ -16,20 +29,21 @@ LayerPanel::LayerPanel(BuildModel *model,QWidget *parent):QTreeWidget(parent),m(
     connect(this,&QTreeWidget::itemSelectionChanged,this,[this]{if(syncing)return;QSet<QString> ids;for(auto *item:selectedItems())ids.insert(item->data(0,Qt::UserRole).toString());auto *cur=currentItem();m->setSelection(ids,cur?cur->data(0,Qt::UserRole).toString():QString());});
     connect(this,&QTreeWidget::itemClicked,this,[this](QTreeWidgetItem *item,int column){
         if(syncing)return;const QString id=item->data(0,Qt::UserRole).toString();auto *o=m->byId(id);if(!o)return;
-        if(column){m->pushUndo();if(column==1)o->visible=!o->visible;else o->locked=!o->locked;m->notify();}
+        if(column==1||column==2){m->pushUndo();if(column==1)o->visible=!o->visible;else o->locked=!o->locked;m->notify();}
         else if(m->sel.contains(id))m->setSelection(m->sel,id);
     });
-    connect(this,&QTreeWidget::itemDoubleClicked,this,[this](QTreeWidgetItem *item,int column){if(column==0)editItem(item,0);});
-    connect(this,&QTreeWidget::itemChanged,this,[this](QTreeWidgetItem *item,int col){if(!syncing&&col==0)m->rename(item->data(0,Qt::UserRole).toString(),item->text(0));});refresh();
+    connect(this,&QTreeWidget::itemDoubleClicked,this,[this](QTreeWidgetItem *item,int column){if(column==0||column==3)editItem(item,column);});
+    connect(this,&QTreeWidget::itemChanged,this,[this](QTreeWidgetItem *item,int col){if(syncing)return;const auto id=item->data(0,Qt::UserRole).toString();if(col==0)m->rename(id,item->text(0));else if(col==3){if(auto *object=m->byId(id);object&&!object->locked){const int order=qBound(-10000,item->data(3,Qt::EditRole).toInt(),10000);if(order!=object->style["zIndex"].toInt()){m->pushUndo(true);object->style["zIndex"]=order;m->notify();}}}});refresh();
 }
 void LayerPanel::refresh(){
-    QString sig;for(const auto &o:m->design.objects)sig+=o.id+o.name+o.parentId+QString::number(o.visible)+QString::number(o.locked)+o.style["component.id"].toString()+o.style["component.role"].toString();
+    QString sig;for(const auto &o:m->design.objects)sig+=o.id+o.name+o.parentId+QString::number(o.visible)+QString::number(o.locked)+QString::number(o.style["zIndex"].toInt())+o.style["component.id"].toString()+o.style["component.role"].toString();
     syncing=true;
     if(sig!=signature){
         QSet<QString> closed;for(QTreeWidgetItemIterator it(this);*it;++it)if((*it)->childCount()&&!(*it)->isExpanded())closed.insert((*it)->data(0,Qt::UserRole).toString());
         signature=sig;clear();QHash<QString,QTreeWidgetItem*> items;
         for(const auto &o:m->design.objects){if(o.type=="Audio")continue;auto *item=new QTreeWidgetItem(QStringList{o.name});item->setData(0,Qt::UserRole,o.id);items[o.id]=item;
             item->setFlags(item->flags()|Qt::ItemIsEditable|Qt::ItemIsDragEnabled|Qt::ItemIsDropEnabled);
+            item->setData(3,Qt::EditRole,o.style["zIndex"].toInt());item->setToolTip(3,"Higher Z draws in front · double-click to edit · undo supported");
             const bool component=!o.style["component.id"].toString().isEmpty();item->setIcon(0,uiIcon(component?"component":o.type));item->setIcon(1,uiIcon(o.visible?"eye":"hidden",o.visible));item->setIcon(2,uiIcon(o.locked?"lock":"unlock",o.locked));
             item->setToolTip(0,o.type+" · F2 to rename · Ctrl+P to parent to the active layer");item->setToolTip(1,o.visible?"Hide layer":"Show layer");item->setToolTip(2,o.locked?"Unlock layer":"Lock layer");
             if(component)item->setToolTip(0,o.style["component.role"].toString()+" · "+o.type+" · / opens Components");

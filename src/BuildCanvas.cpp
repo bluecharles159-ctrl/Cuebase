@@ -644,7 +644,7 @@ QString BuildCanvas::pickObject(const QPointF &pos, bool cycle) {
         }
         if(!best.isEmpty())hits.prepend({bestDepth,best});
     }
-    std::stable_sort(hits.begin(),hits.end(),[](const auto &a,const auto &b){return a.first<b.first;});
+    std::stable_sort(hits.begin(),hits.end(),[&d](const auto &a,const auto &b){const int az=d.find(a.second)->style["zIndex"].toInt(),bz=d.find(b.second)->style["zIndex"].toInt();return az!=bz?az>bz:a.first<b.first;});
     if(hits.isEmpty())return {};
     best=hits.first().second;
     if(cycle){if(QLineF(pos,m_lastPick).length()<4){for(int i=0;i<hits.size();++i)if(hits[i].second==m_lastPicked){best=hits[(i+1)%hits.size()].second;break;}}m_lastPick=pos;m_lastPicked=best;}
