@@ -12,6 +12,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QQuaternion>
 #include <QPlainTextEdit>
 #include <QWheelEvent>
 #include <QElapsedTimer>

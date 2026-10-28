@@ -21,6 +21,8 @@
 #include "UiControls.h"
 #include "UiTheme.h"
 #include "PropertyInspector.h"
+#include "Toast.h"
+#include "BuildWorkspace.h"
 
 class EditorInteractionTests:public QObject{
     Q_OBJECT
@@ -62,11 +64,18 @@ private slots:
     void snappingAlignsEdgesAndOffCameraPicking(){
         Library library;BuildModel model;auto design=scene();design.find("plate")->tracks.clear();auto second=*design.find("plate");second.id="target";second.base.loc={5,0,0};design.objects.append(second);model.reset(design);model.select("plate");
         BuildCanvas canvas(&model,&library);canvas.resize(900,650);canvas.setShading(BuildCanvas::Solid);canvas.show();QTest::qWait(30);canvas.grab();
+        QWheelEvent zoom(QPointF(450,325),QPointF(canvas.mapToGlobal(QPoint(450,325))),{},QPoint(0,-240),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);QApplication::sendEvent(&canvas,&zoom);canvas.grab();
         const auto frame=canvas.property("compositionFrame").toRectF();const auto camera=model.design.sceneCamera(0,library.display.aspect());QPointF start,end;
         QVERIFY(camera.toScreen(QVector3D(),frame,&start));QVERIFY(camera.toScreen(QVector3D(1,0,0),frame,&end));
         QTest::mouseMove(&canvas,start.toPoint());canvas.startMove();QTest::mouseMove(&canvas,(end-QPointF(3,0)).toPoint());QTest::keyClick(&canvas,Qt::Key_Return);QVERIFY(qAbs(model.byId("plate")->at(0).loc.x()-1)<.03);
         model.byId("target")->base.loc={9.2f,0,0};model.byId("target")->w=2;model.notify();QPointF outside;QVERIFY(camera.toScreen(QVector3D(9.2f,0,0),frame,&outside));QVERIFY(!frame.contains(outside));QTest::mouseClick(&canvas,Qt::LeftButton,Qt::NoModifier,outside.toPoint());QCOMPARE(model.activeId,QString("target"));
         canvas.grab().save("artifacts/build-draw-and-align.png");
+    }
+    void modifierCategoriesAndNotices(){
+        Library library;BuildWorkspace workspace(&library);workspace.resize(1200,800);workspace.show();QTest::qWait(30);
+        auto *filter=workspace.findChild<QComboBox*>("modifierCategory");QVERIFY(filter);QCOMPARE(filter->currentText(),QString("Modifiers"));filter->setCurrentIndex(1);QCOMPARE(filter->currentText(),QString("Physics"));
+        ToastHost::notify(&workspace,"audio","Audio added successfully",QString(200,'x'));auto *host=workspace.findChild<ToastHost*>();QVERIFY(host);QVERIFY(host->isVisible());auto *card=host->findChild<QWidget*>("noticeCard");QVERIFY(card);QVERIFY(card->width()<=460);workspace.resize(500,600);QTest::qWait(20);QVERIFY(host->geometry()==workspace.rect());QVERIFY(card->geometry().right()<=host->width());
+        workspace.grab().save("artifacts/build-modifier-categories.png");
     }
     void numericValuesRemainVisible(){
         for(const auto &theme:QStringList{"Studio Blue","Current","Darker","Light"}){

@@ -1,6 +1,7 @@
 #include <QSignalBlocker>
 #include "UiControls.h"
 #include "Toast.h"
+#include "CurveNoise.h"
 #include "BuildWorkspace.h"
 #include "TextureLibrary.h"
 #include "ComponentLibrary.h"
@@ -595,6 +596,11 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     auto *ml = new QVBoxLayout(modPage);
     ml->setContentsMargins(4, 4, 8, 8);
     ml->setSpacing(8);
+    auto *modifierCategory=new QComboBox;modifierCategory->setObjectName("modifierCategory");modifierCategory->addItems({"Modifiers","Physics"});ml->addWidget(modifierCategory);
+    auto *noiseModifier=new QPushButton(uiIcon("graph"),"Animation noise…");noiseModifier->setObjectName("modifierNoise");noiseModifier->setToolTip("Edit noise on the selected object's animated curves. Add a property key first.");ml->addWidget(noiseModifier);
+    connect(noiseModifier,&QPushButton::clicked,this,[this,m]{QVector<QPair<QString,QString>> channels;for(auto *object:m->selected())if(!object->locked)for(const auto &track:object->tracks)channels.append({object->id,track.property});editCurveNoise(m,channels,this);});
+    auto updateNoiseAvailability=[m,noiseModifier]{bool available=false;for(auto *object:m->selected())available|=!object->locked&&!object->tracks.isEmpty();noiseModifier->setEnabled(available);};
+    connect(m,&BuildModel::selectionChanged,this,updateNoiseAvailability);connect(m,&BuildModel::changed,this,updateNoiseAvailability);updateNoiseAvailability();
     auto *addMod = new QToolButton;
     addMod->setText("＋  Add Modifier ▾");
     addMod->setPopupMode(QToolButton::InstantPopup);
@@ -625,6 +631,8 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     physHint->setStyleSheet("color:palette(placeholder-text); font-size:10px;");
     phl->addWidget(physHint);
     ml->addWidget(physBox);
+    auto filterModifiers=[=]{const bool physics=modifierCategory->currentIndex()==1;physBox->setVisible(physics);modHost->setVisible(!physics);addMod->setVisible(!physics);noiseModifier->setVisible(!physics);};
+    connect(modifierCategory,qOverload<int>(&QComboBox::currentIndexChanged),this,[=](int){filterModifiers();});filterModifiers();
     ml->addStretch();
     stack->addWidget(scrollPage(modPage));
 

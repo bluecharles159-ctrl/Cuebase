@@ -70,6 +70,8 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(!media.thumbnail(file,1500).isNull(),90000);QVERIFY(media.thumbnail(file,1500).pixelColor(48,27).blue()>200);
         QTRY_VERIFY_WITH_TIMEOUT(!media.waveform(file,0,2000).peaks.isEmpty(),90000);const auto wave=media.waveform(file,0,2000);float quiet=0,loud=0;for(int i=10;i<220;++i)quiet=qMax(quiet,wave.peaks[i]);for(int i=300;i<500;++i)loud=qMax(loud,wave.peaks[i]);QVERIFY(quiet<.05f);QVERIFY(loud>.3f);
         QTRY_VERIFY_WITH_TIMEOUT(!media.waveform(file,1000,1000).peaks.isEmpty(),90000);QVERIFY(media.waveform(file,1000,1000).peaks[100]>.3f);
+        // A fresh preview provider must reuse decoded media from disk.
+        TimelineMedia reopened;QVERIFY(!reopened.thumbnail(file,0).isNull());QVERIFY(reopened.thumbnail(file,1500).pixelColor(48,27).blue()>200);QCOMPARE(reopened.waveform(file,0,2000).peaks,wave.peaks);QCOMPARE(reopened.property("decodeCount").toInt(),0);
         QSettings settings;settings.setValue("studio/timelineThumbnails",true);settings.setValue("studio/timelineWaveforms",true);settings.setValue("studio/fixedPlayhead",false);settings.setValue("studio/timelineScale",260.);
         Library library;ProgramItem red;red.id="red";red.title="First second";red.file=file;red.seconds=1;ProgramItem blue=red;blue.id="blue";blue.title="Trimmed second";blue.offsetMs=1000;library.programs={red,blue};Playout play(&library);TimelineWidget timeline(&play,&library);timeline.resize(800,240);timeline.show();QTest::qWait(30);
         auto firstColour=[&]{return timeline.grab().toImage().pixelColor(timeline.blockX(0)+35,80);};auto secondColour=[&]{return timeline.grab().toImage().pixelColor(timeline.blockX(1)+35,80);};

@@ -4,6 +4,11 @@
 #include <QDebug>
 #include <QFileInfo>
 #include <QStandardPaths>
+#include <QCryptographicHash>
+#include <QDataStream>
+#include <QDir>
+#include <QImageReader>
+#include <QSaveFile>
 #include <QtEndian>
 #include <cmath>
 #include <cstring>
@@ -11,7 +16,20 @@
 #include <qt_windows.h>
 #endif
 
+namespace {
+QString previewCachePath(const QString &key,const QString &suffix){
+    const auto directory=QStandardPaths::writableLocation(QStandardPaths::CacheLocation)+"/timeline-previews-v1";
+    QDir().mkpath(directory);return directory+"/"+QString::fromLatin1(QCryptographicHash::hash(key.toUtf8(),QCryptographicHash::Sha256).toHex())+suffix;
+}
+void limitPreviewCache(){
+    QDir directory(QStandardPaths::writableLocation(QStandardPaths::CacheLocation)+"/timeline-previews-v1");
+    const auto files=directory.entryInfoList({"*.png","*.wave"},QDir::Files,QDir::Time);qint64 size=0;
+    for(const auto &file:files){size+=file.size();if(size>64*1024*1024&&file.completeBaseName().size()==64)QFile::remove(file.absoluteFilePath());}
+}
+}
+
 TimelineMedia::TimelineMedia(QObject *parent):QObject(parent){
+    limitPreviewCache();
 #ifdef Q_OS_WIN
     m_process.setCreateProcessArgumentsModifier([](QProcess::CreateProcessArguments *args){args->flags|=CREATE_NO_WINDOW|BELOW_NORMAL_PRIORITY_CLASS;});
 #endif
@@ -30,6 +48,7 @@ QString TimelineMedia::fileKey(const QString &file)const{
 QImage TimelineMedia::thumbnail(const QString &file,qint64 sourceMs){
     const auto base=fileKey(file);if(base.isEmpty())return {};const auto time=qMax<qint64>(0,sourceMs)/500*500;
     const auto key=base+"|v|"+QString::number(time);if(auto *image=m_images.object(key))return *image;
+    QImageReader reader(previewCachePath(key,".png"));if(reader.size()==QSize(96,54)){auto image=reader.read();if(!image.isNull()){m_images.insert(key,new QImage(image),qMax(1,int(image.sizeInBytes()/1024)));return image;}}
     enqueue({file,key,time,0,false});return {};
 }
 TimelineWave TimelineMedia::waveform(const QString &file,qint64 startMs,qint64 durationMs){
@@ -37,6 +56,10 @@ TimelineWave TimelineMedia::waveform(const QString &file,qint64 startMs,qint64 d
     const qint64 start=qMax<qint64>(0,startMs)/1000*1000,end=(qMax<qint64>(0,startMs)+durationMs+999)/1000*1000;
     const auto key=base+"|a|"+QString::number(start)+"|"+QString::number(end);
     if(auto *wave=m_waves.object(key))return *wave;
+    QFile cached(previewCachePath(key,".wave"));if(cached.open(QIODevice::ReadOnly)&&cached.size()==16+512*4){
+        QDataStream stream(&cached);stream.setFloatingPointPrecision(QDataStream::SinglePrecision);TimelineWave wave;stream>>wave.startMs>>wave.durationMs;wave.peaks.resize(512);bool valid=true;for(auto &peak:wave.peaks){stream>>peak;valid&=std::isfinite(peak)&&peak>=0&&peak<=1;}
+        if(valid&&stream.status()==QDataStream::Ok&&wave.startMs==start&&wave.durationMs==qMax<qint64>(1000,end-start)){m_waves.insert(key,new TimelineWave(wave),3);return wave;}
+    }
     enqueue({file,key,start,qMax<qint64>(1000,end-start),true});return {};
 }
 void TimelineMedia::enqueue(Job job){
@@ -46,6 +69,7 @@ void TimelineMedia::enqueue(Job job){
 void TimelineMedia::next(){
     if(m_busy||m_queue.isEmpty())return;
     m_job=m_queue.dequeue();m_busy=true;m_bytes.clear();m_samples=0;m_peaks=QVector<float>(512,0);setProperty("lastError",QString());
+    setProperty("decodeCount",property("decodeCount").toInt()+1);
     QString executable;
     for(const auto &path:QStringList{QCoreApplication::applicationDirPath()+"/ffmpeg.exe",QStandardPaths::findExecutable("ffmpeg"),"C:/msys64/ucrt64/bin/ffmpeg.exe"})if(QFileInfo(path).isFile()){executable=path;break;}
     if(executable.isEmpty()){finish(false);return;}
@@ -69,8 +93,11 @@ void TimelineMedia::finish(bool success){
     if(!m_busy)return;m_timeout.stop();const auto key=m_job.key;
     if(qEnvironmentVariableIsSet("CUEBASE_PREVIEW_TRACE"))qInfo()<<"Timeline preview"<<m_job.start<<m_job.duration<<m_job.audio<<success<<m_bytes.size()<<m_samples<<property("lastError");
     if(key.isEmpty()){m_busy=false;m_bytes.clear();emit updated();QTimer::singleShot(0,this,&TimelineMedia::next);return;}
-    if(success&&m_job.audio&&m_samples>0)m_waves.insert(key,new TimelineWave{m_job.start,m_job.duration,m_peaks},3);
-    else if(success&&!m_job.audio){auto image=QImage::fromData(m_bytes,"PNG");if(image.isNull())success=false;else m_images.insert(key,new QImage(image),qMax(1,int(image.sizeInBytes()/1024)));}
+    if(success&&m_job.audio&&m_samples>0){
+        m_waves.insert(key,new TimelineWave{m_job.start,m_job.duration,m_peaks},3);
+        QSaveFile cache(previewCachePath(key,".wave"));if(cache.open(QIODevice::WriteOnly)){QDataStream stream(&cache);stream.setFloatingPointPrecision(QDataStream::SinglePrecision);stream<<m_job.start<<m_job.duration;for(float peak:m_peaks)stream<<peak;if(stream.status()==QDataStream::Ok)cache.commit();}
+    }
+    else if(success&&!m_job.audio){auto image=QImage::fromData(m_bytes,"PNG");if(image.isNull())success=false;else {m_images.insert(key,new QImage(image),qMax(1,int(image.sizeInBytes()/1024)));QSaveFile cache(previewCachePath(key,".png"));if(cache.open(QIODevice::WriteOnly)&&image.save(&cache,"PNG"))cache.commit();}}
     else success=false;
     if(!success){if(m_failed.size()>1024)m_failed.clear();m_failed.insert(key);
         if(property("lastError").toString()=="Media preview timed out.")QTimer::singleShot(30000,this,[this,key]{m_failed.remove(key);emit updated();});}
