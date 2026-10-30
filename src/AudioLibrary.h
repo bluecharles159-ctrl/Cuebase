@@ -39,6 +39,7 @@ private:
     QLabel *m_context;
     QPushButton *m_removeScene=nullptr;
     QDoubleSpinBox *m_speed,*m_fadeIn,*m_fadeOut,*m_offset,*m_volume;
+    QDoubleSpinBox *m_start=nullptr;
     QString m_assetId,m_sceneId,m_placementId;
     bool m_syncing=false;
 };

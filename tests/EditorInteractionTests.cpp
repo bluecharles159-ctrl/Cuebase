@@ -32,6 +32,16 @@ class EditorInteractionTests:public QObject{
     Q_OBJECT
     ElementDesign scene(){auto design=ElementDesign::defaultScene();DObject object;object.id="plate";object.name="Plate";object.type="Shape";object.w=4;object.h=2;object.base.rot={90,0,0};object.mat.shadeless=true;object.keyChannel("position.x",0,0);object.keyChannel("position.x",1000,2);object.keyChannel("rotation.y",0,0);object.keyChannel("rotation.y",1000,30);design.objects.append(object);return design;}
 private slots:
+    void sceneAudioStartControlsPlaybackAndUndo(){
+        QTemporaryDir temporary;QFile file(temporary.filePath("sound.wav"));QVERIFY(file.open(QIODevice::WriteOnly));file.write("fixture");file.close();
+        Library library;library.production["audioLibrary"]=QJsonArray{QJsonObject{{"id","sound"},{"name","Sound"},{"file",file.fileName()},{"durationMs",4000}}};
+        BuildModel model;model.reset(scene());const auto id=AudioLibrary::addToScene(model,library,"sound");AudioLibraryPanel panel(&library,&model);model.select(id);
+        auto *start=panel.findChild<QDoubleSpinBox*>("audioSceneStart");QVERIFY(start);QVERIFY(start->isEnabled());start->setValue(10);
+        QCOMPARE(model.byId(id)->propertyValue("audio.start",0),10000.);QVERIFY(model.design.durationMs>=14000);QVERIFY(designAudioCues(model.design,9999,true,{},1,false).isEmpty());
+        const auto cues=designAudioCues(model.design,10500,true,{},1,false);QCOMPARE(cues.size(),1);QCOMPARE(cues[0].position,qint64(500));
+        QVERIFY(model.undo());QCOMPARE(model.byId(id)->propertyValue("audio.start",0),0.);QCOMPARE(start->value(),0.);QVERIFY(model.redo());QCOMPARE(start->value(),10.);
+        model.byId(id)->locked=true;model.notify();QVERIFY(!start->isEnabled());QVERIFY(!panel.findChild<QDoubleSpinBox*>("audioSpeed")->isEnabled());
+    }
     void audioSaveFailureRestoresDataAndControls(){
         const auto previousName=qApp->applicationName();qApp->setApplicationName(previousName+"-audio-save-failure");
         const auto restoreName=qScopeGuard([&]{qApp->setApplicationName(previousName);});
