@@ -12,6 +12,8 @@
 #include <QListWidget>
 #include <QTreeWidgetItemIterator>
 #include <QPainter>
+#include <QMediaPlayer>
+#include <QDataStream>
 #include <QWheelEvent>
 #include <QVBoxLayout>
 #include "BuildCanvas.h"
@@ -32,6 +34,13 @@ class EditorInteractionTests:public QObject{
     Q_OBJECT
     ElementDesign scene(){auto design=ElementDesign::defaultScene();DObject object;object.id="plate";object.name="Plate";object.type="Shape";object.w=4;object.h=2;object.base.rot={90,0,0};object.mat.shadeless=true;object.keyChannel("position.x",0,0);object.keyChannel("position.x",1000,2);object.keyChannel("rotation.y",0,0);object.keyChannel("rotation.y",1000,30);design.objects.append(object);return design;}
 private slots:
+    void sourceAudioPreviewDoesNotMutateProduction(){
+        QTemporaryDir temporary;const auto path=temporary.filePath("preview.wav");QFile file(path);QVERIFY(file.open(QIODevice::WriteOnly));QDataStream stream(&file);stream.setByteOrder(QDataStream::LittleEndian);
+        stream.writeRawData("RIFF",4);stream<<quint32(16036);stream.writeRawData("WAVEfmt ",8);stream<<quint32(16)<<quint16(1)<<quint16(1)<<quint32(8000)<<quint32(16000)<<quint16(2)<<quint16(16);stream.writeRawData("data",4);stream<<quint32(16000);file.write(QByteArray(16000,'\0'));file.close();
+        Library library;library.production["audioLibrary"]=QJsonArray{QJsonObject{{"id","preview"},{"name","Preview"},{"file",path},{"durationMs",1000}}};const auto before=library.production;QSignalSpy changed(&library,&Library::productionChanged);
+        AudioLibraryPanel panel(&library);panel.show();panel.findChild<QListWidget*>("audioStored")->setCurrentRow(0);auto *button=panel.findChild<QPushButton*>("previewStoredAudio");auto *player=panel.findChild<QMediaPlayer*>("audioLibraryPreviewPlayer");QVERIFY(button);QVERIFY(player);QVERIFY(button->isEnabled());button->click();QCOMPARE(player->source(),QUrl::fromLocalFile(path));
+        panel.hide();QVERIFY(player->source().isEmpty());QCOMPARE(player->playbackState(),QMediaPlayer::StoppedState);QCOMPARE(library.production,before);QVERIFY(library.placements.isEmpty());QCOMPARE(changed.size(),0);
+    }
     void sceneAudioStartControlsPlaybackAndUndo(){
         QTemporaryDir temporary;QFile file(temporary.filePath("sound.wav"));QVERIFY(file.open(QIODevice::WriteOnly));file.write("fixture");file.close();
         Library library;library.production["audioLibrary"]=QJsonArray{QJsonObject{{"id","sound"},{"name","Sound"},{"file",file.fileName()},{"durationMs",4000}}};

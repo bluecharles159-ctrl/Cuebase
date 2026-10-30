@@ -9,6 +9,8 @@ class QDoubleSpinBox;
 class QLabel;
 class QPushButton;
 class QCheckBox;
+class QMediaPlayer;
+class QHideEvent;
 
 // Cursor's shared AudioAsset vocabulary, stored in the existing channel document.
 struct AudioAsset {
@@ -30,7 +32,10 @@ public:
     AudioLibraryPanel(Library *library,BuildModel *model=nullptr,QWidget *parent=nullptr);
     void selectPlacement(const QString &id);
     void importFile(const QString &path);
+protected:
+    void hideEvent(QHideEvent *event) override;
 private:
+    void stopPreview();
     void refresh();
     void loadControls();
     void saveControls(QDoubleSpinBox *changed);
@@ -39,6 +44,8 @@ private:
     QListWidget *m_assets,*m_scene=nullptr;
     QLabel *m_context;
     QPushButton *m_removeScene=nullptr;
+    QPushButton *m_preview=nullptr;
+    QMediaPlayer *m_previewPlayer=nullptr;
     QDoubleSpinBox *m_speed,*m_fadeIn,*m_fadeOut,*m_offset,*m_volume;
     QDoubleSpinBox *m_start=nullptr;
     QCheckBox *m_mute=nullptr;

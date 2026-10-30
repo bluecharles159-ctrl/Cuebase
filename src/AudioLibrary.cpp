@@ -5,6 +5,8 @@
 #include "UiControls.h"
 #include <QDrag>
 #include <QCheckBox>
+#include <QAudioOutput>
+#include <QHideEvent>
 #include <QDragEnterEvent>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -43,7 +45,7 @@ void extendSceneForAudio(BuildModel &model,const DObject &audio){
     const double available=qMax(0.,audio.style["audio.duration"].toDouble()-audio.propertyValue("audio.offset",model.t));
     const double specified=audio.propertyValue("audio.length",model.t);
     const auto end=qRound64(audio.propertyValue("audio.start",model.t)+(specified>0?specified:available/rate));
-    model.design.durationMs=qMax(model.design.durationMs,int(qBound<qint64>(0,end,2147483647)));
+    model.design.durationMs=qMax(model.design.durationMs,int(qBound(qint64(0),qint64(end),qint64(2147483647))));
 }
 }
 QJsonObject AudioLibrary::asset(const Library &library,const QString &id){for(const auto &value:library.production["audioLibrary"].toArray())if(value.toObject()["id"].toString()==id)return value.toObject();return {};}
@@ -66,7 +68,12 @@ AudioLibraryPanel::AudioLibraryPanel(Library *library,BuildModel *model,QWidget 
     setObjectName(model?"buildAudioLibrary":"studioAudioLibrary");auto *layout=new QVBoxLayout(this);layout->setContentsMargins(8,8,8,8);layout->setSpacing(8);
     auto *title=new QLabel("AUDIO");layout->addWidget(title);auto *import=new QPushButton(uiIcon("add"),"Import audio…");layout->addWidget(import);connect(import,&QPushButton::clicked,this,[this]{for(const auto &path:QFileDialog::getOpenFileNames(this,"Import audio",{},"Audio (*.wav *.mp3 *.flac *.ogg *.aac *.m4a *.opus *.aiff)"))importFile(path);});
     layout->addWidget(new QLabel("Stored audio · shared with Studio and Build"));m_assets=new AudioList;m_assets->setObjectName("audioStored");layout->addWidget(m_assets);
-    connect(m_assets,&QListWidget::currentItemChanged,this,[this](QListWidgetItem *item){if(m_syncing||!item)return;m_assetId=item->data(Qt::UserRole).toString();m_sceneId.clear();m_placementId.clear();loadControls();});
+    m_preview=new QPushButton(uiIcon("play"),"Preview source");m_preview->setObjectName("previewStoredAudio");m_preview->setEnabled(false);m_preview->setToolTip("Listen to the original file locally. This does not start or change broadcast playback.");layout->addWidget(m_preview);
+    m_previewPlayer=new QMediaPlayer(this);m_previewPlayer->setObjectName("audioLibraryPreviewPlayer");auto *previewOutput=new QAudioOutput(m_previewPlayer);previewOutput->setVolume(.7);m_previewPlayer->setAudioOutput(previewOutput);
+    connect(m_preview,&QPushButton::clicked,this,[this]{if(m_previewPlayer->source().isValid()){stopPreview();return;}const auto audio=AudioLibrary::asset(*m_library,m_assetId);const auto file=audio["file"].toString();if(!QFileInfo(file).isFile()){ToastHost::notify(this,"audio","Audio source is unavailable",file);return;}m_previewPlayer->setSource(QUrl::fromLocalFile(file));m_preview->setText("Stop preview");m_preview->setIcon(uiIcon("stop"));m_previewPlayer->play();});
+    connect(m_previewPlayer,&QMediaPlayer::mediaStatusChanged,this,[this](QMediaPlayer::MediaStatus status){if(status==QMediaPlayer::EndOfMedia)stopPreview();});
+    connect(m_previewPlayer,&QMediaPlayer::errorOccurred,this,[this](QMediaPlayer::Error,const QString &error){stopPreview();ToastHost::notify(this,"audio","Unable to preview audio",error);});
+    connect(m_assets,&QListWidget::currentItemChanged,this,[this](QListWidgetItem *item){if(m_syncing||!item)return;stopPreview();m_assetId=item->data(Qt::UserRole).toString();m_sceneId.clear();m_placementId.clear();loadControls();});
     if(model){layout->addWidget(new QLabel("In scene"));auto *scene=new AudioList;scene->setDragEnabled(false);scene->setAcceptDrops(true);scene->dropped=[this](const QString &id){const auto added=AudioLibrary::addToScene(*m_model,*m_library,id);if(!added.isEmpty())ToastHost::notify(this,"audio","Audio added successfully",m_model->byId(added)->name);};m_scene=scene;layout->addWidget(scene);
         auto *add=new QPushButton(uiIcon("audio"),"Add selected audio to scene");layout->addWidget(add);connect(add,&QPushButton::clicked,this,[this,scene]{if(!m_assetId.isEmpty())scene->dropped(m_assetId);});
         m_removeScene=new QPushButton(uiIcon("delete"),"Remove from scene");m_removeScene->setObjectName("removeSceneAudio");m_removeScene->setToolTip("Remove this scene instance; keep the stored audio and source file. Undo restores it.");layout->addWidget(m_removeScene);
@@ -88,9 +95,12 @@ void AudioLibraryPanel::refresh(){
     if(m_scene){m_scene->clear();for(const auto &audio:m_model->design.objects)if(audio.type=="Audio"){auto *item=new QListWidgetItem(uiIcon("audio"),audio.name,m_scene);item->setData(Qt::UserRole,audio.id);if(audio.id==m_sceneId)m_scene->setCurrentItem(item);}}
     m_syncing=false;loadControls();
 }
-void AudioLibraryPanel::selectPlacement(const QString &id){m_placementId=id;m_sceneId.clear();loadControls();}
+void AudioLibraryPanel::stopPreview(){m_previewPlayer->stop();m_previewPlayer->setSource(QUrl());m_preview->setText("Preview source");m_preview->setIcon(uiIcon("play"));}
+void AudioLibraryPanel::hideEvent(QHideEvent *event){stopPreview();QWidget::hideEvent(event);}
+void AudioLibraryPanel::selectPlacement(const QString &id){stopPreview();m_placementId=id;m_sceneId.clear();loadControls();}
 void AudioLibraryPanel::loadControls(){
     m_syncing=true;QJsonObject settings;QString name;
+    m_preview->setEnabled(!AudioLibrary::asset(*m_library,m_assetId).isEmpty());
     bool locked=false;
     if(m_start){const auto *audio=m_model->byId(m_sceneId);locked=audio&&audio->locked;m_start->setEnabled(audio&&audio->type=="Audio"&&!locked);m_start->setValue(audio?audio->propertyValue("audio.start",m_model->t)/1000.:0.);}
     if(m_mute){const auto *audio=m_model->byId(m_sceneId);m_mute->setEnabled(audio&&audio->type=="Audio"&&!locked);m_mute->setChecked(audio&&audio->style["audio.mute"].toString()=="On");}
