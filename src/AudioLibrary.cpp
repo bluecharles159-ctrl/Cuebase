@@ -4,6 +4,7 @@
 #include "Toast.h"
 #include "UiControls.h"
 #include <QDrag>
+#include <QCheckBox>
 #include <QDragEnterEvent>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -37,6 +38,13 @@ protected:
 };
 qint64 duration(const QJsonObject &a){return qMax<qint64>(1,qint64(a["durationMs"].toDouble(a["seconds"].toInt(8)*1000.)));}
 QJsonObject defaults(){return {{"speed",1.},{"volume",1.},{"fadeIn",0.},{"fadeOut",0.},{"offset",0.}};}
+void extendSceneForAudio(BuildModel &model,const DObject &audio){
+    const double rate=qBound(.1,audio.propertyValue("audio.speed",model.t),4.);
+    const double available=qMax(0.,audio.style["audio.duration"].toDouble()-audio.propertyValue("audio.offset",model.t));
+    const double specified=audio.propertyValue("audio.length",model.t);
+    const auto end=qRound64(audio.propertyValue("audio.start",model.t)+(specified>0?specified:available/rate));
+    model.design.durationMs=qMax(model.design.durationMs,int(qBound<qint64>(0,end,2147483647)));
+}
 }
 QJsonObject AudioLibrary::asset(const Library &library,const QString &id){for(const auto &value:library.production["audioLibrary"].toArray())if(value.toObject()["id"].toString()==id)return value.toObject();return {};}
 QJsonObject AudioLibrary::placementSettings(const Library &library,const QString &id){auto settings=library.production["audioPlacementSettings"].toObject()[id].toObject();return settings.isEmpty()?defaults():settings;}
@@ -68,8 +76,10 @@ AudioLibraryPanel::AudioLibraryPanel(Library *library,BuildModel *model,QWidget 
     }
     m_context=new QLabel("Select audio to edit");m_context->setWordWrap(true);layout->addWidget(m_context);auto *form=new QFormLayout;form->setContentsMargins(12,2,0,2);layout->addLayout(form);
     if(model){m_start=new ValueInput;m_start->setObjectName("audioSceneStart");m_start->setRange(0,86400);m_start->setDecimals(2);m_start->setSingleStep(.1);m_start->setKeyboardTracking(false);m_start->setToolTip("When this audio begins in the scene; source offset selects where it begins inside the file.");form->addRow("Scene start (s)",m_start);
-        connect(m_start,&QDoubleSpinBox::valueChanged,this,[this](double seconds){if(m_syncing)return;auto *audio=m_model->byId(m_sceneId);if(!audio||audio->type!="Audio"||audio->locked)return;m_model->pushUndo(true);m_model->editProperty(audio->id,"audio.start",seconds*1000);const auto rate=qBound(.1,audio->propertyValue("audio.speed",m_model->t),4.);const auto available=qMax(0.,audio->style["audio.duration"].toDouble()-audio->propertyValue("audio.offset",m_model->t));const auto end=qRound64(seconds*1000+available/rate);m_model->design.durationMs=qMax(m_model->design.durationMs,int(qMin<qint64>(2147483647,end)));m_model->notify();});}
-    auto number=[&](const QString &label,double low,double high,double step){auto *spin=new ValueInput;spin->setRange(low,high);spin->setDecimals(2);spin->setSingleStep(step);spin->setKeyboardTracking(false);form->addRow(label,spin);connect(spin,&QDoubleSpinBox::valueChanged,this,[this]{if(!m_syncing)saveControls();});return spin;};
+        connect(m_start,&QDoubleSpinBox::valueChanged,this,[this](double seconds){if(m_syncing)return;auto *audio=m_model->byId(m_sceneId);if(!audio||audio->type!="Audio"||audio->locked)return;m_model->pushUndo(true);m_model->editProperty(audio->id,"audio.start",seconds*1000);extendSceneForAudio(*m_model,*audio);m_model->notify();});
+        m_mute=new QCheckBox("Mute scene audio");m_mute->setObjectName("audioSceneMute");form->addRow(m_mute);
+        connect(m_mute,&QCheckBox::toggled,this,[this](bool muted){if(m_syncing)return;auto *audio=m_model->byId(m_sceneId);if(!audio||audio->type!="Audio"||audio->locked)return;m_model->pushUndo(true);audio->style["audio.mute"]=muted?"On":"Off";m_model->notify();});}
+    auto number=[&](const QString &label,double low,double high,double step){auto *spin=new ValueInput;spin->setRange(low,high);spin->setDecimals(2);spin->setSingleStep(step);spin->setKeyboardTracking(false);form->addRow(label,spin);connect(spin,&QDoubleSpinBox::valueChanged,this,[this,spin]{if(!m_syncing)saveControls(spin);});return spin;};
     m_speed=number("Speed",.1,4,.05);m_volume=number("Volume",0,1,.05);m_offset=number("Source offset (s)",0,86400,.1);m_fadeIn=number("Fade in (s)",0,3600,.1);m_fadeOut=number("Fade out (s)",0,3600,.1);m_speed->setObjectName("audioSpeed");m_volume->setObjectName("audioVolume");m_offset->setObjectName("audioOffset");m_fadeIn->setObjectName("audioFadeIn");m_fadeOut->setObjectName("audioFadeOut");layout->addStretch();
     connect(library,&Library::productionChanged,this,[this]{refresh();});connect(library,&Library::placementsChanged,this,[this]{if(!m_placementId.isEmpty())loadControls();});refresh();
 }
@@ -83,6 +93,7 @@ void AudioLibraryPanel::loadControls(){
     m_syncing=true;QJsonObject settings;QString name;
     bool locked=false;
     if(m_start){const auto *audio=m_model->byId(m_sceneId);locked=audio&&audio->locked;m_start->setEnabled(audio&&audio->type=="Audio"&&!locked);m_start->setValue(audio?audio->propertyValue("audio.start",m_model->t)/1000.:0.);}
+    if(m_mute){const auto *audio=m_model->byId(m_sceneId);m_mute->setEnabled(audio&&audio->type=="Audio"&&!locked);m_mute->setChecked(audio&&audio->style["audio.mute"].toString()=="On");}
     if(m_removeScene){const auto *audio=m_model->byId(m_sceneId);m_removeScene->setEnabled(audio&&audio->type=="Audio"&&!audio->locked);}
     double sourceSeconds=86400.;
     if(!m_sceneId.isEmpty()&&m_model){if(auto *audio=m_model->byId(m_sceneId))sourceSeconds=audio->style.value("audio.duration").toDouble()/1000.;}
@@ -95,12 +106,16 @@ void AudioLibraryPanel::loadControls(){
     else{settings=AudioLibrary::asset(*m_library,m_assetId);if(!settings.isEmpty())name="Stored audio · "+settings["name"].toString();}
     m_context->setText(name.isEmpty()?"Select audio to edit":name);for(auto *spin:{m_speed,m_volume,m_offset,m_fadeIn,m_fadeOut})spin->setEnabled(!name.isEmpty()&&!locked);m_speed->setValue(settings["speed"].toDouble(1));m_volume->setValue(settings["volume"].toDouble(1));m_offset->setValue(settings["offset"].toDouble());m_fadeIn->setValue(settings["fadeIn"].toDouble());m_fadeOut->setValue(settings["fadeOut"].toDouble());m_syncing=false;
 }
-void AudioLibraryPanel::saveControls(){
+void AudioLibraryPanel::saveControls(QDoubleSpinBox *changed){
     const auto previousProduction=m_library->production;
     const auto previousPlacements=m_library->placements;
     auto persist=[&]{QString error;if(m_library->saveChecked(&error))return true;m_library->production=previousProduction;m_library->placements=previousPlacements;loadControls();ToastHost::notify(this,"audio","Audio changes could not be saved",error);return false;};
     QJsonObject fields{{"speed",m_speed->value()},{"volume",m_volume->value()},{"offset",m_offset->value()},{"fadeIn",m_fadeIn->value()},{"fadeOut",m_fadeOut->value()}};
-    if(!m_sceneId.isEmpty()&&m_model){if(auto *audio=m_model->byId(m_sceneId);audio&&audio->type=="Audio"&&!audio->locked){m_model->pushUndo();for(auto it=fields.begin();it!=fields.end();++it)m_model->editProperty(audio->id,"audio."+it.key(),it.value().toDouble()*(it.key()=="speed"||it.key()=="volume"?1:1000));m_model->notify();}return;}
+    if(!m_sceneId.isEmpty()){
+        const QString key=changed==m_speed?"speed":changed==m_volume?"volume":changed==m_offset?"offset":changed==m_fadeIn?"fadeIn":"fadeOut";
+        fields=QJsonObject{{key,fields[key]}};
+    }
+    if(!m_sceneId.isEmpty()&&m_model){if(auto *audio=m_model->byId(m_sceneId);audio&&audio->type=="Audio"&&!audio->locked){QMap<QString,double> changes;for(auto it=fields.begin();it!=fields.end();++it){const auto key="audio."+it.key();const double value=it.value().toDouble()*(it.key()=="speed"||it.key()=="volume"?1:1000);if(qAbs(audio->propertyValue(key,m_model->t)-value)>.000001)changes[key]=value;}if(changes.isEmpty())return;m_model->pushUndo();for(auto it=changes.begin();it!=changes.end();++it)m_model->editProperty(audio->id,it.key(),it.value());extendSceneForAudio(*m_model,*audio);m_model->notify();}return;}
     if(!m_placementId.isEmpty()){auto *clip=m_library->placement(m_placementId);if(!clip)return;const auto old=AudioLibrary::placementSettings(*m_library,m_placementId);const double span=clip->lengthMs()*qBound(.1,old["speed"].toDouble(1),4.);const auto offset=qRound64(m_offset->value()*1000);clip->durationMs=qMax<qint64>(1,qRound64(qMax(1.,span-(offset-clip->offsetMs))/m_speed->value()));auto all=m_library->production["audioPlacementSettings"].toObject();all[m_placementId]=fields;m_library->production["audioPlacementSettings"]=all;clip->offsetMs=offset;if(persist())emit m_library->placementsChanged();return;}
     auto all=m_library->production["audioLibrary"].toArray();for(int i=0;i<all.size();++i){auto a=all[i].toObject();if(a["id"].toString()!=m_assetId)continue;for(auto it=fields.begin();it!=fields.end();++it)a[it.key()]=it.value();all[i]=a;}m_library->production["audioLibrary"]=all;if(persist())emit m_library->productionChanged();
 }

@@ -40,7 +40,10 @@ private slots:
         QCOMPARE(model.byId(id)->propertyValue("audio.start",0),10000.);QVERIFY(model.design.durationMs>=14000);QVERIFY(designAudioCues(model.design,9999,true,{},1,false).isEmpty());
         const auto cues=designAudioCues(model.design,10500,true,{},1,false);QCOMPARE(cues.size(),1);QCOMPARE(cues[0].position,qint64(500));
         QVERIFY(model.undo());QCOMPARE(model.byId(id)->propertyValue("audio.start",0),0.);QCOMPARE(start->value(),0.);QVERIFY(model.redo());QCOMPARE(start->value(),10.);
+        auto *mute=panel.findChild<QCheckBox*>("audioSceneMute");QVERIFY(mute);mute->setChecked(true);QVERIFY(designAudioCues(model.design,10500,true,{},1,false).isEmpty());QVERIFY(model.undo());QVERIFY(!mute->isChecked());QCOMPARE(designAudioCues(model.design,10500,true,{},1,false).size(),1);
+        model.autoKey=true;panel.findChild<QDoubleSpinBox*>("audioSpeed")->setValue(.5);QVERIFY(model.design.durationMs>=18000);QVERIFY(model.byId(id)->track("audio.speed"));QVERIFY(!model.byId(id)->track("audio.volume"));QVERIFY(!model.byId(id)->track("audio.offset"));QCOMPARE(designAudioCues(model.design,17500,true,{},1,false).size(),1);
         model.byId(id)->locked=true;model.notify();QVERIFY(!start->isEnabled());QVERIFY(!panel.findChild<QDoubleSpinBox*>("audioSpeed")->isEnabled());
+        QVERIFY(!mute->isEnabled());
     }
     void audioSaveFailureRestoresDataAndControls(){
         const auto previousName=qApp->applicationName();qApp->setApplicationName(previousName+"-audio-save-failure");
