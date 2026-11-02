@@ -1,4 +1,5 @@
 #include "ElementDesign.h"
+#include "FormAnimation.h"
 #include "MirrorGeometry.h"
 #include "BevelGeometry.h"
 
@@ -451,9 +452,11 @@ QString modSig(const Modifier &m) {
 const Mesh &ElementDesign::evalMesh(const DObject &o, qint64 ms) const {
     bool any = false;
     for (const Modifier &m : o.mods) any = any || m.on;
-    if (!any || m_evalDepth > 3) return o.mesh;
+    const bool hasForms=!o.style["form.poses"].toArray().isEmpty();
+    if ((!any&&!hasForms) || m_evalDepth > 3) return o.mesh;
 
-    quint64 sig = meshHash(o.mesh);
+    const Mesh formed=hasForms?FormAnimation::evaluate(o,ms):o.mesh;
+    quint64 sig = meshHash(formed);
     QMatrix4x4 inv;
     const DObject *targets[8] = {};
     for (int i = 0; i < o.mods.size(); ++i) {
@@ -474,7 +477,7 @@ const Mesh &ElementDesign::evalMesh(const DObject &o, qint64 ms) const {
     auto hit = m_evalCache.find(o.id);
     if (hit != m_evalCache.end() && hit->first == sig) return hit->second;
 
-    Mesh r = o.mesh;
+    Mesh r = formed;
     for (int i = 0; i < o.mods.size(); ++i) {
         const Modifier &m = o.mods[i];
         if (!m.on) continue;

@@ -1,5 +1,6 @@
 #include <QtTest>
 #include "AudioDsp.h"
+#include "FormAnimation.h"
 #include <QDialogButtonBox>
 #include <QToolButton>
 #include <QComboBox>
@@ -35,6 +36,13 @@ class EditorInteractionTests:public QObject{
     Q_OBJECT
     ElementDesign scene(){auto design=ElementDesign::defaultScene();DObject object;object.id="plate";object.name="Plate";object.type="Shape";object.w=4;object.h=2;object.base.rot={90,0,0};object.mat.shadeless=true;object.keyChannel("position.x",0,0);object.keyChannel("position.x",1000,2);object.keyChannel("rotation.y",0,0);object.keyChannel("rotation.y",1000,30);design.objects.append(object);return design;}
 private slots:
+    void formInfluenceInterpolatesAndPersists(){
+        DObject object;object.id="form";object.type="Mesh";object.mesh=Mesh::primitive("Cube");const auto zero=object.mesh;object.mesh.v[0]+=QVector3D(0,0,2);
+        const auto property=FormAnimation::capture(object,zero,"Lift corner");QVERIFY(!property.isEmpty());object.keyChannel(property,0,0,"Linear");object.keyChannel(property,1000,1,"Linear");
+        QCOMPARE(FormAnimation::evaluate(object,0).v[0],zero.v[0]);QCOMPARE(FormAnimation::evaluate(object,1000).v[0],object.mesh.v[0]);QCOMPARE(FormAnimation::evaluate(object,500).v[0],zero.v[0]+QVector3D(0,0,1));
+        auto design=ElementDesign::defaultScene();design.objects.append(object);const auto loaded=ElementDesign::fromJson(design.toJson());QCOMPARE(loaded.evalMesh(*loaded.find("form"),500).v[0],zero.v[0]+QVector3D(0,0,1));
+        object.mesh.v.append({9,9,9});QCOMPARE(FormAnimation::evaluate(object,0).v,object.mesh.v);
+    }
     void audioDspChainsValidateOrderAndBypass(){
         QString error;QJsonArray chain{QJsonObject{{"type","Gain"},{"gainDb",-6}},QJsonObject{{"type","Echo"},{"delayMs",200},{"decay",.4}},QJsonObject{{"type","Limiter"}}};
         const auto graph=AudioDsp::filterGraph(chain,&error);QVERIFY(error.isEmpty());QVERIFY(graph.startsWith("volume=-6dB,aecho="));QVERIFY(graph.endsWith("alimiter=level=false:limit=0.95"));
