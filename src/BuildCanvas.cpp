@@ -337,6 +337,7 @@ QMatrix4x4 BuildCanvas::editWorld() const {
 void BuildCanvas::drawEdit(QPainter &p, const ViewCam &cam, const QRectF &r) {
     Mesh *mesh = m_m->editMesh();
     if (!mesh) return;
+    Mesh displayed;if(const auto *object=m_m->active()){displayed=FormAnimation::evaluate(*object,m_m->t);mesh=&displayed;}
     const QMatrix4x4 W = editWorld();
     const int n = mesh->v.size();
     QVector<QPointF> pt(n);
@@ -655,6 +656,7 @@ QString BuildCanvas::pickObject(const QPointF &pos, bool cycle) {
 bool BuildCanvas::pickEditElement(const QPointF &pos, bool additive) {
     Mesh *mesh = m_m->editMesh();
     if (!mesh) return false;
+    Mesh displayed;if(const auto *object=m_m->active()){displayed=FormAnimation::evaluate(*object,m_m->t);mesh=&displayed;}
     QRectF r;
     const ViewCam cam = activeCam(&r);
     const QMatrix4x4 W = editWorld();
