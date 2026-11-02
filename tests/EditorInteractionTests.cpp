@@ -1,4 +1,5 @@
 #include <QtTest>
+#include "AudioDsp.h"
 #include <QDialogButtonBox>
 #include <QToolButton>
 #include <QComboBox>
@@ -34,6 +35,13 @@ class EditorInteractionTests:public QObject{
     Q_OBJECT
     ElementDesign scene(){auto design=ElementDesign::defaultScene();DObject object;object.id="plate";object.name="Plate";object.type="Shape";object.w=4;object.h=2;object.base.rot={90,0,0};object.mat.shadeless=true;object.keyChannel("position.x",0,0);object.keyChannel("position.x",1000,2);object.keyChannel("rotation.y",0,0);object.keyChannel("rotation.y",1000,30);design.objects.append(object);return design;}
 private slots:
+    void audioDspChainsValidateOrderAndBypass(){
+        QString error;QJsonArray chain{QJsonObject{{"type","Gain"},{"gainDb",-6}},QJsonObject{{"type","Echo"},{"delayMs",200},{"decay",.4}},QJsonObject{{"type","Limiter"}}};
+        const auto graph=AudioDsp::filterGraph(chain,&error);QVERIFY(error.isEmpty());QVERIFY(graph.startsWith("volume=-6dB,aecho="));QVERIFY(graph.endsWith("alimiter=level=false:limit=0.95"));
+        auto echo=chain[1].toObject();echo["enabled"]=false;chain[1]=echo;QVERIFY(!AudioDsp::filterGraph(chain,&error).contains("aecho"));
+        echo["enabled"]=true;echo["delayMs"]=-1;chain[1]=echo;QVERIFY(AudioDsp::filterGraph(chain,&error).isEmpty());QVERIFY(!error.isEmpty());
+        QVERIFY(AudioDsp::filterGraph(QJsonArray{QJsonObject{{"type","unknown;movie=bad"}}},&error).isEmpty());QCOMPARE(AudioDsp::filterGraph({},&error),QString("anull"));
+    }
     void sourceAudioPreviewDoesNotMutateProduction(){
         QTemporaryDir temporary;const auto path=temporary.filePath("preview.wav");QFile file(path);QVERIFY(file.open(QIODevice::WriteOnly));QDataStream stream(&file);stream.setByteOrder(QDataStream::LittleEndian);
         stream.writeRawData("RIFF",4);stream<<quint32(16036);stream.writeRawData("WAVEfmt ",8);stream<<quint32(16)<<quint16(1)<<quint16(1)<<quint32(8000)<<quint32(16000)<<quint16(2)<<quint16(16);stream.writeRawData("data",4);stream<<quint32(16000);file.write(QByteArray(16000,'\0'));file.close();

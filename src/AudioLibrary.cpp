@@ -1,4 +1,5 @@
 #include "AudioLibrary.h"
+#include "AudioDspDialog.h"
 #include "BuildModel.h"
 #include "Data.h"
 #include "Toast.h"
@@ -68,6 +69,7 @@ AudioLibraryPanel::AudioLibraryPanel(Library *library,BuildModel *model,QWidget 
     setObjectName(model?"buildAudioLibrary":"studioAudioLibrary");auto *layout=new QVBoxLayout(this);layout->setContentsMargins(8,8,8,8);layout->setSpacing(8);
     auto *title=new QLabel("AUDIO");layout->addWidget(title);auto *import=new QPushButton(uiIcon("add"),"Import audio…");layout->addWidget(import);connect(import,&QPushButton::clicked,this,[this]{for(const auto &path:QFileDialog::getOpenFileNames(this,"Import audio",{},"Audio (*.wav *.mp3 *.flac *.ogg *.aac *.m4a *.opus *.aiff)"))importFile(path);});
     layout->addWidget(new QLabel("Stored audio · shared with Studio and Build"));m_assets=new AudioList;m_assets->setObjectName("audioStored");layout->addWidget(m_assets);
+    auto *effects=new QPushButton(uiIcon("effects"),"Audio effects…");effects->setObjectName("audioEffects");layout->addWidget(effects);connect(effects,&QPushButton::clicked,this,[this]{const auto source=AudioLibrary::asset(*m_library,m_assetId)["file"].toString();if(!QFileInfo(source).isFile()){ToastHost::notify(this,"audio","Select an available stored audio file first");return;}stopPreview();showAudioDsp(this,source,[this](const QString &file){importFile(file);});});
     m_preview=new QPushButton(uiIcon("play"),"Preview source");m_preview->setObjectName("previewStoredAudio");m_preview->setEnabled(false);m_preview->setToolTip("Listen to the original file locally. This does not start or change broadcast playback.");layout->addWidget(m_preview);
     m_previewPlayer=new QMediaPlayer(this);m_previewPlayer->setObjectName("audioLibraryPreviewPlayer");auto *previewOutput=new QAudioOutput(m_previewPlayer);previewOutput->setVolume(.7);m_previewPlayer->setAudioOutput(previewOutput);
     connect(m_preview,&QPushButton::clicked,this,[this]{if(m_previewPlayer->source().isValid()){stopPreview();return;}const auto audio=AudioLibrary::asset(*m_library,m_assetId);const auto file=audio["file"].toString();if(!QFileInfo(file).isFile()){ToastHost::notify(this,"audio","Audio source is unavailable",file);return;}m_previewPlayer->setSource(QUrl::fromLocalFile(file));m_preview->setText("Stop preview");m_preview->setIcon(uiIcon("stop"));m_previewPlayer->play();});
