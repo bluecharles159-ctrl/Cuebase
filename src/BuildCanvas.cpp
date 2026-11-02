@@ -1,4 +1,5 @@
 #include "BuildCanvas.h"
+#include "FormAnimation.h"
 #include "ColorManagement.h"
 #include "SceneEffects.h"
 #include "TextureLibrary.h"
@@ -912,6 +913,9 @@ void BuildCanvas::cancelModal() {
 
 void BuildCanvas::confirmModal() {
     if (m_modal.kind == Modal::None) return;
+    if(m_m->editMode)if(auto *object=m_m->active();object&&object->type=="Mesh"&&m_modal.origVerts.size()==object->mesh.v.size()){
+        Mesh zero=object->mesh;zero.v=m_modal.origVerts;FormAnimation::capture(*object,zero,"Form "+QString::number(object->style["form.poses"].toArray().size()+1));
+    }
     m_modal = Modal();
     if(QWidget::mouseGrabber()==this)releaseMouse();
     m_m->notify();

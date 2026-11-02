@@ -51,6 +51,7 @@
 
 #include "BuildCanvas.h"
 #include "BuildModel.h"
+#include "FormAnimationPanel.h"
 #include "Data.h"
 #include "AnimationEditor.h"
 #include "AnimationCuePanel.h"
@@ -232,7 +233,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     auto *addBtn = new QPushButton("＋  Add");
     addBtn->setObjectName("save");
     addBtn->setToolTip("Add a mesh, text, image or light (Shift+A in the viewport)");
-    auto *editBtn = new QPushButton("Edit Mode");
+    auto *editBtn = new QPushButton("Form Animation");
     editBtn->setCheckable(true);
     editBtn->setToolTip("Edit the selected mesh: vertices, edges and faces (Tab)");
     auto *objBtn = new QToolButton;
@@ -262,6 +263,9 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     auto *fitBtn = new QPushButton("Fit");
     tb->addWidget(addBtn);
     tb->addWidget(editBtn);
+    auto *formControls=new QToolButton;formControls->setIcon(uiIcon("key"));formControls->setObjectName("formAnimationControls");formControls->setToolTip("Form Animation · influence and keyframes");formControls->setVisible(m->editMode);tb->addWidget(formControls);
+    connect(m,&BuildModel::changed,formControls,[m,formControls]{formControls->setVisible(m->editMode);});
+    connect(formControls,&QToolButton::clicked,this,[this,m]{auto *dialog=roundedModal(this,"Form Animation");dialog->setAttribute(Qt::WA_DeleteOnClose);auto *layout=new QVBoxLayout(dialog);layout->addWidget(new FormAnimationPanel(m,dialog));dialog->resize(360,290);dialog->show();});
     tb->addWidget(objBtn);
     tb->addWidget(meshBtn);
     tb->addWidget(vBtn);

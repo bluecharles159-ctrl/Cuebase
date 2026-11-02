@@ -1,6 +1,7 @@
 #include <QtTest>
 #include "AudioDsp.h"
 #include "FormAnimation.h"
+#include "FormAnimationPanel.h"
 #include <QDialogButtonBox>
 #include <QToolButton>
 #include <QComboBox>
@@ -36,6 +37,10 @@ class EditorInteractionTests:public QObject{
     Q_OBJECT
     ElementDesign scene(){auto design=ElementDesign::defaultScene();DObject object;object.id="plate";object.name="Plate";object.type="Shape";object.w=4;object.h=2;object.base.rot={90,0,0};object.mat.shadeless=true;object.keyChannel("position.x",0,0);object.keyChannel("position.x",1000,2);object.keyChannel("rotation.y",0,0);object.keyChannel("rotation.y",1000,30);design.objects.append(object);return design;}
 private slots:
+    void formPanelEditsAndKeysInfluence(){
+        BuildModel model;auto design=ElementDesign::defaultScene();DObject object;object.id="animated-form";object.type="Mesh";object.mesh=Mesh::primitive("Cube");const auto zero=object.mesh;object.mesh.v[0]+=QVector3D(0,0,2);const auto property=FormAnimation::capture(object,zero,"Corner");design.objects.append(object);model.reset(design);model.select(object.id);FormAnimationPanel panel(&model);
+        auto *value=panel.findChild<QDoubleSpinBox*>("formInfluence");QVERIFY(value);value->setValue(.25);QCOMPARE(model.active()->propertyValue(property,0),.25);panel.findChild<QPushButton*>("formInsertKey")->click();QVERIFY(model.propertyIsKeyed(*model.active(),property,0));panel.findChild<QPushButton*>("formRemoveKey")->click();QVERIFY(!model.propertyIsKeyed(*model.active(),property,0));QVERIFY(model.undo());QVERIFY(model.propertyIsKeyed(*model.active(),property,0));
+    }
     void formInfluenceInterpolatesAndPersists(){
         DObject object;object.id="form";object.type="Mesh";object.mesh=Mesh::primitive("Cube");const auto zero=object.mesh;object.mesh.v[0]+=QVector3D(0,0,2);
         const auto property=FormAnimation::capture(object,zero,"Lift corner");QVERIFY(!property.isEmpty());object.keyChannel(property,0,0);object.keyChannel(property,1000,1);for(auto &key:object.track(property)->keys)key.interpolation="Linear";
