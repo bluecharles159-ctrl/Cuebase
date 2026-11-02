@@ -59,9 +59,18 @@
 #include <QScrollBar>
 #include <QWheelEvent>
 
+#include "AudioDsp.h"
+#include <cstring>
 class StreamTests:public QObject{
     Q_OBJECT
 private slots:
+    void echoProducesDelayedAudio(){
+        QString error;const auto graph=AudioDsp::filterGraph(QJsonArray{QJsonObject{{"type","Echo"},{"delayMs",250},{"decay",.5}}},&error);QVERIFY(error.isEmpty());
+        QProcess process;process.start(NetworkOutput::findEncoder(),{"-hide_banner","-loglevel","error","-f","lavfi","-i",R"(aevalsrc=if(eq(n\,0)\,0.5\,0):s=8000:d=0.1)","-af",graph,"-ac","1","-ar","8000","-f","f32le","pipe:1"});
+        QVERIFY(process.waitForFinished(30000));QCOMPARE(process.exitStatus(),QProcess::NormalExit);QVERIFY2(process.exitCode()==0,process.readAllStandardError().constData());const auto samples=process.readAllStandardOutput();QVERIFY(samples.size()>2000*4);
+        auto sample=[&](int index){float value=0;std::memcpy(&value,samples.constData()+index*4,4);return value;};
+        QVERIFY(sample(0)>.25f);QVERIFY(qAbs(sample(1000))<.0001f);QVERIFY(sample(2000)>.1f);QVERIFY(sample(2000)<sample(0));
+    }
     void hoverCutUsesProgramHistory(){
         Library library;ProgramItem program;program.id="hover-cut";program.title="Cut me";program.seconds=8;library.programs={program};Playout play(&library);TimelineWidget timeline(&play,&library);timeline.resize(800,240);timeline.show();QTest::qWait(20);
         QSignalSpy cuts(&timeline,&TimelineWidget::cutRequested);connect(&timeline,&TimelineWidget::cutRequested,&library,[&](const QString &id,int seconds){library.cutProgram(id,seconds);});
