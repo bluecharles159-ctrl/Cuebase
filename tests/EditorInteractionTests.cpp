@@ -38,7 +38,7 @@ class EditorInteractionTests:public QObject{
 private slots:
     void formInfluenceInterpolatesAndPersists(){
         DObject object;object.id="form";object.type="Mesh";object.mesh=Mesh::primitive("Cube");const auto zero=object.mesh;object.mesh.v[0]+=QVector3D(0,0,2);
-        const auto property=FormAnimation::capture(object,zero,"Lift corner");QVERIFY(!property.isEmpty());object.keyChannel(property,0,0,"Linear");object.keyChannel(property,1000,1,"Linear");
+        const auto property=FormAnimation::capture(object,zero,"Lift corner");QVERIFY(!property.isEmpty());object.keyChannel(property,0,0);object.keyChannel(property,1000,1);for(auto &key:object.track(property)->keys)key.interpolation="Linear";
         QCOMPARE(FormAnimation::evaluate(object,0).v[0],zero.v[0]);QCOMPARE(FormAnimation::evaluate(object,1000).v[0],object.mesh.v[0]);QCOMPARE(FormAnimation::evaluate(object,500).v[0],zero.v[0]+QVector3D(0,0,1));
         auto design=ElementDesign::defaultScene();design.objects.append(object);const auto loaded=ElementDesign::fromJson(design.toJson());QCOMPARE(loaded.evalMesh(*loaded.find("form"),500).v[0],zero.v[0]+QVector3D(0,0,1));
         object.mesh.v.append({9,9,9});QCOMPARE(FormAnimation::evaluate(object,0).v,object.mesh.v);
