@@ -2,6 +2,13 @@
 
 ## Latest verified checkpoint
 
+[Form Animation preview run 41481728178](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41481728178)
+completed successfully for `14051b9927bfaa910441847be12caf798142b6f4`.
+This checkpoint adds offline DSP rendering, echo impulse testing, keyed form
+evaluation/persistence, influence controls and animated edit-handle positions.
+[Windows preview artifact](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41481728178/artifacts/13159108540).
+This is a tested development preview, not completion of the full feature backlog.
+
 [Run 40699925329](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/40699925329)
 completed successfully for `61e898abb2d98c2663c74e695ddbf3fe1e614b67`.
 This includes the shared audio integration, cached media previews, shape drawing,
