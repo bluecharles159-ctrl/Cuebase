@@ -869,13 +869,17 @@ void BuildCanvas::startExtrude() {
 
 void BuildCanvas::startInset() {
     if (!m_m->editMode || m_modal.kind != Modal::None) return;
+    auto *object=m_m->active();if(!object)return;
+    Mesh displayed=FormAnimation::evaluate(*object,m_m->t);auto selection=m_m->esel;
+    QVector<std::pair<int, QVector3D>> displayedInfo;
+    if(!displayed.inset(selection,m_m->selMode,&displayedInfo))return;
     QVector<std::pair<int, QVector3D>> info;
     if (!m_m->opInset(&info)) {
         emit message("Select faces to inset");
         return;
     }
     startModal(Modal::Inset, false, true);
-    if (m_modal.kind == Modal::Inset) m_modal.insetInfo = info;
+    if (m_modal.kind == Modal::Inset) m_modal.insetInfo = displayedInfo;
 }
 
 void BuildCanvas::startLoopCut() {
@@ -1039,7 +1043,7 @@ void BuildCanvas::applyModal(const QPointF &mouse) {
         double k = qBound(0.0, (mouse.x() - m_modal.startMouse.x()) / 220.0, 0.95);
         if (hasNum) k = qBound(0.0, num, 0.95);
         for (const auto &pr : m_modal.insetInfo)
-            mesh->v[pr.first] = m_modal.origVerts[pr.first] + (pr.second - m_modal.origVerts[pr.first]) * float(k);
+            mesh->v[pr.first] = m_modal.origVerts[pr.first] + (pr.second - m_modal.displayedVerts[pr.first]) * float(k);
         m_m->notify();
         update();
         return;

@@ -62,7 +62,14 @@ public:
         remove=new QPushButton(uiIcon("delete"),"Remove current key");remove->setObjectName("formRemoveKey");layout->addRow(key);layout->addRow(remove);
         bake=new QPushButton("Bake and remove form");bake->setObjectName("formBakeRemove");bake->setToolTip("Keep this form's current influence in the mesh and remove its animation. Undo restores it.");layout->addRow(bake);
         connect(key,&QPushButton::clicked,this,[this]{insert();});
-        connect(remove,&QPushButton::clicked,this,[this]{if(auto *o=model->active();o&&!o->locked&&model->propertyIsKeyed(*o,property(),model->t))model->togglePropertyKey(o->id,property());});
+        connect(remove,&QPushButton::clicked,this,[this]{
+            auto *o=model->active();const auto path=property();if(!o||o->locked)return;
+            auto *track=o->track(path);const int index=track?track->indexAt(model->t):-1;if(index<0)return;
+            const double value=o->propertyValue(path,model->t);model->pushUndo(true);track->keys.removeAt(index);
+            o->tracks.removeIf([](const auto &item){return item.keys.isEmpty();});o->style[path]=value;
+            if(o->track(path))o->overrides[path]=value;else o->overrides.remove(path);
+            o->refreshLegacyKeys();model->notify();
+        });
         connect(forms,&QComboBox::currentIndexChanged,this,[this]{if(!syncing)syncValue();});
         connect(name,&QLineEdit::editingFinished,this,[this]{auto *o=model->active();const auto text=name->text().trimmed();if(!o||o->locked||text.isEmpty()||text==forms->currentText())return;auto poses=o->style["form.poses"].toArray();for(int i=0;i<poses.size();++i){auto pose=poses[i].toObject();if("form."+pose["id"].toString()!=property())continue;model->pushUndo(true);pose["name"]=text;poses[i]=pose;o->style["form.poses"]=poses;model->notify();break;}});
         connect(influence,&QDoubleSpinBox::valueChanged,this,[this](double value){if(syncing)return;if(auto *o=model->active();o&&!o->locked&&!property().isEmpty()){model->pushUndo();model->editProperty(o->id,property(),value);}});
@@ -71,7 +78,7 @@ public:
             auto isolated=*o;QJsonArray keep,chosen;
             for(const auto &entry:o->style["form.poses"].toArray())("form."+entry.toObject()["id"].toString()==path?chosen:keep).append(entry);
             if(chosen.isEmpty())return;isolated.style["form.poses"]=chosen;const Mesh baked=FormAnimation::evaluate(isolated,model->t);
-            model->pushUndo(true);o->mesh=baked;o->style["form.poses"]=keep;o->style.remove(path);
+            model->pushUndo(true);o->mesh=baked;o->style["form.poses"]=keep;o->style.remove(path);o->overrides.remove(path);o->defaults.remove(path);
             o->tracks.removeIf([&](const PropertyTrack &track){return track.property==path;});o->refreshLegacyKeys();model->notify();
         });
         connect(model,&BuildModel::changed,this,[this]{refresh();});connect(model,&BuildModel::selectionChanged,this,[this]{refresh();});

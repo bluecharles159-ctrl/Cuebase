@@ -645,18 +645,48 @@ bool BuildModel::setOrigin(const QString &kind) {
 
 bool BuildModel::joinSelected() {
     DObject *a = active();
-    if (!a || a->type != "Mesh") return false;
+    if (!a || a->type != "Mesh" || a->locked) return false;
     QVector<DObject *> others;
     for (DObject *o : selected())
-        if (o != a && o->type == "Mesh") others << o;
+        if (o != a && o->type == "Mesh" && !o->locked) others << o;
     if (others.isEmpty()) return false;
-    pushUndo();
     const QMatrix4x4 inv = design.worldMatrix(*a,t).inverted();
+    DObject joined=*a;
+    QVector<DObject *> sources{a};sources+=others;
+    QVector<QMatrix4x4> transforms;QVector<int> offsets;
+    joined.mesh=Mesh{};
+    for(const auto *source:sources){
+        const auto transform=inv*design.worldMatrix(*source,t);transforms.append(transform);offsets.append(joined.mesh.v.size());
+        Mesh part=source->mesh;part.transform(transform);joined.mesh.append(part);
+    }
+    QJsonArray poses;QSet<QString> poseIds;
+    const QJsonValue faces=joined.mesh.toJson()["f"];
+    for(int sourceIndex=0;sourceIndex<sources.size();++sourceIndex){
+        const auto *source=sources[sourceIndex];const QJsonValue sourceFaces=source->mesh.toJson()["f"];
+        for(const auto &entry:source->style.value("form.poses").toArray()){
+            auto pose=entry.toObject();if(pose["vertices"].toInt()!=source->mesh.v.size()||pose["faces"]!=sourceFaces)return false;
+            const auto oldPath="form."+pose["id"].toString();QString id=pose["id"].toString();
+            if(poseIds.contains(id))id=QUuid::createUuid().toString(QUuid::WithoutBraces);
+            poseIds.insert(id);const auto path="form."+id;QJsonArray deltas;
+            for(const auto &value:pose["deltas"].toArray()){
+                const auto delta=value.toArray();if(delta.size()!=4)return false;const int vertex=delta[0].toInt(-1);
+                if(vertex<0||vertex>=source->mesh.v.size())return false;
+                const auto vector=transforms[sourceIndex].mapVector(QVector3D(delta[1].toDouble(),delta[2].toDouble(),delta[3].toDouble()));
+                deltas.append(QJsonArray{vertex+offsets[sourceIndex],vector.x(),vector.y(),vector.z()});
+            }
+            pose["id"]=id;pose["vertices"]=joined.mesh.v.size();pose["faces"]=faces;pose["deltas"]=deltas;poses.append(pose);
+            joined.style[path]=source->propertyBase(oldPath);
+            if(sourceIndex){
+                if(const auto *track=source->track(oldPath)){auto copy=*track;copy.property=path;joined.tracks.append(copy);}
+                if(source->overrides.contains(oldPath))joined.overrides[path]=source->overrides.value(oldPath);
+                if(source->defaults.contains(oldPath))joined.defaults[path]=source->defaults.value(oldPath);
+            }
+        }
+    }
+    if(!poses.isEmpty())joined.style["form.poses"]=poses;
+    pushUndo(true);*a=joined;
     QSet<QString> gone;
     for (DObject *o : others) {
-        Mesh m = o->mesh;
-        m.transform(inv * design.worldMatrix(*o,t));
-        a->mesh.append(m);
         gone.insert(o->id);
     }
     const QString keep = a->id;
@@ -674,19 +704,24 @@ bool BuildModel::joinSelected() {
 
 bool BuildModel::separateLooseParts() {
     DObject *a = active();
-    if (!a || a->type != "Mesh") return false;
+    if (!a || a->type != "Mesh" || a->locked) return false;
     const QVector<Mesh> parts = a->mesh.looseParts();
     if (parts.size() < 2) return false;
-    pushUndo();
     const DObject base = *a;
+    QVector<DObject> separated;
+    for(int i=0;i<parts.size();++i){
+        DObject part=base;part.mesh=parts[i];
+        if(!FormAnimation::retarget(part,base,[i](Mesh &mesh){const auto pieces=mesh.looseParts();if(i>=pieces.size())return false;mesh=pieces[i];return true;}))return false;
+        separated.append(part);
+    }
+    pushUndo(true);
     const QString baseName = a->name;
-    a->mesh = parts[0];
+    *a = separated[0];
     QSet<QString> ids{a->id};
     for (int i = 1; i < parts.size(); ++i) {
-        DObject c = base;
+        DObject c = separated[i];
         c.id = newId();
         c.name = uniqueName(baseName);
-        c.mesh = parts[i];
         design.objects.append(c);
         ids.insert(c.id);
     }

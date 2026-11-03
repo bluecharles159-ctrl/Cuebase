@@ -84,6 +84,31 @@ private slots:
         const auto before=model.design.toJson();const auto atZero=model.design.evalMesh(*o,0).toJson();const auto atFull=model.design.evalMesh(*o,1000).toJson();
         model.setTime(500);QVERIFY(model.applyModifier(o->id,0));o=model.active();QVERIFY(o->mods.isEmpty());QCOMPARE(o->track(path)->keys.size(),2);QCOMPARE(model.design.evalMesh(*o,0).toJson(),atZero);QCOMPARE(model.design.evalMesh(*o,1000).toJson(),atFull);QVERIFY(model.undo());QCOMPARE(model.design.toJson(),before);
     }
+    void joinedAndSeparatedFormsRetainAnimation(){
+        BuildModel model;model.reset(ElementDesign::defaultScene());const auto first=model.addMesh("Cube");auto *o=model.active();const auto zero=o->mesh;o->mesh.v[0].setX(2);
+        const auto path=FormAnimation::capture(*o,zero,"Corner");o->keyChannel(path,0,0);o->keyChannel(path,1000,1);
+        DObject copy=*o;copy.id="second";copy.base.loc={5,0,1};copy.base.rot={0,40,0};copy.base.scl={2,1,1};model.design.objects.append(copy);model.sel={first,copy.id};model.activeId=first;
+        const auto before=model.design.toJson();const auto inverse=model.design.worldMatrix(*model.active(),0).inverted();QVector<Mesh> expected;
+        for(int time:{0,500,1000}){Mesh combined=FormAnimation::evaluate(*model.byId(first),time);auto part=FormAnimation::evaluate(copy,time);part.transform(inverse*model.design.worldMatrix(copy,time));combined.append(part);expected.append(combined);}
+        QVERIFY(model.joinSelected());QCOMPARE(model.active()->style.value("form.poses").toArray().size(),2);const auto poses=model.active()->style.value("form.poses").toArray();QVERIFY(poses[0].toObject()["id"]!=poses[1].toObject()["id"]);
+        for(int i=0;i<3;++i){const auto actual=FormAnimation::evaluate(*model.active(),i*500);QCOMPARE(actual.f,expected[i].f);for(int v=0;v<actual.v.size();++v)QVERIFY((actual.v[v]-expected[i].v[v]).length()<.0001);}
+        const auto joined=model.design.toJson();const auto parts=FormAnimation::evaluate(*model.active(),500).looseParts();QVERIFY(model.separateLooseParts());QCOMPARE(model.sel.size(),2);int part=0;
+        for(const auto &object:model.design.objects)if(model.sel.contains(object.id)){const auto actual=FormAnimation::evaluate(object,500);QCOMPARE(actual.toJson(),parts[part++].toJson());for(const auto &pose:object.style["form.poses"].toArray())QCOMPARE(object.track("form."+pose.toObject()["id"].toString())->keys.size(),2);}
+        QVERIFY(model.undo());QCOMPARE(model.design.toJson(),joined);QVERIFY(model.undo());QCOMPARE(model.design.toJson(),before);
+    }
+    void insetUsesTheDisplayedForm(){
+        Library lib;BuildModel model;model.reset(ElementDesign::defaultScene());model.addMesh("Cube");auto *o=model.active();auto zero=o->mesh;o->mesh.v[0]+=QVector3D(2,1,0);const auto path=FormAnimation::capture(*o,zero,"Corner");o->style[path]=.25;
+        QVERIFY(model.enterEdit());model.setSelMode(SelMode::Face);model.esel.f={0};model.active()->mesh.normalizeSel(model.esel,SelMode::Face);
+        auto expected=FormAnimation::evaluate(*model.active(),0);auto selection=model.esel;QVector<std::pair<int,QVector3D>> centers;QVERIFY(expected.inset(selection,model.selMode,&centers));for(const auto &pair:centers)expected.v[pair.first]+=(pair.second-expected.v[pair.first])*.5f;
+        const auto before=model.design.toJson();BuildCanvas canvas(&model,&lib);canvas.resize(800,500);canvas.show();canvas.startInset();QTest::keyClicks(&canvas,"0.5");QTest::keyClick(&canvas,Qt::Key_Return);
+        const auto actual=FormAnimation::evaluate(*model.active(),0);QCOMPARE(actual.f,expected.f);for(int i=0;i<actual.v.size();++i)QVERIFY((actual.v[i]-expected.v[i]).length()<.0001);QVERIFY(model.undo());QCOMPARE(model.design.toJson(),before);
+    }
+    void formKeysHoverAndExplicitRemoval(){
+        BuildModel model;model.reset(ElementDesign::defaultScene());model.addMesh("Cube");auto *o=model.active();auto zero=o->mesh;o->mesh.v[0].setX(2);const auto path=FormAnimation::capture(*o,zero,"Corner");
+        FormAnimationPanel panel(&model);panel.resize(380,350);panel.show();QTest::qWait(20);auto *input=panel.findChild<QDoubleSpinBox*>("formInfluence");input->setValue(.25);QCursor::setPos(input->mapToGlobal(input->rect().center()));QTest::keyClick(input,Qt::Key_I);QVERIFY(model.propertyIsKeyed(*model.active(),path,0));
+        model.setTime(1000);input->setValue(.75);QCursor::setPos(input->mapToGlobal(input->rect().center()));QTest::keyClick(input,Qt::Key_K);QCOMPARE(model.active()->track(path)->keys.size(),2);
+        input->setValue(.5);const auto before=model.design.toJson();panel.findChild<QPushButton*>("formRemoveKey")->click();QVERIFY(!model.propertyIsKeyed(*model.active(),path,1000));QVERIFY(model.undo());QCOMPARE(model.design.toJson(),before);
+    }
     void graphSelectionActiveAndEmptyRemainStable(){
         BuildModel model;model.reset(scene());model.select("subject");int axisIndex=0;for(const auto &axis:QStringList{"x","y","z"}){model.active()->keyChannel("position."+axis,0,0);model.active()->keyChannel("position."+axis,1000,2.-.6*axisIndex++);}
         AnimationEditor editor(&model,true);editor.resize(1000,420);editor.show();QTest::qWait(20);auto *tree=editor.findChild<QTreeWidget*>();auto *curve=editor.findChild<QWidget*>("animationCurve");QVERIFY(tree&&curve);
