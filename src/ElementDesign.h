@@ -147,6 +147,10 @@ struct DObject {
     int keyIndexNear(qint64 ms, int toleranceMs = 1) const;
     void setKey(qint64 ms, const DProps &p);
     bool isRenderable() const { return type == "Mesh" || type == "Text" || type == "Image" || type == "Shape"; }
+    // A converted 2D element keeps its authored surface independently of topology.
+    // Ordinary imported meshes have no surface.type and retain their 3D material.
+    QString surfaceType() const { return type == "Mesh" ? style["surface.type"].toString() : type; }
+    bool hasSurface() const { const auto kind=surfaceType();return kind=="Shape"||kind=="Image"||kind=="Text"; }
 };
 
 struct World {

@@ -1,4 +1,5 @@
 #include "BuildModel.h"
+#include "FormAnimation.h"
 #include "UiControls.h"
 #include "SurfaceEffects.h"
 #include "CueSequence.h"
@@ -716,13 +717,18 @@ bool BuildModel::applyModifier(const QString &objectId,int index){
 
 bool BuildModel::enterEdit() {
     DObject *o = active();
-    if(o&&o->type=="Shape"&&!o->locked){
+    if(o&&o->hasSurface()&&o->type!="Mesh"&&!o->locked){
         pushUndo();const QRectF bounds(-o->w/2,-o->h/2,o->w,o->h);
         auto outline=*o;if(outline.style["corner.unit"].toString()!="%")for(const auto &key:QStringList{"corner.radius","corner.tl","corner.tr","corner.br","corner.bl"})outline.style[key]=o->propertyBase(key)/kPxPerUnit;
-        const QPainterPath path=surfaceOutline(bounds,outline);
+        // The texture's Y coordinate points down; editable mesh coordinates point up.
+        // Text retains live typography on an editable surface rather than being
+        // destructively converted to fixed glyph outlines.
+        QPainterPath path;if(o->type=="Text")path.addRect(bounds);else path=surfaceOutline(bounds,outline);
         const auto polygon=path.toFillPolygon();Mesh mesh;QVector<int> face;
-        for(int i=0;i<polygon.size();++i){if(i==polygon.size()-1&&polygon[i]==polygon[0])break;face.append(mesh.v.size());mesh.v.append({float(polygon[i].x()),float(polygon[i].y()),0});}
-        mesh.f.append(face);if(mesh.faceNormal(0).z()<0)mesh.flipNormals();o->mesh=mesh;o->type="Mesh";
+        for(int i=0;i<polygon.size();++i){if(i==polygon.size()-1&&polygon[i]==polygon[0])break;face.append(mesh.v.size());mesh.v.append({float(polygon[i].x()),float(-polygon[i].y()),0});}
+        mesh.f.append(face);if(mesh.faceNormal(0).z()<0)mesh.flipNormals();
+        o->style["surface.type"]=o->type;o->style["surface.restMesh"]=mesh.toJson();
+        o->mesh=mesh;o->type="Mesh";
     }
     if (!o || o->type != "Mesh" || o->locked) return false;
     editMode = true;
@@ -810,14 +816,16 @@ void BuildModel::editInvert() {
 
 #define EDIT_OP_BEGIN \
     Mesh *m = editMesh(); \
-    if (!m) return false; \
-    pushUndo();
+    if (!m || !active() || active()->locked) return false; \
+    const DObject original=*active(); const EditSel originalSelection=esel; const SelMode originalMode=selMode; \
+    pushUndo(true);
 #define EDIT_OP_FAIL \
-    { dropUndo(); return false; }
+    { *active()=original;esel=originalSelection;dropUndo();return false; }
 
 bool BuildModel::opSubdivide() {
     EDIT_OP_BEGIN
     if (!m->subdivide(esel, selMode)) EDIT_OP_FAIL
+    if(!FormAnimation::retarget(*active(),original,[=](Mesh &mesh){auto selection=originalSelection;return mesh.subdivide(selection, originalMode);})) EDIT_OP_FAIL
     reconcile();
     emit changed();
     return true;
@@ -827,6 +835,7 @@ bool BuildModel::opExtrude(QVector3D *dirWorld) {
     EDIT_OP_BEGIN
     QVector3D dir;
     if (!m->extrude(esel, selMode, &dir)) EDIT_OP_FAIL
+    if(!FormAnimation::retarget(*active(),original,[=](Mesh &mesh){auto selection=originalSelection;return mesh.extrude(selection, originalMode, nullptr);})) EDIT_OP_FAIL
     if (dirWorld) {
         const QMatrix4x4 W = design.worldMatrix(*active(),t);
         *dirWorld = dir.isNull() ? QVector3D() : W.mapVector(dir).normalized();
@@ -839,6 +848,7 @@ bool BuildModel::opExtrude(QVector3D *dirWorld) {
 bool BuildModel::opInset(QVector<std::pair<int, QVector3D>> *info) {
     EDIT_OP_BEGIN
     if (!m->inset(esel, selMode, info)) EDIT_OP_FAIL
+    if(!FormAnimation::retarget(*active(),original,[=](Mesh &mesh){auto selection=originalSelection;QVector<std::pair<int,QVector3D>> ignored;return mesh.inset(selection, originalMode, &ignored);})) EDIT_OP_FAIL
     reconcile();
     emit changed();
     return true;
@@ -847,6 +857,7 @@ bool BuildModel::opInset(QVector<std::pair<int, QVector3D>> *info) {
 bool BuildModel::opLoopCut(EdgeKey e, int cuts) {
     EDIT_OP_BEGIN
     if (!m->loopCut(e, cuts, esel)) EDIT_OP_FAIL
+    if(!FormAnimation::retarget(*active(),original,[=](Mesh &mesh){auto selection=originalSelection;return mesh.loopCut(e, cuts, selection);})) EDIT_OP_FAIL
     reconcile();
     emit changed();
     return true;
@@ -855,6 +866,7 @@ bool BuildModel::opLoopCut(EdgeKey e, int cuts) {
 bool BuildModel::opFill() {
     EDIT_OP_BEGIN
     if (!m->fill(esel, selMode)) EDIT_OP_FAIL
+    if(!FormAnimation::retarget(*active(),original,[=](Mesh &mesh){auto selection=originalSelection;return mesh.fill(selection, originalMode);})) EDIT_OP_FAIL
     // select the new face
     esel.f = {int(m->f.size()) - 1};
     esel.v.clear();
@@ -867,6 +879,7 @@ bool BuildModel::opFill() {
 bool BuildModel::opFlatten() {
     EDIT_OP_BEGIN
     if (!m->flatten(esel, selMode)) EDIT_OP_FAIL
+    if(!FormAnimation::retarget(*active(),original,[=](Mesh &mesh){auto selection=originalSelection;return mesh.flatten(selection, originalMode);})) EDIT_OP_FAIL
     emit changed();
     return true;
 }
@@ -874,6 +887,7 @@ bool BuildModel::opFlatten() {
 bool BuildModel::opMerge() {
     EDIT_OP_BEGIN
     if (!m->mergeAtCenter(esel, selMode)) EDIT_OP_FAIL
+    if(!FormAnimation::retarget(*active(),original,[=](Mesh &mesh){auto selection=originalSelection;return mesh.mergeAtCenter(selection, originalMode);})) EDIT_OP_FAIL
     reconcile();
     emit changed();
     return true;
@@ -882,6 +896,7 @@ bool BuildModel::opMerge() {
 bool BuildModel::opDelete() {
     EDIT_OP_BEGIN
     if (!m->deleteSel(esel, selMode)) EDIT_OP_FAIL
+    if(!FormAnimation::retarget(*active(),original,[=](Mesh &mesh){auto selection=originalSelection;return mesh.deleteSel(selection, originalMode);})) EDIT_OP_FAIL
     esel.clear();
     emit changed();
     return true;
@@ -896,6 +911,7 @@ bool BuildModel::opFlip() {
         const QSet<int> f = esel.f;
         m->flipNormals(&f);
     }
+    if(!FormAnimation::retarget(*active(),original,[=](Mesh &mesh){auto selection=originalSelection;mesh.normalizeSel(selection,originalMode);if(selection.f.isEmpty())mesh.flipNormals();else mesh.flipNormals(&selection.f);return true;})) EDIT_OP_FAIL
     emit changed();
     return true;
 }
@@ -910,6 +926,8 @@ bool BuildModel::opSeparate() {
     c.name = uniqueName(a->name);
     c.mesh = part;
     c.mods.clear();
+    if(!FormAnimation::retarget(*a,original,[=](Mesh &mesh){auto selection=originalSelection;return !mesh.separateFaces(selection,originalMode).isEmpty();})) EDIT_OP_FAIL
+    if(!FormAnimation::retarget(c,original,[=](Mesh &mesh){auto selection=originalSelection;mesh=mesh.separateFaces(selection,originalMode);return !mesh.isEmpty();})) EDIT_OP_FAIL
     design.objects.append(c);
     esel.clear();
     emit changed();
@@ -919,6 +937,7 @@ bool BuildModel::opSeparate() {
 bool BuildModel::opSplit() {
     EDIT_OP_BEGIN
     if (!m->splitFaces(esel, selMode)) EDIT_OP_FAIL
+    if(!FormAnimation::retarget(*active(),original,[=](Mesh &mesh){auto selection=originalSelection;return mesh.splitFaces(selection, originalMode);})) EDIT_OP_FAIL
     reconcile();
     emit changed();
     return true;

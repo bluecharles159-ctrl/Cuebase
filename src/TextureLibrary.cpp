@@ -100,7 +100,7 @@ bool exportEntry(const Library &library,const QString &id,const QString &path,QS
     const auto item=entry(library,id);if(item.isEmpty())return fail(error,"This library item no longer exists.");
     ElementDesign design;design.objects.append(surface(item));return exportPortableDesign(design,path,error);
 }
-bool compatible(const DObject &object){return object.type=="Shape"||object.type=="Text"||object.type=="Image";}
+bool compatible(const DObject &object){return object.hasSurface();}
 bool apply(BuildModel &model,const Library &library,const QString &id,const QString &target,QString *error){
     const auto item=entry(library,id);if(item.isEmpty())return fail(error,"This library item no longer exists.");
     const auto source=surface(item);const auto path=file(item);
@@ -115,7 +115,7 @@ bool apply(BuildModel &model,const Library &library,const QString &id,const QStr
             for(auto it=source.style.begin();it!=source.style.end();++it)if(appearanceKey(it.key()))object->style[it.key()]=it.value();
             object->mat=source.mat;
         }else {object->style["texture.file"]=path;object->style["texture.enabled"]=true;}
-        if(object->type!="Text")object->style["background.type"]=item["kind"].toString()=="Preset"?source.style["background.type"]:QJsonValue("Solid");
+        if(object->surfaceType()!="Text")object->style["background.type"]=item["kind"].toString()=="Preset"?source.style["background.type"]:QJsonValue("Solid");
     }
     model.notify();if(error)error->clear();return true;
 }

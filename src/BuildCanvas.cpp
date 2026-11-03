@@ -98,9 +98,13 @@ void BuildCanvas::dropEvent(QDropEvent *event){
 // ------------------------------------------------------------------ view
 
 ViewCam BuildCanvas::userCam() const {
-    // Kept as a compatibility helper for older code paths. The primary Build
-    // workspace never orbits this camera; it always uses the scene camera.
-    return m_m->design.sceneCamera(m_m->t, double(width()) / qMax(1, height()));
+    ViewCam camera;
+    const auto broadcast=m_m->design.sceneCamera(m_m->t,m_lib->display.aspect());
+    camera.ortho=true;camera.aspect=m_lib->display.aspect();camera.orthoScale=broadcast.orthoScale;
+    const float distance=float(qMax(100.,camera.orthoScale*4));
+    const QVector3D position=m_workDirection==1?QVector3D(distance,0,0):m_workDirection==2?QVector3D(0,0,distance):QVector3D(0,-distance,0);
+    camera.view.lookAt(position,QVector3D(),m_workDirection==2?QVector3D(0,1,0):QVector3D(0,0,1));
+    return camera;
 }
 
 QRectF BuildCanvas::cameraFrame() const {
@@ -121,7 +125,7 @@ ViewCam BuildCanvas::activeCam(QRectF *r) const {
     *r = QRectF(c.x() - base.width() * z / 2, c.y() - base.height() * z / 2, base.width() * z, base.height() * z);
     // The real broadcast camera is always used. Editor zoom/pan only changes
     // the screen rectangle used to display that camera's composition.
-    return m_m->design.sceneCamera(m_m->t, base.width() / qMax(1.0, base.height()));
+    return m_cameraView?m_m->design.sceneCamera(m_m->t, base.width() / qMax(1.0, base.height())):userCam();
 }
 
 bool BuildCanvas::projectWorld(const ViewCam &cam, const QRectF &r, const QVector3D &w, QPointF *out, double *depth) const {
@@ -137,17 +141,17 @@ void BuildCanvas::setShading(int s) {
 }
 
 void BuildCanvas::setCameraView(bool on) {
-    Q_UNUSED(on);
-    m_cameraView = true;
-    m_viewName = "2D Composition  ·  Fixed Camera";
-    update();
+    if(modalActive())cancelModal();
+    m_cameraView = on;
+    m_viewName = on?QString("Broadcast camera"):QStringList{"Front","Right","Top"}[m_workDirection];
+    setProperty("workCamera",m_viewName);emit viewChanged();update();
 }
 
-void BuildCanvas::viewFront() { m_cameraView = true; m_viewName = "2D Composition  ·  Fixed Camera"; update(); }
-void BuildCanvas::viewRight() { m_cameraView = true; m_viewName = "2D Composition  ·  Fixed Camera"; update(); }
-void BuildCanvas::viewTop() { m_cameraView = true; m_viewName = "2D Composition  ·  Fixed Camera"; update(); }
+void BuildCanvas::viewFront() { m_workDirection=0;setCameraView(false); }
+void BuildCanvas::viewRight() { m_workDirection=1;setCameraView(false); }
+void BuildCanvas::viewTop() { m_workDirection=2;setCameraView(false); }
 
-void BuildCanvas::toggleOrtho() { m_cameraView = true; update(); }
+void BuildCanvas::toggleOrtho() { setCameraView(!m_cameraView); }
 
 void BuildCanvas::frameAll() {
     m_editorZoom = 1.0;
@@ -449,10 +453,10 @@ void BuildCanvas::paintEvent(QPaintEvent *) {
     QElapsedTimer renderClock;renderClock.start();
     QImage frame(previewSize,QImage::Format_ARGB32_Premultiplied);frame.fill(Qt::transparent);
     if(!frame.isNull()){
-        if(m_shading==Rendered&&sceneEffect(d))frame=sceneEffectPreview(d,previewSize,m_m->t);
+        if(m_cameraView&&m_shading==Rendered&&sceneEffect(d))frame=sceneEffectPreview(d,previewSize,m_m->t);
         else{
             QPainter render(&frame);render.setRenderHint(QPainter::Antialiasing);render.setRenderHint(QPainter::SmoothPixmapTransform);
-            if(m_shading==Rendered){
+            if(m_shading==Rendered&&m_cameraView){
                 const auto &display=m_lib->display;RenderSettings settings;
                 settings.motionBlur=display.motionBlur;settings.shutter=display.shutter;settings.samples=display.mbSamples;
                 settings.frameMs=1000.*display.fpsBase/qMax(1,display.fps);
@@ -477,9 +481,9 @@ void BuildCanvas::paintEvent(QPaintEvent *) {
     const QRectF titleSafe = r.adjusted(r.width()*titleMargin, r.height()*titleMargin, -r.width()*titleMargin, -r.height()*titleMargin);
     const QRectF actionSafe = r.adjusted(r.width()*actionMargin, r.height()*actionMargin, -r.width()*actionMargin, -r.height()*actionMargin);
     p.setPen(QPen(QColor(96,165,250,45), 1, Qt::DashLine));
-    if(showActionSafe) p.drawRect(actionSafe);
+    if(showActionSafe&&m_cameraView) p.drawRect(actionSafe);
     p.setPen(QPen(QColor(250,204,21,38), 1, Qt::DashLine));
-    if(showTitleSafe) p.drawRect(titleSafe);
+    if(showTitleSafe&&m_cameraView) p.drawRect(titleSafe);
     p.setPen(QPen(QColor(148,163,184,28), 1));
     if(showAxes) p.drawLine(QPointF(r.center().x(), r.top()), QPointF(r.center().x(), r.bottom()));
     if(showAxes) p.drawLine(QPointF(r.left(), r.center().y()), QPointF(r.right(), r.center().y()));
@@ -551,10 +555,10 @@ void BuildCanvas::drawHud(QPainter &p, const QRectF &r) {
         p.drawText(box, flags, t);
     };
     const DObject *a = const_cast<BuildModel *>(m_m)->active();
-    QString mode = m_m->editMode ? QString("Edit Mode  ·  %1").arg(m_m->selMode == SelMode::Vertex ? "Vertex" : m_m->selMode == SelMode::Edge ? "Edge" : "Face")
+    QString mode = m_m->editMode ? QString("Form Animation  ·  %1").arg(m_m->selMode == SelMode::Vertex ? "Vertex" : m_m->selMode == SelMode::Edge ? "Edge" : "Face")
                                  : "Object Mode";
     const bool cameraLocked=!m_m->design.camera() || m_m->design.camera()->locked;
-    text(r.adjusted(28, 24, -14, 0), Qt::AlignLeft | Qt::AlignTop, QString("Broadcast %1 × %2  ·  %3  ·  %4").arg(m_lib->display.resX()).arg(m_lib->display.resY()).arg(cameraLocked?"Camera locked":"Camera editing enabled",mode), QColor(230, 236, 245, 220));
+    text(r.adjusted(28, 24, -14, 0), Qt::AlignLeft | Qt::AlignTop, QString("%1  ·  %2").arg(m_cameraView?QString("Broadcast %1 × %2").arg(m_lib->display.resX()).arg(m_lib->display.resY()):m_viewName+" · Orthographic",mode), QColor(230, 236, 245, 220));
     text(r.adjusted(28, 42, -14, 0), Qt::AlignLeft | Qt::AlignTop,
          a ? QString("(%1)  %2").arg(m_m->t / 1000.0, 0, 'f', 2).arg(a->name) : QString("(%1)").arg(m_m->t / 1000.0, 0, 'f', 2), QColor(255, 208, 138, 230));
     if (m_m->editMode && m_m->editMesh()) {
@@ -729,8 +733,9 @@ void BuildCanvas::boxSelect(const QRectF &box, bool additive) {
     QRectF r;
     const ViewCam cam = activeCam(&r);
     if (m_m->editMode) {
-        Mesh *mesh = m_m->editMesh();
-        if (!mesh) return;
+        if (!m_m->editMesh()) return;
+        Mesh displayed = FormAnimation::evaluate(*m_m->active(),m_m->t);
+        const Mesh *mesh = &displayed;
         const QMatrix4x4 W = editWorld();
         QSet<int> in;
         for (int i = 0; i < mesh->v.size(); ++i) {
@@ -817,8 +822,10 @@ void BuildCanvas::startModal(Modal::Kind k, bool fromButton, bool skipUndo) {
         }
         if (!skipUndo) m_m->pushUndo();
         md.origVerts = mesh->v;
+        const Mesh displayed=FormAnimation::evaluate(*m_m->active(),m_m->t);
+        md.displayedVerts=displayed.v;
         md.editVerts = m_m->esel.v;
-        md.pivot = editWorld().map(mesh->selCenter(m_m->esel));
+        md.pivot = editWorld().map(displayed.selCenter(m_m->esel));
     } else {
         auto objs = m_m->selected();
         objs.removeIf([](auto *o){return o->locked||o->type=="Audio";});
@@ -1041,7 +1048,10 @@ void BuildCanvas::applyModal(const QPointF &mouse) {
     }
 
     if (edit && mesh) {
-        for (int i : m_modal.editVerts) mesh->v[i] = invW.map(xf(W.map(m_modal.origVerts[i])));
+        for (int i : m_modal.editVerts) {
+            const auto displayed=m_modal.displayedVerts[i];
+            mesh->v[i] = m_modal.origVerts[i]+invW.map(xf(W.map(displayed)))-displayed;
+        }
         if(const auto *object=m_m->active())for(const auto &modifier:object->mods){
             if(!modifier.on||modifier.type!="Mirror"||!modifier.options["clipping"].toBool())continue;
             QMatrix4x4 basis;if(const auto *target=m_m->byId(modifier.target))basis=m_m->design.worldMatrix(*object,m_m->t).inverted()*m_m->design.worldMatrix(*target,m_m->t);

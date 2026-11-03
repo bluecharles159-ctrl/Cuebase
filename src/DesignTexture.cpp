@@ -75,7 +75,7 @@ void DObject::fitTextLayout(){
     if(style["text.autoFitY"].toBool(true))h=qBound(1.,qCeil(doc.size().height()+2*inset)*1.,4096.)/kPxPerUnit;
 }
 QImage ElementDesign::textureFor(const DObject &source) const {
-    DObject o=source;o.fitTextLayout();
+    DObject o=source;if(o.type=="Mesh"&&o.hasSurface())o.type=o.surfaceType();o.fitTextLayout();
     const QFileInfo media(o.image),surfaceFile(o.style["texture.file"].toString());
     const QString signature=QString::fromUtf8(QJsonDocument(o.style).toJson(QJsonDocument::Compact))+
         QString("|%1|%2|%3|%4|%5|%6|%7").arg(o.type,o.text).arg(o.fontPx).arg(o.mat.color.name(QColor::HexArgb)).arg(o.w).arg(o.h).arg(o.image)+

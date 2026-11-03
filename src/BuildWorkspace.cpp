@@ -52,6 +52,7 @@
 #include "BuildCanvas.h"
 #include "BuildModel.h"
 #include "FormAnimationPanel.h"
+#include "OutputFormatDialog.h"
 #include "Data.h"
 #include "AnimationEditor.h"
 #include "AnimationCuePanel.h"
@@ -409,7 +410,21 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     auto *canvasRow=new QHBoxLayout;canvasRow->setSpacing(4);canvasRow->addLayout(tb);
     auto *left = new QSplitter(Qt::Vertical);
     auto *views=new QSplitter(Qt::Horizontal);
-    views->addWidget(new CompositionPreview(m,lib));views->addWidget(canvas);views->setSizes({420,640});
+    views->setObjectName("buildDualViews");
+    auto *finalPanel=new QWidget;auto *finalLayout=new QVBoxLayout(finalPanel);finalLayout->setContentsMargins(0,0,0,0);finalLayout->setSpacing(4);
+    auto *finalBar=new QHBoxLayout;finalBar->addWidget(new QLabel("FINAL"));finalBar->addStretch();
+    auto *outputFormat=new QToolButton;outputFormat->setObjectName("buildOutputFormat");outputFormat->setIcon(uiIcon("camera"));outputFormat->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);outputFormat->setToolTip("Channel output resolution and aspect ratio");
+    auto refreshFormat=[=]{outputFormat->setText(QString("%1 × %2").arg(lib->display.resX()).arg(lib->display.resY()));};refreshFormat();connect(lib,&Library::displayChanged,outputFormat,refreshFormat);
+    connect(outputFormat,&QToolButton::clicked,this,[this,lib]{if(auto *existing=findChild<QDialog*>("outputFormatDialog")){existing->raise();existing->activateWindow();return;}createOutputFormatDialog(lib,this)->open();});
+    finalBar->addWidget(outputFormat);finalLayout->addLayout(finalBar);finalLayout->addWidget(new CompositionPreview(m,lib),1);
+    auto *workPanel=new QWidget;auto *workLayout=new QVBoxLayout(workPanel);workLayout->setContentsMargins(0,0,0,0);workLayout->setSpacing(4);
+    auto *workBar=new QHBoxLayout;workBar->addWidget(new QLabel("WORK"));workBar->addStretch();auto *workView=new QComboBox;workView->setObjectName("buildWorkCamera");workView->addItems({"Broadcast camera","Front","Right","Top"});workView->setToolTip("Independent orthographic work views · numpad 1 / 3 / 7; numpad 0 returns to the broadcast camera");workBar->addWidget(workView);
+    connect(workView,&QComboBox::activated,canvas,[=](int index){if(index==0)canvas->setCameraView(true);else if(index==1)canvas->viewFront();else if(index==2)canvas->viewRight();else canvas->viewTop();});
+    connect(canvas,&BuildCanvas::viewChanged,workView,[=]{QSignalBlocker block(workView);workView->setCurrentText(canvas->cameraView()?"Broadcast camera":canvas->viewName());});
+    workLayout->addLayout(workBar);workLayout->addWidget(canvas,1);
+    views->addWidget(finalPanel);views->addWidget(workPanel);views->setSizes({420,640});
+    const auto viewSizes=QSettings().value("build/dualViews").toByteArray();if(!viewSizes.isEmpty())views->restoreState(viewSizes);
+    connect(views,&QSplitter::splitterMoved,this,[views]{QSettings().setValue("build/dualViews",views->saveState());});
     auto *lower=new QSplitter(Qt::Horizontal);
     auto *layers=new LayerPanel(m);layers->setMaximumWidth(QWIDGETSIZE_MAX);
     auto *layerPanel=new QWidget;auto *layerLayout=new QVBoxLayout(layerPanel);layerLayout->setContentsMargins(0,0,0,0);layerLayout->setSpacing(2);

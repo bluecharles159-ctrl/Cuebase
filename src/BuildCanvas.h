@@ -22,6 +22,7 @@ public:
     int shading() const { return m_shading; }
     void setShading(int s);
     bool cameraView() const { return m_cameraView; }
+    QString viewName() const { return m_viewName; }
     void setCameraView(bool on);
     void viewFront();
     void viewRight();
@@ -49,6 +50,7 @@ public:
     void startDrawShape(const QString &kind);
 
 signals:
+    void viewChanged();
     void componentBrowserRequested();
     void shadingChanged(int mode);
     void addMenuRequested(const QPoint &globalPos);
@@ -85,6 +87,7 @@ private:
         QString numeric;
         QHash<QString, DProps> origProps;
         QVector<QVector3D> origVerts;
+        QVector<QVector3D> displayedVerts;
         QSet<int> editVerts;
         QVector<std::pair<int, QVector3D>> insetInfo;
         double startAngle = 0;
@@ -131,8 +134,9 @@ private:
     BuildModel *m_m;
     Library *m_lib;
     int m_shading = Rendered;
-    bool m_cameraView = true, m_ortho = false;
-    // The editor camera is fixed. These values are only 2D canvas navigation.
+    bool m_cameraView = true, m_ortho = true;
+    int m_workDirection = 0; // Front, Right, Top. Independent of broadcast camera.
+    // Navigation never changes the saved broadcast camera.
     double m_editorZoom = 1.0;
     QPointF m_editorPan{0, 0};
     QVector<double> m_verticalGuides, m_horizontalGuides;

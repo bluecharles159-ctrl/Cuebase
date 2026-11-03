@@ -222,8 +222,8 @@ QString ElementDesign::toJson() const {
         j["defaults"]=o.defaults;j["parent"]=o.parentId;
         QJsonArray inverse;for(int row=0;row<4;++row)for(int col=0;col<4;++col)inverse.append(o.parentInverse(row,col));j["parentInverse"]=inverse;
         if (o.type == "Mesh") j["mesh"] = o.mesh.toJson();
-        if (o.type == "Text") j["text"] = o.text;
-        if (o.type == "Text" || o.type == "Image" || o.type == "Shape") {
+        if (o.surfaceType() == "Text") j["text"] = o.text;
+        if (o.hasSurface()) {
             j["fontPx"] = o.fontPx;
             j["w"] = o.w;
             j["h"] = o.h;
@@ -655,7 +655,14 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
         const double alpha = qBound(0.0, pr.opacity * obj.mat.alpha, 1.0);
         if (alpha <= 0.003) continue;
 
-        if (obj.type == "Mesh") {
+        // A converted surface follows the original texture path while its mesh
+        // is unchanged. This preserves padded shadows, blur and backdrop pixels
+        // exactly on entering Form Animation, including after save/reopen.
+        const Mesh restSurface = obj.hasSurface() && obj.type == "Mesh"
+            ? Mesh::fromJson(obj.style["surface.restMesh"].toObject()) : Mesh{};
+        const bool intactSurface = obj.type == "Mesh" && obj.hasSurface()
+            && !restSurface.v.isEmpty() && evalMesh(obj, ms).toJson() == restSurface.toJson();
+        if (obj.type == "Mesh" && !intactSurface) {
             const Mesh &m = evalMesh(obj, ms);
             if (m.f.isEmpty()) continue;
             const bool flip = W.determinant() < 0;
@@ -665,6 +672,10 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
                 cv[i] = cam.view.map(wv[i]);
             }
             const bool cull = !o.twoSided && o.shade != PaintOpts::Wire && m.isClosed();
+            const QImage surface = obj.hasSurface() && o.shade != PaintOpts::Wire && o.shade != PaintOpts::Solid
+                ? textureFor(obj) : QImage{};
+            const double padX = qMax(0, surface.width()-qBound(1,qRound(obj.w*kPxPerUnit),4096))/2.;
+            const double padY = qMax(0, surface.height()-qBound(1,qRound(obj.h*kPxPerUnit),4096))/2.;
             for (const QVector<int> &L0 : m.f) {
                 QVector<int> L = L0;
                 if (flip) std::reverse(L.begin(), L.end());
@@ -709,12 +720,35 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
                 it.color = shadeFace(obj.mat, n, center, it.depth);
                 it.alpha = alpha;
                 it.blend = o.shade==PaintOpts::Solid?QPainter::CompositionMode_SourceOver:blendMode(obj.style["blend"].toString());
+                // Retain the source surface on edited faces. Rest coordinates
+                // provide stable texture mapping when vertices are animated.
+                if (!surface.isNull() && clipped.size()==vp.size()) {
+                    bool textured=false;
+                    for(int triangle=1;triangle+1<L.size();++triangle){
+                        const int indices[3]={L[0],L[triangle],L[triangle+1]};
+                        QPolygonF uv,dst;
+                        for(int vertex:indices){
+                            const auto local=vertex<restSurface.v.size()?restSurface.v[vertex]:m.v[vertex];
+                            uv << QPointF((local.x()+obj.w/2)*kPxPerUnit+padX,(obj.h/2-local.y())*kPxPerUnit+padY);
+                            QPointF screen;projCam(cv[vertex],&screen);dst<<screen;
+                        }
+                        QPainterPath faceClip;faceClip.addPolygon(dst);faceClip.closeSubpath();
+                        uv << uv[0]+uv[2]-uv[1];dst << dst[0]+dst[2]-dst[1];
+                        Item face=it;
+                        if(!QTransform::quadToQuad(uv,dst,face.tr))continue;
+                        face.textured=true;face.img=surface;face.clip=clip.intersected(faceClip);
+                        face.backdrop=obj.propertyBase("backdrop.blur");face.brightness=obj.propertyBase("backdrop.brightness");face.backdropClip=faceClip;
+                        items.append(face);textured=true;
+                    }
+                    if(textured)continue;
+                }
                 items.append(it);
             }
         } else {  // Text / Image: a flat picture on a plane
             // Structural preview changes only a temporary evaluated surface. It
             // keeps typography and geometry while avoiding media/effect work.
             DObject preview=obj;
+            if(preview.type=="Mesh")preview.type=preview.surfaceType();
             if(o.shade==PaintOpts::Solid || o.shade==PaintOpts::Wire){
                 QJsonObject structural;
                 for(auto it=obj.style.begin();it!=obj.style.end();++it)
@@ -722,7 +756,7 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
                 structural["background.type"]="Solid";
                 structural["text.backgroundColor"]="#666666";
                 preview.style=structural;
-                preview.mat.color=obj.type=="Text"?QColor("#eeeeee"):QColor("#929292");
+                preview.mat.color=obj.surfaceType()=="Text"?QColor("#eeeeee"):QColor("#929292");
                 if(preview.type=="Image")preview.type="Shape";
                 preview.image.clear();
                 preview.id+="/work-preview";
