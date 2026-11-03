@@ -5,8 +5,13 @@ This is a development preview, not a production-ready release.
 
 ## Highlights
 
-- Form Animation: capture confirmed mesh moves and extrusions, adjust influence,
-  and insert or remove influence keyframes. Hover Influence and press I or K to key it.
+- Form Animation: capture confirmed mesh transforms, extrusions and insets, rename
+  forms and key their influence. Topology operations transfer earlier forms, and
+  join/separate preserves their animation. Hover Influence and press I or K.
+- Separate Final and Work pictures with independent Front/Right/Top work views
+  and saved output-format presets.
+- Graph curves follow channel selection, highlight the active curve and retain
+  clipboard/duplicate undo behavior.
 - Ordered offline audio effects: echo, EQ, high/low-pass filters, compressor,
   limiter and gain. Reorder or bypass effects and render a separate WAV copy.
 - Shared audio library, source audition, scene timing, fades and mute controls.
@@ -23,8 +28,9 @@ certificate is claimed for this build.
 ## Known limitations
 
 - DSP processing is offline and creates a new file; it is not a live mixer insert.
-- Form influence operates on stable vertex indices. Incompatible topology edits
-  disable old forms rather than assigning their offsets to unrelated vertices.
+- Form topology transfer rejects incompatible changes. Text/shape/image surfaces
+  keep their original look on conversion; outward effects on deformed faces and
+  combined surface materials still need further work.
 - The broader feature backlog remains incomplete. Account synchronization still
   requires service configuration. macOS and Linux packages are not included.
 - Back up valuable projects before testing this preview.

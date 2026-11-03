@@ -125,6 +125,13 @@ private slots:
         const auto before=model.design.toJson();QTest::keyClick(curve,Qt::Key_D,Qt::ShiftModifier);QCOMPARE(model.active()->track("position.x")->keys.size(),4);QTest::keyClick(curve,Qt::Key_Escape);QCOMPARE(model.design.toJson(),before);QVERIFY(QWidget::mouseGrabber()!=curve);
         QTest::keyClick(curve,Qt::Key_A,Qt::ControlModifier);QTest::keyClick(curve,Qt::Key_C,Qt::ControlModifier);model.setTime(2000);QTest::keyClick(curve,Qt::Key_V,Qt::ControlModifier);QCOMPARE(model.active()->track("position.x")->keys.size(),4);QVERIFY(model.undo());QCOMPARE(model.design.toJson(),before);
     }
+    void graphKeyboardScaleAndCancel(){
+        BuildModel model;model.reset(scene());model.select("subject");model.active()->keyChannel("position.x",500,1);model.active()->keyChannel("position.x",1500,3);
+        AnimationEditor editor(&model,true);editor.resize(1000,420);editor.show();QTest::qWait(20);auto *curve=editor.findChild<QWidget*>("animationCurve");QVERIFY(curve);curve->setFocus();QTest::keyClick(curve,Qt::Key_A,Qt::ControlModifier);
+        const auto before=model.design.toJson();const QPoint start=curve->rect().center();QCursor::setPos(curve->mapToGlobal(start));QTest::keyClick(curve,Qt::Key_S);QTest::keyClick(curve,Qt::Key_Y);QTest::mouseMove(curve,start+QPoint(0,-40));QTest::keyClick(curve,Qt::Key_Enter);
+        auto *track=model.active()->track("position.x");QCOMPARE(track->keys[0].ms,500);QCOMPARE(track->keys[1].ms,1500);QVERIFY(track->keys[0].value<1);QVERIFY(track->keys[1].value>3);QVERIFY(track->keys[0].customHandles);QVERIFY(QWidget::mouseGrabber()!=curve);QVERIFY(model.undo());QCOMPARE(model.design.toJson(),before);
+        QTest::keyClick(curve,Qt::Key_A,Qt::ControlModifier);QCursor::setPos(curve->mapToGlobal(start));QTest::keyClick(curve,Qt::Key_G);QTest::keyClick(curve,Qt::Key_X);QTest::mouseMove(curve,start+QPoint(50,0));QVERIFY(model.design.toJson()!=before);QTest::mouseClick(curve,Qt::RightButton,Qt::NoModifier,start+QPoint(50,0));QCOMPARE(model.design.toJson(),before);QVERIFY(QWidget::mouseGrabber()!=curve);
+    }
     void workViewsLeaveBroadcastUnchanged(){
         Library lib;BuildWorkspace workspace(&lib);workspace.resize(1300,850);workspace.show();auto *model=workspace.findChild<BuildModel*>();auto d=scene();DObject box;box.id="cube";box.type="Mesh";box.mesh=Mesh::primitive("Cube");box.base.loc={3,2,1};d.objects.append(box);model->reset(d);
         auto *canvas=workspace.findChild<BuildCanvas*>();auto *view=workspace.findChild<QComboBox*>("buildWorkCamera");auto *final=workspace.findChild<QWidget*>("compositionCleanPreview");QVERIFY(canvas&&view&&final);QTest::qWait(30);const auto saved=model->design.toJson();const auto output=final->grab().toImage();

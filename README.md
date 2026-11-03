@@ -10,8 +10,8 @@ animation, audio assets and broadcast planning.
 
 ## Windows download
 
-The verified preview candidate is commit `14051b9`.
-[Open its successful build and downloads](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41481728178).
+The verified preview candidate is commit `504fc88`.
+[Open its successful build and downloads](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41591759703).
 Select the **Cuebase-Windows** artifact. GitHub may require sign-in for Actions
 downloads. A public Releases download has not yet been published.
 
@@ -32,8 +32,14 @@ adjust **Influence**: zero restores the captured start; one reaches the authored
 result. Insert/remove keys with the panel buttons, or hover Influence and press
 **I** or **K** to insert a key.
 
-Form animation keeps stable topology. Later incompatible topology changes can
-invalidate earlier forms; retain a backup before major mesh restructuring.
+Form controls follow the playhead and support rename and bake/remove with undo.
+Supported mesh operations transfer earlier forms to their new topology; an
+incompatible transfer is rejected. See [Form Animation](FORM-ANIMATION.md) for
+controls, supported operations and the remaining surface limitations.
+
+The Final picture stays visible beside the work viewport. Switch the work camera
+between Broadcast, Front, Right and Top without altering output. The format
+button above Final opens saved HD, UHD, portrait, square and custom presets.
 
 ### Audio
 

@@ -199,7 +199,7 @@ protected:
         QHash<QString,QVector<AnimationKey>> updated;QSet<QString> next;
         for(auto ref:tracks()){auto cid=channelId(ref.object->id,ref.track->property);if(ref.object->locked||!snapshot.contains(cid))continue;auto values=snapshot[cid];PropertyTrack original{ref.track->property,values};QSet<int> occupied;
             for(auto &key:values){if(originalSelected.contains(keyId(ref.object->id,ref.track->property,key.ms))){
-                double time=drag==ScaleKeys?pivot.x()+(key.ms-pivot.x())*fx:key.ms+dx;time=qBound(0.,time,double(INT_MAX-m->frameMs()));if(snap)time=qRound(time/m->frameMs())*double(m->frameMs());key.ms=qRound(time);
+                double time=drag==ScaleKeys?pivot.x()+(key.ms-pivot.x())*fx:key.ms+dx;time=qBound(0.,time,double(INT_MAX-m->frameMs()));if(snap&&qAbs(time-key.ms)>1e-7)time=qRound(time/m->frameMs())*double(m->frameMs());key.ms=qRound(time);
                 double value=displayValue(*ref.track,key.value);value=drag==ScaleKeys?pivot.y()+(value-pivot.y())*fy:value+dy;key.value=rawValue(*ref.track,value);
                 if(drag==ScaleKeys){if(!key.customHandles){const int index=int(&key-values.data());auto old=original.keys[index];key.leftHandle=original.handle(index,false)-QPointF(old.ms,old.value);key.rightHandle=original.handle(index,true)-QPointF(old.ms,old.value);key.customHandles=true;key.handleType="Free";}key.leftHandle.rx()*=fx;key.rightHandle.rx()*=fx;key.leftHandle.ry()*=fy;key.rightHandle.ry()*=fy;}
                 next.insert(keyId(ref.object->id,ref.track->property,key.ms));}
@@ -233,6 +233,7 @@ protected:
         bool ctrl=e->modifiers()&Qt::ControlModifier,shift=e->modifiers()&Qt::ShiftModifier;
         if(e->key()==Qt::Key_Escape){cancel();return;}if((drag==ScaleMove||drag==ScaleKeys)&&(e->key()==Qt::Key_X||e->key()==Qt::Key_Y)){axis=e->key();return;}
         if((e->key()==Qt::Key_Return||e->key()==Qt::Key_Enter)&&(drag==ScaleMove||drag==ScaleKeys)){drag=None;pushed=false;duplicating=false;if(QWidget::mouseGrabber()==this)releaseMouse();changedSelection();return;}
+        if(drag==ScaleMove||drag==ScaleKeys||drag==Handle){e->accept();return;}
         if(ctrl&&e->key()==Qt::Key_A)selectAll();else if(ctrl&&e->key()==Qt::Key_C)copy();else if(ctrl&&e->key()==Qt::Key_V)paste();else if((ctrl||shift)&&e->key()==Qt::Key_D)duplicate();
         else if(ctrl&&e->key()==Qt::Key_Z){shift?m->redo():m->undo();selected.clear();}
         else if(e->key()==Qt::Key_G)beginTransform(ScaleMove,false);else if(e->key()==Qt::Key_S)scaleKeys();else if(e->key()==Qt::Key_I||e->key()==Qt::Key_K)insert();

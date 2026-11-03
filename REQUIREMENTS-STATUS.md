@@ -1,6 +1,6 @@
 # Cuebase completion ledger
 
-Updated 2026-10-25. This is a development record, not a release certificate.
+Updated 2026-11-03. This is a development record, not a release certificate.
 The user-facing counter is in COMPLETION-CHECKLIST.md: 84 acceptance groups.
 Update that counter after each verified completion; partial work remains open.
 The user requires the complete requested scope before final delivery. A successful
@@ -23,6 +23,14 @@ Mobbin gallery access has not been established and must not be claimed.
 Do not convert an untested feature into a completed item merely because it exists.
 
 ## Immediate repair pass
+
+2026-11-03: tasks 13 and 83 pass cloud and native Windows workflows in run
+41591759703. Only selected curves are shown; the active curve and tree row remain
+synchronized, including direct curve clicks and cleared selections. Final preview
+stays unchanged while the work camera uses Front, Right or Top. Output presets
+save/reopen and cancel correctly. Native captures inspected. Current count:
+**25 of 84, 59 remaining**. Form editing, shape-surface conversion and Inspector
+undo received integration fixes; wider surface behavior remains under task 06.
 
 2026-10-25: moved builds, tests and packaging to GitHub at the user's request.
 Run 40193557415 passes all six CTest suites, nine native Windows interaction

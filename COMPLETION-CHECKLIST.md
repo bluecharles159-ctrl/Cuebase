@@ -1,6 +1,6 @@
 # Cuebase completion counter
 
-Updated 2026-10-25. **23 of 84 tasks completed — 61 remaining.**
+Updated 2026-11-03. **25 of 84 tasks completed — 59 remaining.**
 
 The Claude transcript adds four distinct acceptance groups (81–84). Row 06 is
 reopened: earlier checks covered transforms/material color, but inspection shows
@@ -32,7 +32,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 - [x] 10. Loop counts and independent per-play holds, timings and Studio controls. Verified finite/infinite edits and preserved per-play holds in `cue-loop-editor-results.txt` and `cue-loop-studio-results.txt`.
 - [x] 11. Build manual hold/continue for individual cue plays.
 - [ ] 12. Nested cue boards, duplication, delays, scheduling, trims and on-air edit protection.
-- [ ] 13. Selected-only graph curves, active-curve emphasis and Translation labels; native audit.
+- [x] 13. Selected-only graph curves, active-curve emphasis and Translation labels. GitHub run 41591759703 verifies selected/empty/multiple curves, activation from both the tree and curve, and stable selection after rebuild in offscreen and native Windows modes. Active-curve capture reviewed.
 - [ ] 14. Graph handles, interpolation, key transforms/copy/paste and navigation persistence.
 - [x] 15. Orange modified key replaces the saved key; unchanged yellow key removes it.
 - [ ] 16. Pointer-anchored canvas zoom, adaptive rulers/grid and native navigation review.
@@ -120,7 +120,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 
 - [x] 81. Non-destructive curve noise, selected-key/channel entry points, per-curve controls, persistence, undo and shared-renderer output. GitHub run 40193557415 passes the interaction suite in offscreen and native Windows modes, plus packaged-runtime checks. ANIMATION-NOISE.md documents the single-modifier scope and time units.
 - [ ] 82. Front/middle/back sub-layers, G/Z steps, delayed NEW-layer boundaries, cancellation, layer colors and overlap-only broadcast stacking.
-- [ ] 83. Dual-camera layout, side-view toggle and final-camera aspect presets.
+- [x] 83. Dual-camera layout, side-view toggle and final-camera aspect presets. Independent Front/Right/Top views leave saved camera data and Final pixels unchanged; output preset Cancel and Save/reopen pass in run 41591759703. Native dual-viewport capture reviewed.
 - [ ] 84. Boolean effects for text with preserved appearance and editable controls.
 
 Other transcript items extend existing rows: interaction repairs (05, 16–17),

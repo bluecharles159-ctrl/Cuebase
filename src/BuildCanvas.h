@@ -8,10 +8,11 @@
 
 class Library;
 
-// The Build viewport: a fixed-camera 2D broadcast composition with real 3D objects, 2D pan/zoom, picking, and Blender-style tools:
+// Work viewport: broadcast composition or independent orthographic front/side/top
+// inspection, with pan/zoom, picking and modal transform tools:
 //   G or M move, R rotate, S scale (X / Y / Z to constrain, type a number, Enter or click to confirm, Esc to cancel),
 //   Tab edit mode, 1 2 3 vertex / edge / face, E extrude, I inset, Ctrl+R loop cut, F fill, Shift+D duplicate ...
-// The editor never orbits the render camera. Middle/right drag pans the composition and the wheel zooms it.
+// Work navigation never changes the broadcast camera. Middle/right drag pans and the wheel zooms.
 class BuildCanvas : public QWidget {
     Q_OBJECT
 public:

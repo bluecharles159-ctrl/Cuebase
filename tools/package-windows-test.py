@@ -102,7 +102,7 @@ def stage():
     if STAGE.exists():
         raise RuntimeError(f'Stage already exists; inspect it before replacing: {STAGE}')
     APP.mkdir(parents=True)
-    for name in ('Cuebase.exe', 'CuebaseRender.exe', 'CuebaseEditorInteractionTests.exe', 'CuebaseComponentTests.exe'):
+    for name in ('Cuebase.exe', 'CuebaseRender.exe', 'CuebaseEditorInteractionTests.exe', 'CuebaseCreativeWorkflowTests.exe', 'CuebaseComponentTests.exe'):
         copy(BUILD/name, APP/name)
     for name in ('ffmpeg.exe', 'ffprobe.exe'):
         copy(BIN/name, APP/name)
@@ -138,7 +138,7 @@ def verify():
     env['QT_PLUGIN_PATH'] = str(APP)
     env['QT_QPA_PLATFORM_PLUGIN_PATH'] = str(APP/'platforms')
     env.pop('QML2_IMPORT_PATH', None)
-    for binary, output in [('CuebaseEditorInteractionTests.exe', 'portable-editor-results.txt'), ('CuebaseComponentTests.exe', 'portable-component-results.txt')]:
+    for binary, output in [('CuebaseEditorInteractionTests.exe', 'portable-editor-results.txt'), ('CuebaseCreativeWorkflowTests.exe', 'portable-creative-results.txt'), ('CuebaseComponentTests.exe', 'portable-component-results.txt')]:
         report = STAGE/'verification'/output
         result = subprocess.run([str(APP/binary), '-platform', 'offscreen', '-o', str(report)+',txt'], cwd=ROOT, env=env, timeout=180)
         if result.returncode:
@@ -146,9 +146,10 @@ def verify():
     print('Packaged runtime tests passed with MSYS2 removed from PATH', flush=True)
 
 def archive():
-    required = STAGE/'verification'/'portable-editor-results.txt'
-    if not required.exists() or '0 failed' not in required.read_text(encoding='utf-8'):
-        raise RuntimeError('Portable editor verification must pass before archiving')
+    for report in ('portable-editor-results.txt', 'portable-creative-results.txt', 'portable-component-results.txt'):
+        required = STAGE/'verification'/report
+        if not required.exists() or '0 failed' not in required.read_text(encoding='utf-8'):
+            raise RuntimeError(f'Portable runtime verification must pass before archiving: {report}')
     # Refresh documentation/results only; binaries must be verified after staging.
     for path in ROOT.glob('*.md'):
         copy(path, STAGE/'source'/path.name)
