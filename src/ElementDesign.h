@@ -135,6 +135,7 @@ struct DObject {
     void setPropertyBase(const QString &path, double value);
     DObject evaluated(qint64 ms) const;
     void fitTextLayout();
+    void resizeSurface(double width,double height);
     // Unkeyed edits override evaluation until the playhead moves; they never alter animation keys.
     QHash<QString, double> overrides;
     const PropertyTrack *track(const QString &property) const;
@@ -151,6 +152,7 @@ struct DObject {
     // Ordinary imported meshes have no surface.type and retain their 3D material.
     QString surfaceType() const { return type == "Mesh" ? style["surface.type"].toString() : type; }
     bool hasSurface() const { const auto kind=surfaceType();return kind=="Shape"||kind=="Image"||kind=="Text"; }
+    QVector3D surfaceOffset() const {const auto offset=style["surface.offset"].toArray();return offset.size()==3?QVector3D(offset[0].toDouble(),offset[1].toDouble(),offset[2].toDouble()):QVector3D();}
 };
 
 struct World {

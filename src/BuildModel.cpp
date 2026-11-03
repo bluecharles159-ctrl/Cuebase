@@ -11,6 +11,19 @@
 
 namespace {
 QString newId() { return QUuid::createUuid().toString(QUuid::WithoutBraces).left(8); }
+bool makeEditableSurface(DObject &object){
+    if(object.type=="Mesh")return true;
+    if(!object.hasSurface())return false;
+    object.fitTextLayout();
+    const QRectF bounds(-object.w/2,-object.h/2,object.w,object.h);
+    auto outline=object;if(outline.style.value("corner.unit").toString()!="%")for(const auto &key:QStringList{"corner.radius","corner.tl","corner.tr","corner.br","corner.bl"})outline.style[key]=object.propertyBase(key)/kPxPerUnit;
+    QPainterPath path;if(object.type=="Text")path.addRect(bounds);else path=surfaceOutline(bounds,outline);
+    const auto polygon=path.toFillPolygon();Mesh mesh;QVector<int> face;
+    for(int i=0;i<polygon.size();++i){if(i==polygon.size()-1&&polygon[i]==polygon[0])break;face.append(mesh.v.size());mesh.v.append({float(polygon[i].x()),float(-polygon[i].y()),0});}
+    if(face.size()<3)return false;
+    mesh.f.append(face);if(mesh.faceNormal(0).z()<0)mesh.flipNormals();
+    object.style["surface.type"]=object.type;object.style["surface.restMesh"]=mesh.toJson();object.mesh=mesh;object.type="Mesh";return true;
+}
 } // namespace
 
 BuildModel::BuildModel(){connect(uiGesture(),&UiGesture::finished,this,[this](quint64 token,bool cancel){if(token&&token==m_lastGesture&&cancel)cancelToUndo();});connect(this,&BuildModel::changed,this,[this]{Components::pruneInstanceCues(design);});}
@@ -591,6 +604,10 @@ DProps BuildModel::decompose(const QMatrix4x4 &m) {
 void BuildModel::shiftOrigin(DObject &o, const QVector3D &c) {
     const DObject original=o;
     for (QVector3D &v : o.mesh.v) v -= c;
+    if(o.hasSurface()){
+        auto rest=Mesh::fromJson(o.style.value("surface.restMesh").toObject());for(auto &vertex:rest.v)vertex-=c;o.style["surface.restMesh"]=rest.toJson();
+        const auto offset=o.surfaceOffset()-c;o.style["surface.offset"]=QJsonArray{offset.x(),offset.y(),offset.z()};
+    }
     o.base.loc += ElementDesign::matrixOf(o.base).mapVector(c);
     bool changingBasis=false;for(const auto &track:original.tracks)if(track.property.startsWith("rotation.")||track.property.startsWith("scale."))changingBasis=true;
     if(changingBasis){
@@ -605,32 +622,37 @@ void BuildModel::shiftOrigin(DObject &o, const QVector3D &c) {
         const auto delta=ElementDesign::matrixOf(original.base).mapVector(c);
         for(int axis=0;axis<3;++axis)if(auto *track=o.track("position."+QString("xyz").mid(axis,1)))for(auto &key:track->keys)key.value+=delta[axis];
     }
-    o.overrides.clear();o.refreshLegacyKeys();
+    for(const auto &path:transformChannels())o.overrides.remove(path);o.refreshLegacyKeys();
+    QMatrix4x4 inverseShift;inverseShift.translate(-c);
+    for(auto &child:design.objects)if(child.parentId==o.id)child.parentInverse=inverseShift*child.parentInverse;
 }
 
 bool BuildModel::setOrigin(const QString &kind) {
     DObject *a = active();
     if (!a) return false;
     if (kind == "Selected" && !(editMode && a->type == "Mesh")) return false;
-    pushUndo();
+    if(!QStringList{"Geometry","Bottom","World","Cursor","Selected"}.contains(kind)&&!kind.startsWith("Bounds:"))return false;
+    pushUndo(true);
     bool any = false;
     for (DObject *o : selected()) {
-        if (o->type != "Mesh" || o->mesh.v.isEmpty()) continue;
+        if(o->locked||!makeEditableSurface(*o)||o->mesh.v.isEmpty())continue;
+        const Mesh displayed=FormAnimation::evaluate(*o,t);
         QVector3D c;
         if (kind == "Geometry") {
-            c = o->mesh.boundsCenter();
+            c = displayed.boundsCenter();
         } else if (kind == "Bottom") {
             QVector3D mn, mx;
-            o->mesh.bounds(mn, mx);
-            c = QVector3D((mn.x() + mx.x()) / 2, (mn.y() + mx.y()) / 2, mn.z());
+            displayed.bounds(mn, mx);
+            c = (mn+mx)/2;if(o->hasSurface())c.setY(mn.y());else c.setZ(mn.z());
         } else if (kind == "World"||kind=="Cursor") {
             c = design.worldMatrix(*o,t).inverted().map(kind=="Cursor"?design.cursor:QVector3D());
         } else if(kind.startsWith("Bounds:")){
-            QVector3D low,high;o->mesh.bounds(low,high);c=(low+high)/2;
-            const auto position=kind.mid(7);if(position.contains("Left"))c.setX(low.x());if(position.contains("Right"))c.setX(high.x());if(position.contains("Top"))c.setZ(high.z());if(position.contains("Bottom"))c.setZ(low.z());
+            QVector3D low,high;displayed.bounds(low,high);c=(low+high)/2;
+            const auto position=kind.mid(7);if(position.contains("Left"))c.setX(low.x());if(position.contains("Right"))c.setX(high.x());
+            const int vertical=o->hasSurface()?1:2;if(position.contains("Top"))c[vertical]=high[vertical];if(position.contains("Bottom"))c[vertical]=low[vertical];
         } else if (kind == "Selected") {
             if (o != a || esel.v.isEmpty()) continue;
-            c = o->mesh.selCenter(esel);
+            c = displayed.selCenter(esel);
         }
         shiftOrigin(*o, c);
         any = true;
@@ -761,17 +783,7 @@ bool BuildModel::applyModifier(const QString &objectId,int index){
 bool BuildModel::enterEdit() {
     DObject *o = active();
     if(o&&o->hasSurface()&&o->type!="Mesh"&&!o->locked){
-        pushUndo();const QRectF bounds(-o->w/2,-o->h/2,o->w,o->h);
-        auto outline=*o;if(outline.style["corner.unit"].toString()!="%")for(const auto &key:QStringList{"corner.radius","corner.tl","corner.tr","corner.br","corner.bl"})outline.style[key]=o->propertyBase(key)/kPxPerUnit;
-        // The texture's Y coordinate points down; editable mesh coordinates point up.
-        // Text retains live typography on an editable surface rather than being
-        // destructively converted to fixed glyph outlines.
-        QPainterPath path;if(o->type=="Text")path.addRect(bounds);else path=surfaceOutline(bounds,outline);
-        const auto polygon=path.toFillPolygon();Mesh mesh;QVector<int> face;
-        for(int i=0;i<polygon.size();++i){if(i==polygon.size()-1&&polygon[i]==polygon[0])break;face.append(mesh.v.size());mesh.v.append({float(polygon[i].x()),float(-polygon[i].y()),0});}
-        mesh.f.append(face);if(mesh.faceNormal(0).z()<0)mesh.flipNormals();
-        o->style["surface.type"]=o->type;o->style["surface.restMesh"]=mesh.toJson();
-        o->mesh=mesh;o->type="Mesh";
+        pushUndo();if(!makeEditableSurface(*o)){dropUndo();return false;}
     }
     if (!o || o->type != "Mesh" || o->locked) return false;
     editMode = true;

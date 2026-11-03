@@ -728,7 +728,7 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
                         const int indices[3]={L[0],L[triangle],L[triangle+1]};
                         QPolygonF uv,dst;
                         for(int vertex:indices){
-                            const auto local=vertex<restSurface.v.size()?restSurface.v[vertex]:m.v[vertex];
+                            const auto local=(vertex<restSurface.v.size()?restSurface.v[vertex]:m.v[vertex])-obj.surfaceOffset();
                             uv << QPointF((local.x()+obj.w/2)*kPxPerUnit+padX,(obj.h/2-local.y())*kPxPerUnit+padY);
                             QPointF screen;projCam(cv[vertex],&screen);dst<<screen;
                         }
@@ -772,7 +772,7 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
             for (const QVector3D &c : corners) {
                 QPointF pt;
                 double d;
-                if (!cam.toScreen(W.map(c), rect, &pt, &d)) {
+                if (!cam.toScreen(W.map(c+obj.surfaceOffset()), rect, &pt, &d)) {
                     ok = false;
                     break;
                 }

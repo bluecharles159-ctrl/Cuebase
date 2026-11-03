@@ -174,10 +174,22 @@ double DObject::propertyValue(const QString &path, qint64 ms) const {
     const auto *tr = track(path);
     return tr ? tr->evaluate(ms, propertyBase(path)) : propertyBase(path);
 }
+void DObject::resizeSurface(double width,double height){
+    width=qMax(1./kPxPerUnit,width);height=qMax(1./kPxPerUnit,height);
+    if(type=="Mesh"&&hasSurface()&&(width!=w||height!=h)){
+        QMatrix4x4 scale;scale.scale(float(width/qMax(1e-9,w)),float(height/qMax(1e-9,h)),1);
+        mesh.transform(scale);auto rest=Mesh::fromJson(style.value("surface.restMesh").toObject());rest.transform(scale);style["surface.restMesh"]=rest.toJson();
+        const auto offset=scale.map(surfaceOffset());if(!offset.isNull()||style.contains("surface.offset"))style["surface.offset"]=QJsonArray{offset.x(),offset.y(),offset.z()};
+        auto forms=style.value("form.poses").toArray();
+        for(int i=0;i<forms.size();++i){auto pose=forms[i].toObject();QJsonArray deltas;for(const auto &entry:pose["deltas"].toArray()){auto delta=entry.toArray();if(delta.size()!=4)continue;const auto vector=scale.mapVector(QVector3D(delta[1].toDouble(),delta[2].toDouble(),delta[3].toDouble()));deltas.append(QJsonArray{delta[0],vector.x(),vector.y(),vector.z()});}pose["deltas"]=deltas;forms[i]=pose;}
+        if(!forms.isEmpty())style["form.poses"]=forms;
+    }
+    w=width;h=height;
+}
 void DObject::setPropertyBase(const QString &path, double value) {
     if (transformChannels().contains(path)) setChannelValue(base, path, value);
-    else if (path == "layout.width") w = qMax(1.0, value) / kPxPerUnit;
-    else if (path == "layout.height") h = qMax(1.0, value) / kPxPerUnit;
+    else if (path == "layout.width") resizeSurface(qMax(1.0, value) / kPxPerUnit,h);
+    else if (path == "layout.height") resizeSurface(w,qMax(1.0, value) / kPxPerUnit);
     else if (path == "text.size") fontPx = qMax(1, qRound(value));
     else if (path == "material.alpha") mat.alpha = value;
     else if (path == "material.roughness") mat.roughness = value;

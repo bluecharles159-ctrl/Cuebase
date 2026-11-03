@@ -817,12 +817,12 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     connect(canvas, &BuildCanvas::addMenuRequested, this, [addMenu](const QPoint &g) { addMenu->exec(g); });
 
     auto *originMenu = new QMenu(this);
-    originMenu->addAction("Origin to Geometry", this, [this, m] { if (!m->setOrigin("Geometry")) say("Select a mesh first", true); });
+    originMenu->addAction("Origin to Geometry", this, [this, m] { if (!m->setOrigin("Geometry")) say("Select an unlocked shape, text, image or mesh first", true); });
     originMenu->addAction("Origin to Cursor",this,[m]{m->setOrigin("Cursor");});
     auto *boundsOrigin=originMenu->addMenu("Position");for(const auto &name:QStringList{"Top Left","Top Center","Top Right","Center Left","Center","Center Right","Bottom Left","Bottom Center","Bottom Right"})boundsOrigin->addAction(name,this,[m,name]{m->setOrigin("Bounds:"+name);});
-    originMenu->addAction("Origin to Bottom", this, [this, m] { if (!m->setOrigin("Bottom")) say("Select a mesh first", true); });
-    originMenu->addAction("Origin to World Origin", this, [this, m] { if (!m->setOrigin("World")) say("Select a mesh first", true); });
-    originMenu->addAction("Origin to Selected (Edit Mode)", this, [this, m] { if (!m->setOrigin("Selected")) say("In Edit Mode, select vertices first", true); });
+    originMenu->addAction("Origin to Bottom", this, [this, m] { if (!m->setOrigin("Bottom")) say("Select an unlocked shape, text, image or mesh first", true); });
+    originMenu->addAction("Origin to World Origin", this, [this, m] { if (!m->setOrigin("World")) say("Select an unlocked shape, text, image or mesh first", true); });
+    originMenu->addAction("Origin to Selected (Form Animation)", this, [this, m] { if (!m->setOrigin("Selected")) say("In Form Animation, select vertices first", true); });
     originBtn->setMenu(originMenu);
 
     auto *objMenu = new QMenu(this);

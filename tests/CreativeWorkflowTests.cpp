@@ -8,6 +8,8 @@
 #include <QPainter>
 #include <QPointer>
 #include <QPlainTextEdit>
+#include <QCheckBox>
+#include <QMenu>
 #include "AnimationEditor.h"
 #include "BuildCanvas.h"
 #include "BuildWorkspace.h"
@@ -51,6 +53,39 @@ private slots:
         const auto before=render(model.design);model.active()->mesh.v[0].setX(model.active()->mesh.v[0].x()+.5f);model.notify();const auto edited=render(model.design);QVERIFY(edited!=before);
         int colored=0;for(int y=0;y<edited.height();++y)for(int x=0;x<edited.width();++x){const auto c=edited.pixelColor(x,y);if(c.alpha()>100&&c.red()!=c.blue())++colored;}QVERIFY(colored>1000);
         QCOMPARE(render(ElementDesign::fromJson(model.design.toJson())),edited);
+    }
+    void convertedTextStillFitsItsContent(){
+        BuildModel model;auto design=scene("Text");design.find("subject")->style["text.autoFit"]=true;design.find("subject")->style["text.background"]=true;model.reset(design);model.select("subject");const auto initial=render(model.design);QVERIFY(model.enterEdit());QCOMPARE(render(model.design),initial);
+        const QString longer="A longer production headline\nwith a second line";model.active()->text=longer;design.find("subject")->text=longer;QCOMPARE(render(model.design),render(design));
+        const auto displayed=model.active()->evaluated(0);QVector3D low,high;QVERIFY(FormAnimation::evaluate(*model.active(),0).bounds(low,high));QVERIFY(qAbs(high.x()-low.x()-displayed.w)<.0001);QVERIFY(qAbs(high.y()-low.y()-displayed.h)<.0001);
+        QCOMPARE(render(ElementDesign::fromJson(model.design.toJson())),render(design));
+    }
+    void surfaceOriginsPreservePictureAndChildren_data(){convertedSurfacePreservesAppearance_data();}
+    void surfaceOriginsPreservePictureAndChildren(){
+        QFETCH(QString,kind);Library lib;BuildModel model;auto design=scene(kind);DObject child;child.id="child";child.type="Shape";child.parentId="subject";child.w=1;child.h=.5;child.base.loc={1,0,1};child.mat.color=Qt::yellow;design.objects.append(child);model.reset(design);model.select("subject");
+        const auto before=model.design.toJson();const auto expected=render(model.design);const auto childWorld=model.design.worldMatrix(*model.byId("child"),0);
+        QVERIFY(model.setOrigin("Bounds:Top Left"));QCOMPARE(model.active()->surfaceOffset(),QVector3D(3,-1.5,0));QCOMPARE(render(model.design),expected);QCOMPARE(model.design.worldMatrix(*model.byId("child"),0),childWorld);
+        model.design.cursor={2,1,3};QVERIFY(model.setOrigin("Cursor"));QVERIFY((model.design.worldMatrix(*model.active(),0).map(QVector3D())-model.design.cursor).length()<.0001);QCOMPARE(render(model.design),expected);
+        const auto restored=ElementDesign::fromJson(model.design.toJson());QCOMPARE(render(restored),expected);QVERIFY(model.undo());QVERIFY(model.undo());QCOMPARE(model.design.toJson(),before);
+    }
+    void formOriginKeepsAnimatedWorldGeometry(){
+        BuildModel model;model.reset(ElementDesign::defaultScene());model.addMesh("Cube");auto *o=model.active();auto zero=o->mesh;o->mesh.v[0].setX(3);const auto path=FormAnimation::capture(*o,zero,"Corner");o->keyChannel(path,0,0);o->keyChannel(path,1000,1);o->keyChannel("rotation.z",0,0);o->keyChannel("rotation.z",1000,70);
+        QVector<QVector<QVector3D>> expected;for(int time:{0,200,1000}){auto vertices=FormAnimation::evaluate(*o,time).v;const auto world=model.design.worldMatrix(*o,time);for(auto &v:vertices)v=world.map(v);expected.append(vertices);}
+        model.setTime(200);const auto before=model.design.toJson();QVERIFY(model.setOrigin("Bottom"));o=model.active();
+        const int times[]={0,200,1000};for(int sample=0;sample<3;++sample){const auto mesh=FormAnimation::evaluate(*o,times[sample]);const auto world=model.design.worldMatrix(*o,times[sample]);for(int i=0;i<mesh.v.size();++i)QVERIFY((world.map(mesh.v[i])-expected[sample][i]).length()<.0001);}
+        QVERIFY(model.undo());QCOMPARE(model.design.toJson(),before);
+    }
+    void originOverlayControlOnlyChangesTheEditor(){
+        Library lib;BuildWorkspace workspace(&lib);workspace.resize(1300,850);workspace.show();auto *model=workspace.findChild<BuildModel*>();model->reset(scene());model->select("subject");QVERIFY(model->setOrigin("Bounds:Top Left"));
+        auto *canvas=workspace.findChild<BuildCanvas*>();auto *button=workspace.findChild<QToolButton*>("viewportOverlays");QVERIFY(canvas&&button);QCheckBox *origins=nullptr;for(auto *check:button->menu()->findChildren<QCheckBox*>())if(check->text()=="Object origins")origins=check;QVERIFY(origins);
+        button->menu()->findChild<QCheckBox*>("overlayMaster")->setChecked(true);origins->setChecked(true);QTest::qWait(20);const auto sceneData=model->design.toJson();const auto final=render(model->design);const auto shown=canvas->grab().toImage();QVERIFY(shown.save("artifacts/origin-position.png"));
+        origins->setChecked(false);QVERIFY(!canvas->showOrigins);QVERIFY(canvas->grab().toImage()!=shown);QCOMPARE(model->design.toJson(),sceneData);QCOMPARE(render(model->design),final);origins->setChecked(true);
+    }
+    void originOverlayControlOnlyChangesTheEditor(){
+        Library lib;BuildWorkspace workspace(&lib);workspace.resize(1300,850);workspace.show();auto *model=workspace.findChild<BuildModel*>();model->reset(scene());model->select("subject");QVERIFY(model->setOrigin("Bounds:Top Left"));
+        auto *canvas=workspace.findChild<BuildCanvas*>();auto *button=workspace.findChild<QToolButton*>("viewportOverlays");QVERIFY(canvas&&button);QCheckBox *origins=nullptr;for(auto *check:button->menu()->findChildren<QCheckBox*>())if(check->text()=="Object origins")origins=check;QVERIFY(origins);
+        button->menu()->findChild<QCheckBox*>("overlayMaster")->setChecked(true);origins->setChecked(true);QTest::qWait(20);const auto sceneData=model->design.toJson();const auto final=render(model->design);const auto shown=canvas->grab().toImage();QVERIFY(shown.save("artifacts/origin-position.png"));
+        origins->setChecked(false);QVERIFY(!canvas->showOrigins);QVERIFY(canvas->grab().toImage()!=shown);QCOMPARE(model->design.toJson(),sceneData);QCOMPARE(render(model->design),final);origins->setChecked(true);
     }
     void formEditsUseDisplayedPoseAndCancel(){
         Library lib;BuildModel model;model.reset(ElementDesign::defaultScene());const auto id=model.addMesh("Cube");auto *o=model.byId(id);o->base.rot={0,0,0};const Mesh zero=o->mesh;o->mesh.v[0].setX(o->mesh.v[0].x()+2);const auto path=FormAnimation::capture(*o,zero,"Corner");o->style[path]=.25;
@@ -128,9 +163,9 @@ private slots:
     void graphKeyboardScaleAndCancel(){
         BuildModel model;model.reset(scene());model.select("subject");model.active()->keyChannel("position.x",500,1);model.active()->keyChannel("position.x",1500,3);
         AnimationEditor editor(&model,true);editor.resize(1000,420);editor.show();QTest::qWait(20);auto *curve=editor.findChild<QWidget*>("animationCurve");QVERIFY(curve);curve->setFocus();QTest::keyClick(curve,Qt::Key_A,Qt::ControlModifier);
-        const auto before=model.design.toJson();const QPoint start=curve->rect().center();QCursor::setPos(curve->mapToGlobal(start));QTest::keyClick(curve,Qt::Key_S);QTest::keyClick(curve,Qt::Key_Y);QTest::mouseMove(curve,start+QPoint(0,-40));QTest::keyClick(curve,Qt::Key_Enter);
+        const auto before=model.design.toJson();const QPoint start=curve->rect().center();QCursor::setPos(curve->mapToGlobal(start));QTest::keyClick(curve,Qt::Key_S);QTest::keyClick(curve,Qt::Key_Y);QTest::mouseMove(curve,start+QPoint(0,-40));QTRY_VERIFY(model.active()->track("position.x")->keys[0].value<1);QTest::keyClick(curve,Qt::Key_Enter);
         auto *track=model.active()->track("position.x");QCOMPARE(track->keys[0].ms,500);QCOMPARE(track->keys[1].ms,1500);QVERIFY(track->keys[0].value<1);QVERIFY(track->keys[1].value>3);QVERIFY(track->keys[0].customHandles);QVERIFY(QWidget::mouseGrabber()!=curve);QVERIFY(model.undo());QCOMPARE(model.design.toJson(),before);
-        QTest::keyClick(curve,Qt::Key_A,Qt::ControlModifier);QCursor::setPos(curve->mapToGlobal(start));QTest::keyClick(curve,Qt::Key_G);QTest::keyClick(curve,Qt::Key_X);QTest::mouseMove(curve,start+QPoint(50,0));QVERIFY(model.design.toJson()!=before);QTest::mouseClick(curve,Qt::RightButton,Qt::NoModifier,start+QPoint(50,0));QCOMPARE(model.design.toJson(),before);QVERIFY(QWidget::mouseGrabber()!=curve);
+        QTest::keyClick(curve,Qt::Key_A,Qt::ControlModifier);QCursor::setPos(curve->mapToGlobal(start));QTest::keyClick(curve,Qt::Key_G);QTest::keyClick(curve,Qt::Key_X);QTest::mouseMove(curve,start+QPoint(50,0));QTRY_VERIFY(model.design.toJson()!=before);QTest::mouseClick(curve,Qt::RightButton,Qt::NoModifier,start+QPoint(50,0));QCOMPARE(model.design.toJson(),before);QVERIFY(QWidget::mouseGrabber()!=curve);
     }
     void workViewsLeaveBroadcastUnchanged(){
         Library lib;BuildWorkspace workspace(&lib);workspace.resize(1300,850);workspace.show();auto *model=workspace.findChild<BuildModel*>();auto d=scene();DObject box;box.id="cube";box.type="Mesh";box.mesh=Mesh::primitive("Cube");box.base.loc={3,2,1};d.objects.append(box);model->reset(d);

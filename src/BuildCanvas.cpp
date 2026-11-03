@@ -1397,7 +1397,7 @@ void BuildCanvas::keyPressEvent(QKeyEvent *e) {
     }
     if (k == Qt::Key_Tab) {
         m_m->toggleEdit();
-        emit message(m_m->editMode?"Edit Mode · select vertices, edges or faces · A selects all · Tab returns to Object Mode":edit?"Object Mode":"Select an unlocked mesh or shape to enter Edit Mode");
+        emit message(m_m->editMode?"Form Animation · select vertices, edges or faces · A selects all · Tab returns to Object Mode":edit?"Object Mode":"Select an unlocked mesh, shape, text or image to enter Form Animation");
         return;
     }
     if (edit) {

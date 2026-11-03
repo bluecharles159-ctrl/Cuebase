@@ -68,11 +68,13 @@ QPainterPath roundedPath(QRectF r,const DObject &o) {
 }
 }
 void DObject::fitTextLayout(){
-    if(type!="Text"||!style["text.autoFit"].toBool())return;
+    if(surfaceType()!="Text"||!style.value("text.autoFit").toBool())return;
     const double inset=qBound(0.,propertyBase("text.padding"),512.);
     QTextDocument doc;prepareText(doc,*this,style["text.autoFitX"].toBool(true)?-1:qMax(1.,w*kPxPerUnit-2*inset));
-    if(style["text.autoFitX"].toBool(true)){w=qBound(1.,qCeil(doc.idealWidth()+2*inset)*1.,4096.)/kPxPerUnit;doc.setTextWidth(qMax(1.,w*kPxPerUnit-2*inset));}
-    if(style["text.autoFitY"].toBool(true))h=qBound(1.,qCeil(doc.size().height()+2*inset)*1.,4096.)/kPxPerUnit;
+    double width=w,height=h;
+    if(style.value("text.autoFitX").toBool(true)){width=qBound(1.,qCeil(doc.idealWidth()+2*inset)*1.,4096.)/kPxPerUnit;doc.setTextWidth(qMax(1.,width*kPxPerUnit-2*inset));}
+    if(style.value("text.autoFitY").toBool(true))height=qBound(1.,qCeil(doc.size().height()+2*inset)*1.,4096.)/kPxPerUnit;
+    resizeSurface(width,height);
 }
 QImage ElementDesign::textureFor(const DObject &source) const {
     DObject o=source;if(o.type=="Mesh"&&o.hasSurface())o.type=o.surfaceType();o.fitTextLayout();

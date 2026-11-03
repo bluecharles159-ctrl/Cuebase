@@ -20,9 +20,9 @@ inline QString capture(DObject &object,const Mesh &zero,const QString &name){
     object.style["form.poses"]=forms;object.style[property]=1.;return property;
 }
 inline Mesh evaluate(const DObject &object,qint64 time){
-    Mesh mesh=object.mesh;
+    const auto evaluated=object.evaluated(time);Mesh mesh=evaluated.mesh;
     const QJsonValue faces=mesh.toJson()["f"];
-    for(const auto &entry:object.style["form.poses"].toArray()){
+    for(const auto &entry:evaluated.style["form.poses"].toArray()){
         const auto pose=entry.toObject();if(pose["vertices"].toInt()!=mesh.v.size())continue;
         if(pose["faces"]!=faces)continue;
         const float amount=float(1-qBound(0.,object.propertyValue("form."+pose["id"].toString(),time),1.));
