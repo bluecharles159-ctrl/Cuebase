@@ -38,6 +38,7 @@ private slots:
         DObject parent;parent.type="Group";parent.id="parent";parent.base.loc={.5f,0,.25f};d.objects.append(parent);d.find("subject")->parentId="parent";
         model.reset(d);model.select("subject");const auto before=model.design.toJson();const auto expected=render(model.design);
         PropertyInspector inspector(&model,&lib);inspector.resize(330,800);inspector.show();
+        QCOMPARE(model.design.toJson(),before);
         QVERIFY(model.enterEdit());QCOMPARE(model.active()->type,QString("Mesh"));QCOMPARE(model.active()->surfaceType(),kind);
         QCOMPARE(render(model.design),expected);const auto saved=model.design.toJson();const auto restored=ElementDesign::fromJson(saved);QCOMPARE(render(restored),expected);
         QVERIFY(inspector.findChild<QDoubleSpinBox*>("property_effects.blur"));QVERIFY(inspector.findChild<QDoubleSpinBox*>("property_shadow.blur"));
@@ -84,10 +85,13 @@ private slots:
         model.setTime(500);QVERIFY(model.applyModifier(o->id,0));o=model.active();QVERIFY(o->mods.isEmpty());QCOMPARE(o->track(path)->keys.size(),2);QCOMPARE(model.design.evalMesh(*o,0).toJson(),atZero);QCOMPARE(model.design.evalMesh(*o,1000).toJson(),atFull);QVERIFY(model.undo());QCOMPARE(model.design.toJson(),before);
     }
     void graphSelectionActiveAndEmptyRemainStable(){
-        BuildModel model;model.reset(scene());model.select("subject");for(const auto &axis:QStringList{"x","y","z"}){model.active()->keyChannel("position."+axis,0,0);model.active()->keyChannel("position."+axis,1000,2);}
+        BuildModel model;model.reset(scene());model.select("subject");int axisIndex=0;for(const auto &axis:QStringList{"x","y","z"}){model.active()->keyChannel("position."+axis,0,0);model.active()->keyChannel("position."+axis,1000,2.-.6*axisIndex++);}
         AnimationEditor editor(&model,true);editor.resize(1000,420);editor.show();QTest::qWait(20);auto *tree=editor.findChild<QTreeWidget*>();auto *curve=editor.findChild<QWidget*>("animationCurve");QVERIFY(tree&&curve);
         tree->clearSelection();auto *x=row(tree,"position.x"),*y=row(tree,"position.y"),*z=row(tree,"position.z");QVERIFY(x&&y&&z);x->setSelected(true);QCOMPARE(curve->property("visibleChannels").toStringList(),QStringList{"subject|position.x"});y->setSelected(true);z->setSelected(true);QCOMPARE(curve->property("visibleChannels").toStringList().size(),3);
         tree->setCurrentItem(y,0,QItemSelectionModel::NoUpdate);QCOMPARE(curve->property("activeChannel").toString(),QString("subject|position.y"));QVERIFY(y->font(0).bold());QVERIFY(!x->font(0).bold());QCOMPARE(y->parent()->text(0),QString("Translation"));
+        const auto range=curve->property("viewRange").toList();const QRectF area=QRectF(curve->rect()).adjusted(62,28,-14,-26);const double value=model.active()->track("position.x")->evaluate(800,0);
+        const QPointF at(area.left()+(800-range[0].toDouble())/(range[1].toDouble()-range[0].toDouble())*area.width(),area.bottom()-(value-range[2].toDouble())/(range[3].toDouble()-range[2].toDouble())*area.height());
+        QTest::mouseClick(curve,Qt::LeftButton,Qt::NoModifier,at.toPoint());QCOMPARE(curve->property("activeChannel").toString(),QString("subject|position.x"));QCOMPARE(curve->property("visibleChannels").toStringList().size(),3);QVERIFY(x->font(0).bold());QVERIFY(!y->font(0).bold());
         tree->expandAll();QVERIFY(editor.grab().save("artifacts/graph-active-curve.png"));tree->clearSelection();QVERIFY(curve->property("visibleChannels").toStringList().isEmpty());model.active()->name="Renamed";model.notify();QVERIFY(curve->property("visibleChannels").toStringList().isEmpty());
     }
     void graphDuplicateCancellationAndClipboard(){

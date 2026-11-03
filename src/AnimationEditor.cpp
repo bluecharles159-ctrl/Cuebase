@@ -69,7 +69,7 @@ public:
     void activateChannel(const QString &id,const QString &path){
         primary=channelId(id,path);m->selChannel=path;
         if(tree){QSignalBlocker block(tree);for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->data(0,Qt::UserRole).toString()==id&&(*it)->data(0,Qt::UserRole+1).toString()==path){tree->setCurrentItem(*it,0,QItemSelectionModel::NoUpdate);break;}}
-        publishView();update();
+        changedSelection();
     }
     QVector<KeyRef> keys(bool onlySelected=true)const{
         QVector<KeyRef> refs;for(auto ref:tracks())for(auto &key:ref.track->keys)
@@ -149,7 +149,9 @@ protected:
         if(m->cueRangeStart>=0){const double a=r.left()+(m->cueRangeStart-t0)/(t1-t0)*r.width(),b=r.left()+(m->cueRangeEnd-t0)/(t1-t0)*r.width();p.save();p.setClipRect(r);p.fillRect(QRectF(a,r.top(),qMax(1.,b-a),r.height()),QColor(82,207,151,48));p.setPen(QPen(QColor("#7ee5b1"),2));p.drawLine(QPointF(a,r.top()),QPointF(a,r.bottom()));p.drawLine(QPointF(b,r.top()),QPointF(b,r.bottom()));p.restore();}
         if(graph){double stepY=niceStep(v1-v0,r.height());for(double value=std::ceil(v0/stepY)*stepY;value<=v1;value+=stepY){double y=r.bottom()-(value-v0)/(v1-v0)*r.height();p.setPen(QColor(qAbs(value)<1e-8?"#73767e":"#414247"));p.drawLine(QPointF(r.left(),y),QPointF(r.right(),y));p.setPen(QColor("#b8bac2"));p.drawText(QRectF(0,y-7,55,16),Qt::AlignRight,tickText(value));}}
         p.save();p.setClipRect(r.adjusted(-5,0,5,0));
-        if(graph)for(auto ref:tracks()){
+        auto drawingTracks=tracks();
+        std::stable_sort(drawingTracks.begin(),drawingTracks.end(),[&](const TrackRef &a,const TrackRef &b){return (primary==channelId(a.object->id,a.track->property))<(primary==channelId(b.object->id,b.track->property));});
+        if(graph)for(auto ref:drawingTracks){
             const auto &tr=*ref.track;bool chosen=primary==channelId(ref.object->id,tr.property);QColor color=channelColor(tr.property);color.setAlpha(chosen?255:95);QPainterPath curve;
             for(int x=0;x<=r.width();++x){auto pos=point(tr,t0+x/r.width()*(t1-t0),tr.evaluate(qRound64(t0+x/r.width()*(t1-t0)),0));if(!x)curve.moveTo(pos);else curve.lineTo(pos);}p.setPen(QPen(color,chosen?1.6:1));p.setBrush(Qt::NoBrush);p.drawPath(curve);
             for(int i=0;i<tr.keys.size();++i){const auto &k=tr.keys[i];auto c=point(tr,k.ms,k.value);bool sel=selected.contains(keyId(ref.object->id,tr.property,k.ms));
@@ -230,7 +232,7 @@ protected:
     void keyPressEvent(QKeyEvent *e)override{
         bool ctrl=e->modifiers()&Qt::ControlModifier,shift=e->modifiers()&Qt::ShiftModifier;
         if(e->key()==Qt::Key_Escape){cancel();return;}if((drag==ScaleMove||drag==ScaleKeys)&&(e->key()==Qt::Key_X||e->key()==Qt::Key_Y)){axis=e->key();return;}
-        if(e->key()==Qt::Key_Return&&(drag==ScaleMove||drag==ScaleKeys)){drag=None;pushed=false;duplicating=false;if(QWidget::mouseGrabber()==this)releaseMouse();changedSelection();return;}
+        if((e->key()==Qt::Key_Return||e->key()==Qt::Key_Enter)&&(drag==ScaleMove||drag==ScaleKeys)){drag=None;pushed=false;duplicating=false;if(QWidget::mouseGrabber()==this)releaseMouse();changedSelection();return;}
         if(ctrl&&e->key()==Qt::Key_A)selectAll();else if(ctrl&&e->key()==Qt::Key_C)copy();else if(ctrl&&e->key()==Qt::Key_V)paste();else if((ctrl||shift)&&e->key()==Qt::Key_D)duplicate();
         else if(ctrl&&e->key()==Qt::Key_Z){shift?m->redo():m->undo();selected.clear();}
         else if(e->key()==Qt::Key_G)beginTransform(ScaleMove,false);else if(e->key()==Qt::Key_S)scaleKeys();else if(e->key()==Qt::Key_I||e->key()==Qt::Key_K)insert();

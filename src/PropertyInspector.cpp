@@ -68,7 +68,7 @@ void PropertyInspector::number(QFormLayout *form,const QString &label,const QStr
     sync.append([=, this]{
         auto *o=m->active();if(!o)return;
         auto displayed=[=, this](DObject *object){
-            if(object->surfaceType()=="Text"&&object->style["text.autoFit"].toBool()&&(path=="layout.width"||path=="layout.height"))return object->evaluated(m->t).propertyBase(path);
+            if(object->surfaceType()=="Text"&&object->style.value("text.autoFit").toBool()&&(path=="layout.width"||path=="layout.height"))return object->evaluated(m->t).propertyBase(path);
             if(path=="position.x"||path=="position.z"){
                 QPointF pixel;const auto camera=m->design.sceneCamera(m->t,lib->display.aspect());
                 camera.toScreen(m->design.worldMatrix(*object,m->t).map(QVector3D()),QRectF(0,0,lib->display.resX(),lib->display.resY()),&pixel);
@@ -86,7 +86,7 @@ void PropertyInspector::number(QFormLayout *form,const QString &label,const QStr
         key->setText(keyed?"◆":"◇");key->setStyleSheet(keyed?"color:#fbbf24;":animated?"color:#60a5fa;":"color:palette(placeholder-text);");
         if(modified){key->setText("◈");key->setStyleSheet("color:#ff9f43;");spin->setStyleSheet("QDoubleSpinBox{background:#87552c;color:white;border-radius:3px;}");}
         key->setToolTip(modified?"Update this key with the edited value. Click an unchanged key to remove it.":"Toggle this property's key at the playhead");
-        const bool fitted=o->surfaceType()=="Text"&&o->style["text.autoFit"].toBool()&&((path=="layout.width"&&o->style["text.autoFitX"].toBool(true))||(path=="layout.height"&&o->style["text.autoFitY"].toBool(true)));
+        const bool fitted=o->surfaceType()=="Text"&&o->style.value("text.autoFit").toBool()&&((path=="layout.width"&&o->style.value("text.autoFitX").toBool(true))||(path=="layout.height"&&o->style.value("text.autoFitY").toBool(true)));
         spin->setEnabled(!o->locked&&!fitted);key->setEnabled(!o->locked&&!fitted);reset->setEnabled(!o->locked&&!fitted);
     });
 }
@@ -94,13 +94,13 @@ void PropertyInspector::choice(QFormLayout *form,const QString &label,const QStr
     auto *combo=new QComboBox;combo->setObjectName("property_"+path);combo->setAccessibleName(label);combo->addItems(options);form->addRow(label,combo);
     connect(combo,&QComboBox::activated,this,[=, this]{apply([&]{for(auto *o:m->inspected())if(!o->locked)o->style[path]=combo->currentText();});});
     sync.append([=, this]{if(auto *o=m->active()){
-        combo->setCurrentText(o->style[path].toString(fallback));combo->setEnabled(!o->locked);
+        combo->setCurrentText(o->style.value(path).toString(fallback));combo->setEnabled(!o->locked);
         if(path=="fill.kind")for(int i=2;i<form->rowCount();++i)form->setRowVisible(i,combo->currentText()!="Solid");
     }});
 }
 void PropertyInspector::color(QFormLayout *form,const QString &label,const QString &path,const QString &fallback){
     auto *button=new QPushButton;button->setObjectName("color_"+path);form->addRow(label,button);
-    auto get=[=, this]{auto *o=m->active();return o?(path=="fill.color"?o->mat.color:path=="light.color"?o->light.color:QColor(o->style[path].toString(fallback))):QColor(fallback);};
+    auto get=[=, this]{auto *o=m->active();return o?(path=="fill.color"?o->mat.color:path=="light.color"?o->light.color:QColor(o->style.value(path).toString(fallback))):QColor(fallback);};
     connect(button,&QPushButton::clicked,this,[=, this]{
         QHash<QString,QColor> colors;QHash<QString,QJsonValue> styles;
         for(auto *o:m->inspected())if(!o->locked){colors[o->id]=path=="light.color"?o->light.color:o->mat.color;styles[o->id]=o->style.value(path);}
@@ -138,7 +138,7 @@ void PropertyInspector::rebuild(){
         number(audio,"Source offset","audio.offset",0,86400000,40," ms");number(audio,"Playback speed","audio.speed",.1,4,.05);
         number(audio,"Play length","audio.length",0,86400000,40," ms");number(audio,"Fade in","audio.fadeIn",0,60000,40," ms");number(audio,"Fade out","audio.fadeOut",0,60000,40," ms");
         choice(audio,"Repeat","audio.repeat",{"Once","Loop"},"Once");choice(audio,"Mute","audio.mute",{"Off","On"},"Off");
-        audio->addRow("Source",new QLabel(QFileInfo(o->style["audio.file"].toString()).fileName()));
+        audio->addRow("Source",new QLabel(QFileInfo(o->style.value("audio.file").toString()).fileName()));
         layout->addStretch();refresh();return;
     }
     auto *transform=section("TRANSFORM");
@@ -157,20 +157,20 @@ void PropertyInspector::rebuild(){
             auto *fit=new QCheckBox("Fit background to text");fit->setObjectName("textAutoFit");size->addRow(fit);
             auto *axes=new QWidget;auto *row=new QHBoxLayout(axes);row->setContentsMargins(0,0,0,0);auto *x=new QCheckBox("X"),*y=new QCheckBox("Y");row->addWidget(x);row->addWidget(y);row->addStretch();size->addRow("Adapt axes",axes);
             for(auto pair:{qMakePair(fit,QString("text.autoFit")),qMakePair(x,QString("text.autoFitX")),qMakePair(y,QString("text.autoFitY"))})connect(pair.first,&QCheckBox::toggled,this,[=,this](bool value){apply([&]{if(auto *object=m->active())object->style[pair.second]=value;});});
-            sync.append([=,this]{if(auto *object=m->active()){QSignalBlocker a(fit),b(x),c(y);fit->setChecked(object->style["text.autoFit"].toBool());x->setChecked(object->style["text.autoFitX"].toBool(true));y->setChecked(object->style["text.autoFitY"].toBool(true));axes->setVisible(fit->isChecked());}});
+            sync.append([=,this]{if(auto *object=m->active()){QSignalBlocker a(fit),b(x),c(y);fit->setChecked(object->style.value("text.autoFit").toBool());x->setChecked(object->style.value("text.autoFitX").toBool(true));y->setChecked(object->style.value("text.autoFitY").toBool(true));axes->setVisible(fit->isChecked());}});
             number(size,"Text padding","text.padding",0,512,1," px");
         }
         if(o->surfaceType()=="Shape")choice(size,"Shape","shape",{"Rectangle","Ellipse","Triangle"},"Rectangle");
         auto *aspectLock=new QCheckBox("Maintain aspect ratio");size->addRow(aspectLock);
         auto *unlit=new QCheckBox("Ignore lighting");size->addRow(unlit);connect(unlit,&QCheckBox::toggled,this,[=,this](bool value){apply([&]{if(auto *object=m->active())object->mat.shadeless=value;});});sync.append([=,this]{if(auto *object=m->active())unlit->setChecked(object->mat.shadeless);});
         connect(aspectLock,&QCheckBox::toggled,this,[=,this](bool on){apply([&]{if(auto *x=m->active())x->style["layout.aspectLock"]=on;});});
-        sync.append([=,this]{if(auto *x=m->active())aspectLock->setChecked(x->style["layout.aspectLock"].toBool());});
+        sync.append([=,this]{if(auto *x=m->active())aspectLock->setChecked(x->style.value("layout.aspectLock").toBool());});
         {
         auto *corners=section("CORNERS",false);number(corners,"All corners","corner.radius",0,2000,1," px");
         choice(corners,"Units","corner.unit",{"px","%"},"px");
         auto *linked=new QCheckBox("Link corners");linked->setToolTip("Use one radius for all corners");corners->addRow(linked);
         connect(linked,&QCheckBox::toggled,this,[=,this](bool value){apply([&]{for(auto *object:m->inspected())if(!object->locked)object->style["corner.linked"]=value;});});
-        sync.append([=,this]{if(auto *object=m->active())linked->setChecked(object->style["corner.linked"].toBool(true));});
+        sync.append([=,this]{if(auto *object=m->active())linked->setChecked(object->style.value("corner.linked").toBool(true));});
         for(auto key:QStringList{"tl","tr","br","bl"})number(corners,key.toUpper(),"corner."+key,0,2000,1," px");
         sync.append([=,this]{bool show=!linked->isChecked();for(int row=3;row<corners->rowCount();++row)corners->setRowVisible(row,show);});
         auto *stroke=section("STROKE",false);number(stroke,"Width","stroke.width",0,100,1," px");color(stroke,"Color","stroke.color","#ffffff");choice(stroke,"Style","stroke.style",{"Solid","Dashed","Dotted"},"Solid");
@@ -179,21 +179,21 @@ void PropertyInspector::rebuild(){
         QFormLayout *backgroundForm=nullptr;
         if(o->surfaceType()=="Text"){
             auto *background=section("TEXT BACKGROUND");auto *enabled=new QCheckBox("Background");background->addRow(enabled);
-            connect(enabled,&QCheckBox::toggled,this,[=,this](bool on){apply([&]{m->active()->style["text.background"]=on;});});sync.append([=,this]{enabled->setChecked(m->active()->style["text.background"].toBool());});color(background,"Color","text.backgroundColor","#cc202020");
+            connect(enabled,&QCheckBox::toggled,this,[=,this](bool on){apply([&]{m->active()->style["text.background"]=on;});});sync.append([=,this]{enabled->setChecked(m->active()->style.value("text.background").toBool());});color(background,"Color","text.backgroundColor","#cc202020");
         }
         {
             auto *fill=section(o->surfaceType()=="Text"?"FILL":"BACKGROUND");
             backgroundForm=fill;
-            if(o->surfaceType()!="Text")choice(fill,"Type","background.type",{"Solid","Gradient","Media"},o->surfaceType()=="Image"?"Media":o->style["fill.kind"].toString("Solid")=="Solid"?"Solid":"Gradient");
+            if(o->surfaceType()!="Text")choice(fill,"Type","background.type",{"Solid","Gradient","Media"},o->surfaceType()=="Image"?"Media":o->style.value("fill.kind").toString("Solid")=="Solid"?"Solid":"Gradient");
             color(fill,"Color / start","fill.color","#ffffff");choice(fill,o->surfaceType()=="Text"?"Type":"Gradient","fill.kind",o->surfaceType()=="Text"?QStringList{"Solid","Linear","Radial","Conic"}:QStringList{"Linear","Radial","Conic"},o->surfaceType()=="Text"?"Solid":"Linear");
             color(fill,"Middle","fill.middle","#6366f1");number(fill,"Middle stop","fill.stop",.001,.999,.05);color(fill,"End","fill.end","#a855f7");number(fill,"Angle","fill.angle",0,360,1,"°");
-            if(o->surfaceType()!="Text")sync.append([=,this]{if(auto *object=m->active()){auto type=object->style["background.type"].toString(object->surfaceType()=="Image"?"Media":object->style["fill.kind"].toString("Solid")=="Solid"?"Solid":"Gradient");fill->setRowVisible(1,type!="Media");for(int row=2;row<7;++row)fill->setRowVisible(row,type=="Gradient");}});
+            if(o->surfaceType()!="Text")sync.append([=,this]{if(auto *object=m->active()){auto type=object->style.value("background.type").toString(object->surfaceType()=="Image"?"Media":object->style.value("fill.kind").toString("Solid")=="Solid"?"Solid":"Gradient");fill->setRowVisible(1,type!="Media");for(int row=2;row<7;++row)fill->setRowVisible(row,type=="Gradient");}});
         }
         if(o->surfaceType()!="Text"){
             auto *mediaBody=new QWidget;auto *media=new QFormLayout(mediaBody);media->setContentsMargins(0,0,0,0);backgroundForm->addRow(mediaBody);choice(media,"Source type","media.kind",{"Image","Video"},"Image");
-            sync.append([=,this]{if(auto *object=m->active())mediaBody->setVisible(object->style["background.type"].toString(object->surfaceType()=="Image"?"Media":"Solid")=="Media");});
+            sync.append([=,this]{if(auto *object=m->active())mediaBody->setVisible(object->style.value("background.type").toString(object->surfaceType()=="Image"?"Media":"Solid")=="Media");});
             auto *file=new QPushButton("Choose file…");media->addRow(file);file->setToolTip("Use an image or video as this object's background");
-            connect(file,&QPushButton::clicked,this,[=,this]{auto *object=m->active();if(!object||object->locked)return;bool video=object->style["media.kind"].toString()=="Video";
+            connect(file,&QPushButton::clicked,this,[=,this]{auto *object=m->active();if(!object||object->locked)return;bool video=object->style.value("media.kind").toString()=="Video";
                 const QString path=QFileDialog::getOpenFileName(this,video?"Video background":"Image background",{},video?"Video (*.mp4 *.mov *.mkv *.webm *.avi *.mxf)":"Images (*.png *.jpg *.jpeg *.bmp *.webp *.gif *.svg *.ico)");if(path.isEmpty())return;
                 QString error;const auto duration=video?MediaFrames::duration(path,&error):0;if(video&&!error.isEmpty()){QMessageBox::warning(this,"Video background",error);return;}
                 if(!video&&QImage(path).isNull()){QMessageBox::warning(this,"Image background","This image could not be opened.");return;}
@@ -201,18 +201,18 @@ void PropertyInspector::rebuild(){
             });
             choice(media,"Fit","image.fit",{"Contain","Cover","Fill","None","Scale Down"},"Contain");number(media,"Position X","image.x",0,1,.05);number(media,"Position Y","image.y",0,1,.05);
             number(media,"Trim start","media.offset",0,86400000,40," ms");number(media,"Playback speed","media.speed",.1,4,.1);number(media,"Audio volume","media.volume",0,1,.05);
-            auto *loop=new QCheckBox("Loop video");media->addRow(loop);connect(loop,&QCheckBox::toggled,this,[=,this](bool value){apply([&]{if(auto *object=m->active())object->style["media.loop"]=value;});});sync.append([=,this]{if(auto *object=m->active())loop->setChecked(object->style["media.loop"].toBool(true));});
-            sync.append([=,this]{if(auto *object=m->active())for(int row=5;row<media->rowCount();++row)media->setRowVisible(row,object->style["media.kind"].toString()=="Video");});
+            auto *loop=new QCheckBox("Loop video");media->addRow(loop);connect(loop,&QCheckBox::toggled,this,[=,this](bool value){apply([&]{if(auto *object=m->active())object->style["media.loop"]=value;});});sync.append([=,this]{if(auto *object=m->active())loop->setChecked(object->style.value("media.loop").toBool(true));});
+            sync.append([=,this]{if(auto *object=m->active())for(int row=5;row<media->rowCount();++row)media->setRowVisible(row,object->style.value("media.kind").toString()=="Video");});
         }
         auto *shadow=section("SHADOW",false);auto *on=new QCheckBox("Drop shadow");shadow->addRow(on);
         connect(on,&QCheckBox::toggled,this,[=, this](bool v){apply([&]{if(auto *x=m->active())x->style["shadow.enabled"]=v;});});
-        sync.append([=, this]{if(auto *x=m->active())on->setChecked(x->style["shadow.enabled"].toBool());});
+        sync.append([=, this]{if(auto *x=m->active())on->setChecked(x->style.value("shadow.enabled").toBool());});
         number(shadow,"X","shadow.x",-1000,1000,1," px");number(shadow,"Y","shadow.y",-1000,1000,1," px");number(shadow,"Blur","shadow.blur",0,80,1," px");color(shadow,"Color","shadow.color","#99000000");
         if(o->surfaceType()=="Text"){
             auto *body=new QWidget;auto *form=new QFormLayout(body);form->setContentsMargins(8,4,0,0);shadow->addRow(body);
             auto *enabled=new QCheckBox("Text shadow");form->addRow(enabled);
             connect(enabled,&QCheckBox::toggled,this,[=,this](bool value){apply([&]{if(auto *object=m->active())object->style["textShadow.enabled"]=value;});});
-            sync.append([=,this]{if(auto *object=m->active()){QSignalBlocker block(enabled);enabled->setChecked(object->style["textShadow.enabled"].toBool());body->setVisible(object->style["text.background"].toBool());}});
+            sync.append([=,this]{if(auto *object=m->active()){QSignalBlocker block(enabled);enabled->setChecked(object->style.value("textShadow.enabled").toBool());body->setVisible(object->style.value("text.background").toBool());}});
             number(form,"X","textShadow.x",-1000,1000,1," px");number(form,"Y","textShadow.y",-1000,1000,1," px");number(form,"Blur","textShadow.blur",0,80,1," px");color(form,"Color","textShadow.color","#99000000");
         }
         auto *effects=section("EFFECTS",false);
@@ -233,11 +233,11 @@ void PropertyInspector::rebuild(){
         number(effects,"Hue","effects.hue",-360,360,1,"°");
     }
     if(!multi&&(o->surfaceType()=="Text"||o->surfaceType()=="Image")){
-        auto *studio=section("STUDIO FIELD",false);auto *enabled=new QCheckBox("Editable in Studio");enabled->setChecked(o->style["studio.editable"].toBool());studio->addRow(enabled);
+        auto *studio=section("STUDIO FIELD",false);auto *enabled=new QCheckBox("Editable in Studio");enabled->setChecked(o->style.value("studio.editable").toBool());studio->addRow(enabled);
         enabled->setToolTip("Expose this object's content in Screen Elements without changing its animation. Text shorthand: {{studio:Sponsor}}Your text");
-        auto *label=new QLineEdit(o->style["studio.label"].toString(o->name));studio->addRow("Field name",label);
-        sync.append([=,this]{if(auto *x=m->active()){QSignalBlocker block(enabled);enabled->setChecked(x->style["studio.editable"].toBool());if(!label->hasFocus()){QSignalBlocker labelBlock(label);label->setText(x->style["studio.label"].toString(x->name));}}});
-        auto *fit=new QCheckBox("Fit long text inside its box");fit->setChecked(o->style["studio.fit"].toBool(true));if(o->surfaceType()=="Text")studio->addRow(fit);else fit->deleteLater();
+        auto *label=new QLineEdit(o->style.value("studio.label").toString(o->name));studio->addRow("Field name",label);
+        sync.append([=,this]{if(auto *x=m->active()){QSignalBlocker block(enabled);enabled->setChecked(x->style.value("studio.editable").toBool());if(!label->hasFocus()){QSignalBlocker labelBlock(label);label->setText(x->style.value("studio.label").toString(x->name));}}});
+        auto *fit=new QCheckBox("Fit long text inside its box");fit->setChecked(o->style.value("studio.fit").toBool(true));if(o->surfaceType()=="Text")studio->addRow(fit);else fit->deleteLater();
         connect(enabled,&QCheckBox::toggled,this,[=,this](bool on){apply([&]{if(auto *x=m->active()){x->style["studio.editable"]=on;x->style["studio.label"]=label->text();}});});
         connect(label,&QLineEdit::editingFinished,this,[=,this]{apply([&]{if(auto *x=m->active())x->style["studio.label"]=label->text().trimmed();});});
         if(o->surfaceType()=="Text")connect(fit,&QCheckBox::toggled,this,[=,this](bool on){apply([&]{if(auto *x=m->active())x->style["studio.fit"]=on;});});
@@ -248,13 +248,13 @@ void PropertyInspector::rebuild(){
         connect(content,&QPlainTextEdit::textChanged,this,[=, this]{apply([&]{if(auto *x=m->active()){if(parseStudioText(*x,content->toPlainText())){QSignalBlocker block(content);content->setPlainText(x->text);}}});});
         choice(text,"Formatting","text.format",{"Plain text","Markdown"},"Plain text");
         content->setToolTip("Markdown: **bold**, *italic*, ~~strike~~, # heading, - list, > quote, `code`. Choose Markdown below. Studio field prefixes still work.");
-        auto *family=new QFontComboBox;family->setCurrentFont(QFont(o->style["text.family"].toString("Segoe UI")));text->addRow("Font",family);
+        auto *family=new QFontComboBox;family->setCurrentFont(QFont(o->style.value("text.family").toString("Segoe UI")));text->addRow("Font",family);
         connect(family,&QFontComboBox::currentFontChanged,this,[=, this](const QFont &font){apply([&]{if(auto *x=m->active())x->style["text.family"]=font.family();});});
         number(text,"Size","text.size",1,1000,1," px");
         auto *advanced=section("ADVANCED TYPOGRAPHY",false);number(advanced,"Weight","text.weight",100,900,100);
         auto *italic=new QCheckBox("Italic");advanced->addRow(italic);
         connect(italic,&QCheckBox::toggled,this,[=,this](bool on){apply([&]{if(auto *x=m->active();x&&!x->locked)x->style["text.italic"]=on;});});
-        sync.append([=,this]{if(auto *x=m->active()){italic->setChecked(x->style["text.italic"].toBool());italic->setEnabled(!x->locked);}});
+        sync.append([=,this]{if(auto *x=m->active()){italic->setChecked(x->style.value("text.italic").toBool());italic->setEnabled(!x->locked);}});
         number(advanced,"Line height","text.lineHeight",.2,5,.1);number(advanced,"Tracking","text.tracking",-30,200,.5," px");number(advanced,"Word spacing","text.wordSpacing",-30,200,.5," px");
         choice(advanced,"Align","text.align",{"Left","Center","Right","Justify"},"Center");choice(advanced,"Vertical","text.vertical",{"Top","Center","Bottom"},"Center");
         choice(advanced,"Transform","text.transform",{"None","Uppercase","Lowercase","Capitalize"},"None");choice(advanced,"Decoration","text.decoration",{"None","Underline","Line Through"},"None");
@@ -269,7 +269,7 @@ void PropertyInspector::rebuild(){
         auto *enabled=new QCheckBox("Use texture");texture->addRow(enabled);
         connect(enabled,&QCheckBox::toggled,this,[=,this](bool on){apply([&]{if(auto *object=m->active())object->style["texture.enabled"]=on;});});
         auto *path=new QLabel;path->setWordWrap(true);texture->addRow(path);
-        sync.append([=,this]{if(auto *object=m->active()){QSignalBlocker block(enabled);enabled->setChecked(object->style["texture.enabled"].toBool(true));const auto file=object->style["texture.file"].toString();path->setText(file.isEmpty()?"Apply a texture from the Material tab.":QFileInfo(file).fileName());path->setToolTip(file);}});
+        sync.append([=,this]{if(auto *object=m->active()){QSignalBlocker block(enabled);enabled->setChecked(object->style.value("texture.enabled").toBool(true));const auto file=object->style.value("texture.file").toString();path->setText(file.isEmpty()?"Apply a texture from the Material tab.":QFileInfo(file).fileName());path->setToolTip(file);}});
         choice(texture,"Mapping","texture.mapping",{"Fit","Tile"},"Fit");
         choice(texture,"Blend","texture.blend",{"Normal","Multiply","Screen","Overlay"},"Normal");
         number(texture,"Scale X","texture.scaleX",.01,100,.05);number(texture,"Scale Y","texture.scaleY",.01,100,.05);
