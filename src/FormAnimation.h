@@ -21,7 +21,7 @@ inline QString capture(DObject &object,const Mesh &zero,const QString &name){
 }
 inline Mesh evaluate(const DObject &object,qint64 time){
     Mesh mesh=object.mesh;
-    const auto faces=mesh.toJson()["f"];
+    const QJsonValue faces=mesh.toJson()["f"];
     for(const auto &entry:object.style["form.poses"].toArray()){
         const auto pose=entry.toObject();if(pose["vertices"].toInt()!=mesh.v.size())continue;
         if(pose["faces"]!=faces)continue;
@@ -33,7 +33,7 @@ inline Mesh evaluate(const DObject &object,qint64 time){
 // cannot silently detach earlier animation from its vertex indices.
 inline bool retarget(DObject &after,const DObject &before,const std::function<bool(Mesh &)> &operation){
     QJsonArray updated;
-    const auto oldFaces=before.mesh.toJson()["f"],newFaces=after.mesh.toJson()["f"];
+    const QJsonValue oldFaces=before.mesh.toJson()["f"],newFaces=after.mesh.toJson()["f"];
     for(const auto &entry:before.style["form.poses"].toArray()){
         auto pose=entry.toObject();
         if(pose["vertices"].toInt()!=before.mesh.v.size()||pose["faces"]!=oldFaces)return false;

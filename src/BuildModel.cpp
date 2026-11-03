@@ -711,8 +711,16 @@ bool BuildModel::applyModifier(const QString &objectId,int index){
     if(editMode||!object||object->locked||object->type!="Mesh"||index<0||index>=object->mods.size())return false;
     // Bake the ordered prefix: later modifiers depend on the geometry before them.
     auto snapshot=design;auto *copy=snapshot.find(objectId);copy->mods.resize(index+1);
-    const Mesh baked=snapshot.evalMesh(*copy,t);
-    pushUndo();object->mesh=baked;object->mods.remove(0,index+1);notify();return true;
+    const DObject original=*object;
+    // Apply the stack to the authored full form and each zero pose, rather than
+    // baking the current influence and leaving the old animation to run twice.
+    copy->style.remove("form.poses");
+    DObject applied=original;applied.mesh=snapshot.evalMesh(*copy,t);
+    if(!FormAnimation::retarget(applied,original,[&](Mesh &mesh){
+        auto poseScene=snapshot;auto *pose=poseScene.find(objectId);pose->mesh=mesh;
+        mesh=poseScene.evalMesh(*pose,t);return true;
+    }))return false;
+    pushUndo(true);*object=applied;object->mods.remove(0,index+1);notify();return true;
 }
 
 bool BuildModel::enterEdit() {

@@ -52,7 +52,7 @@ private slots:
         QCOMPARE(render(ElementDesign::fromJson(model.design.toJson())),edited);
     }
     void formEditsUseDisplayedPoseAndCancel(){
-        Library lib;BuildModel model;model.reset(ElementDesign::defaultScene());const auto id=model.addMesh("Cube");auto *o=model.byId(id);const Mesh zero=o->mesh;o->mesh.v[0].setX(o->mesh.v[0].x()+2);const auto path=FormAnimation::capture(*o,zero,"Corner");o->style[path]=.25;
+        Library lib;BuildModel model;model.reset(ElementDesign::defaultScene());const auto id=model.addMesh("Cube");auto *o=model.byId(id);o->base.rot={0,0,0};const Mesh zero=o->mesh;o->mesh.v[0].setX(o->mesh.v[0].x()+2);const auto path=FormAnimation::capture(*o,zero,"Corner");o->style[path]=.25;
         QVERIFY(model.enterEdit());model.esel.v={0};const auto displayed=FormAnimation::evaluate(*model.active(),0).v[0];
         BuildCanvas canvas(&model,&lib);canvas.resize(800,500);canvas.show();QTest::qWait(20);canvas.startMove();QTest::keyClick(&canvas,Qt::Key_X);QTest::keyClick(&canvas,Qt::Key_1);QTest::keyClick(&canvas,Qt::Key_Return);
         QCOMPARE(model.active()->style["form.poses"].toArray().size(),2);const auto moved=FormAnimation::evaluate(*model.active(),0).v[0];QVERIFY((moved-displayed-QVector3D(1,0,0)).length()<.0001);
@@ -76,6 +76,12 @@ private slots:
         auto *name=panel.findChild<QLineEdit*>("formName");name->setText("Corner lift");QMetaObject::invokeMethod(name,"editingFinished");QCOMPARE(model.active()->style["form.poses"].toArray()[0].toObject()["name"].toString(),QString("Corner lift"));
         const auto before=model.design.toJson();const auto evaluated=FormAnimation::evaluate(*model.active(),model.t).toJson();panel.findChild<QPushButton*>("formBakeRemove")->click();QVERIFY(model.active()->style["form.poses"].toArray().isEmpty());QVERIFY(!model.active()->track(path));QCOMPARE(model.active()->mesh.toJson(),evaluated);QVERIFY(model.undo());QCOMPARE(model.design.toJson(),before);
         QVERIFY(panel.grab().save("artifacts/form-animation-panel.png"));
+    }
+    void applyingModifierRetainsFormKeys(){
+        BuildModel model;model.reset(ElementDesign::defaultScene());model.addMesh("Cube");auto *o=model.active();const auto zero=o->mesh;o->mesh.v[0].setX(2);const auto path=FormAnimation::capture(*o,zero,"Corner");o->keyChannel(path,0,0);o->keyChannel(path,1000,1);for(auto &key:o->track(path)->keys)key.interpolation="Linear";
+        Modifier array;array.type="Array";array.count=2;array.rel={2,0,0};o->mods.append(array);
+        const auto before=model.design.toJson();const auto atZero=model.design.evalMesh(*o,0).toJson();const auto atFull=model.design.evalMesh(*o,1000).toJson();
+        model.setTime(500);QVERIFY(model.applyModifier(o->id,0));o=model.active();QVERIFY(o->mods.isEmpty());QCOMPARE(o->track(path)->keys.size(),2);QCOMPARE(model.design.evalMesh(*o,0).toJson(),atZero);QCOMPARE(model.design.evalMesh(*o,1000).toJson(),atFull);QVERIFY(model.undo());QCOMPARE(model.design.toJson(),before);
     }
     void graphSelectionActiveAndEmptyRemainStable(){
         BuildModel model;model.reset(scene());model.select("subject");for(const auto &axis:QStringList{"x","y","z"}){model.active()->keyChannel("position."+axis,0,0);model.active()->keyChannel("position."+axis,1000,2);}

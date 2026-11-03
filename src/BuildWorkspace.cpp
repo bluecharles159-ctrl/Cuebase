@@ -266,7 +266,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     tb->addWidget(editBtn);
     auto *formControls=new QToolButton;formControls->setIcon(uiIcon("key"));formControls->setObjectName("formAnimationControls");formControls->setToolTip("Form Animation · influence and keyframes");formControls->setVisible(m->editMode);tb->addWidget(formControls);
     connect(m,&BuildModel::changed,formControls,[m,formControls]{formControls->setVisible(m->editMode);});
-    connect(formControls,&QToolButton::clicked,this,[this,m]{auto *dialog=roundedModal(this,"Form Animation");dialog->setAttribute(Qt::WA_DeleteOnClose);auto *layout=new QVBoxLayout(dialog);layout->addWidget(new FormAnimationPanel(m,dialog));dialog->resize(360,290);dialog->show();});
+    connect(formControls,&QToolButton::clicked,this,[this,m]{if(auto *existing=findChild<QDialog*>("formAnimationDialog")){existing->raise();existing->activateWindow();return;}auto *dialog=roundedModal(this,"Form Animation");dialog->setObjectName("formAnimationDialog");dialog->setAttribute(Qt::WA_DeleteOnClose);auto *layout=new QVBoxLayout(dialog);layout->addWidget(new FormAnimationPanel(m,dialog));dialog->resize(380,350);dialog->show();});
     tb->addWidget(objBtn);
     tb->addWidget(meshBtn);
     tb->addWidget(vBtn);

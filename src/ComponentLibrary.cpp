@@ -21,6 +21,8 @@ DObject objectFrom(const QJsonObject &item){
     if(!id.isEmpty())if(const auto *object=scene.find(id))return *object;DObject invalid;invalid.type="Invalid";return invalid;
 }
 QString styleGroup(const QString &key){
+    if(key=="surface.type"||key=="surface.restMesh"||key=="form.poses")return "Geometry";
+    if(key.startsWith("form."))return "Animation";
     if(key.startsWith("component.")||key.startsWith("studio.")||key.startsWith("media.")||key=="audio.file")return {};
     if(key.startsWith("fill.")||key.startsWith("texture."))return "Materials";
     if(key.startsWith("effects.")||key.startsWith("backdrop.")||key.startsWith("shadow.")||key.startsWith("textShadow.")||key.startsWith("surface."))return "Effects";

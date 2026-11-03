@@ -29,8 +29,8 @@ bool parseStudioText(DObject &object,const QString &input){
 bool setStudioField(ElementDesign &design,const QString &id,const QString &value,QString *error){
     auto fail=[&](QString reason){if(error)*error=reason;return false;};auto *object=design.find(id);
     if(!object||!object->style["studio.editable"].toBool())return fail("This object is not exposed for Studio editing.");
-    if(object->type=="Text"){if(value.size()>10000)return fail("Text must contain no more than 10,000 characters.");object->text=value;return true;}
-    if(object->type=="Image"){
+    if(object->surfaceType()=="Text"){if(value.size()>10000)return fail("Text must contain no more than 10,000 characters.");object->text=value;return true;}
+    if(object->surfaceType()=="Image"){
         if(!QFileInfo(value).isFile())return fail("Choose an existing image or video file.");
         const auto suffix=QFileInfo(value).suffix().toLower();
         if(!QStringList{"png","jpg","jpeg","webp","bmp","svg","gif","mp4","mov","mkv","webm","avi"}.contains(suffix))return fail("Choose a supported image or video.");
