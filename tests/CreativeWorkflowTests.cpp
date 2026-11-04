@@ -18,6 +18,7 @@
 #include "FormAnimationPanel.h"
 #include "FrameExport.h"
 #include "CueSequence.h"
+#include "Data.h"
 #include <QSaveFile>
 #include <QTemporaryDir>
 #include "OutputFormatDialog.h"
@@ -38,6 +39,17 @@ class CreativeWorkflowTests : public QObject {
         for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->data(0,Qt::UserRole+1).toString()==path)return *it;return nullptr;
     }
 private slots:
+    void implicitNestedCueEntriesStayEditable(){
+        auto design=ElementDesign::defaultScene();design.durationMs=1000;
+        const QJsonObject cue{{"id","child"},{"name","Child"},{"start",0},{"end",1000},{"hold",false}};design.animationCues={cue};
+        Element root;root.design=design.toJson();auto entry=newCueBoardEntry(cue);entry["sections"]=QJsonArray{QJsonObject{{"design",design.toJson()}}};
+        auto sibling=entry;sibling["id"]="sibling";root.cueBoard={entry,sibling};
+        const QStringList parentPath{entry["id"].toString(),"0"};const auto first=cueBoardContext(root,parentPath);const auto again=cueBoardContext(root,parentPath);
+        QCOMPARE(first.cueBoard,again.cueBoard);QCOMPARE(first.cueBoard.size(),1);const auto childId=first.cueBoard.first().toObject()["id"].toString();QVERIFY(!childId.isEmpty());
+        auto path=parentPath;path<<childId<<"0";const QJsonObject changed{{"name","Edited first play"}};
+        QVERIFY(setCueBoardSection(root,path,changed));QCOMPARE(cueBoardSection(root,path),changed);QCOMPARE(root.cueBoard[1].toObject(),sibling);QCOMPARE(root.design,design.toJson());
+        const auto reopened=cueBoardContext(root,parentPath);QCOMPARE(reopened.cueBoard.first().toObject()["id"].toString(),childId);QVERIFY(compileCueBoard(design,root.cueBoard,{}).error.isEmpty());
+    }
     void nestedCueBoardRespectsTotalSectionLimit(){
         auto source=ElementDesign::defaultScene();source.durationMs=1000;
         const QJsonObject cue{{"id","child"},{"name","Child"},{"start",0},{"end",1000},{"repeat",100},{"hold",false}};

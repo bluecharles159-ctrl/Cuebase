@@ -13,6 +13,18 @@ QJsonObject playSettings(QJsonObject cue,int index){
     if(index>=0&&index<plays.size()){const auto play=plays[index].toObject();for(const auto &key:QStringList{"start","end","hold","holdMs","holdManual"})if(play.contains(key))cue[key]=play[key];}
     cue.remove("plays");return cue;
 }
+QJsonArray defaultBoard(const ElementDesign &design){
+    QList<QJsonObject> cues;for(const auto &value:design.animationCues)cues.append(value.toObject());
+    std::stable_sort(cues.begin(),cues.end(),[](const auto &a,const auto &b){return a["start"].toDouble()<b["start"].toDouble();});
+    QJsonArray board;
+    for(const auto &cue:cues){
+        auto entry=newCueBoardEntry(cue);
+        // Reading an implicit board must not create new row identities. Nested
+        // editor paths use these IDs to find and save the selected repetition.
+        entry["id"]="derived:"+cue["id"].toString();board.append(entry);
+    }
+    return board;
+}
 void appendCue(CuePlan &plan,const ElementDesign &source,const QJsonObject &cue,const QString &entry,int iteration,const QString &json){
     if(cue["disabled"].toBool())return;
     const int first=plan.steps.size();
@@ -68,10 +80,8 @@ CuePlan compileCueBoard(const ElementDesign &source,const QJsonArray &board,cons
             auto design=section["design"].toString().isEmpty()?source:ElementDesign::fromJson(section["design"].toString());
             const auto fields=section["fields"].toObject();for(auto it=fields.begin();it!=fields.end();++it){QString reason;if(!setStudioField(design,it.key(),it.value().toString(),&reason)){plan.error=reason;return plan;}}
             const auto json=design.toJson();
-            QList<QJsonObject> children;for(const auto &child:design.animationCues)children.append(child.toObject());
-            if(!section["design"].toString().isEmpty()&&!children.isEmpty()){
-                std::sort(children.begin(),children.end(),[](const auto &a,const auto &b){return a["start"].toDouble()<b["start"].toDouble();});
-                QJsonArray childBoard=section["board"].toArray();if(!section.contains("board"))for(const auto &child:children)childBoard.append(newCueBoardEntry(child));
+            if(!section["design"].toString().isEmpty()&&!design.animationCues.isEmpty()){
+                QJsonArray childBoard=section.contains("board")?section["board"].toArray():defaultBoard(design);
                 auto nested=compileCueBoard(design,childBoard,section["boardSettings"].toObject(),depth+1);if(!nested.error.isEmpty()){plan.error=nested.error;return plan;}
                 // Each child is bounded independently, but repeated children
                 // must also respect the containing board's total limit.
@@ -111,7 +121,7 @@ bool canEditCueBoard(const Element &before,const Element &after,qint64 start,qin
     if(earliest-now>=300000)return true;if(reason)*reason="On air, only cues at least five minutes ahead may be changed. Played and near-air cues are protected.";return false;
 }
 
-Element cueBoardContext(const Element &root,const QStringList &path){Element current=root;for(int at=0;at+1<path.size();at+=2){QJsonObject entry;for(auto value:current.cueBoard)if(value.toObject()["id"].toString()==path[at])entry=value.toObject();const auto sections=entry["sections"].toArray();const int n=path[at+1].toInt();if(entry.isEmpty()||n<0||n>=sections.size())return {};const auto section=sections[n].toObject();current.design=section["design"].toString();current.name=section["name"].toString(entry["name"].toString()+QString(" · Play %1").arg(n+1));current.cueBoard=section["board"].toArray();current.cueBoardSettings=section["boardSettings"].toObject();if(!section.contains("board")){auto d=ElementDesign::fromJson(current.design);QList<QJsonObject> cues;for(auto c:d.animationCues)cues.append(c.toObject());std::sort(cues.begin(),cues.end(),[](auto a,auto b){return a["start"].toDouble()<b["start"].toDouble();});for(auto c:cues)current.cueBoard.append(newCueBoardEntry(c));}}return current;}
+Element cueBoardContext(const Element &root,const QStringList &path){Element current=root;for(int at=0;at+1<path.size();at+=2){QJsonObject entry;for(auto value:current.cueBoard)if(value.toObject()["id"].toString()==path[at])entry=value.toObject();const auto sections=entry["sections"].toArray();const int n=path[at+1].toInt();if(entry.isEmpty()||n<0||n>=sections.size())return {};const auto section=sections[n].toObject();current.design=section["design"].toString();current.name=section["name"].toString(entry["name"].toString()+QString(" · Play %1").arg(n+1));current.cueBoard=section["board"].toArray();current.cueBoardSettings=section["boardSettings"].toObject();if(!section.contains("board"))current.cueBoard=defaultBoard(ElementDesign::fromJson(current.design));}return current;}
 QJsonObject cueBoardSection(const Element &root,const QStringList &path){if(path.size()<2)return {};auto parent=cueBoardContext(root,path.mid(0,path.size()-2));for(auto value:parent.cueBoard){auto e=value.toObject();if(e["id"].toString()!=path[path.size()-2])continue;auto sections=e["sections"].toArray();int n=path.last().toInt();return n>=0&&n<sections.size()?sections[n].toObject():QJsonObject{};}return {};}
 bool setCueBoardSection(Element &root,const QStringList &path,const QJsonObject &section){if(path.size()<2||path.size()%2)return false;auto parentPath=path.mid(0,path.size()-2);auto parent=cueBoardContext(root,parentPath);for(int i=0;i<parent.cueBoard.size();++i){auto e=parent.cueBoard[i].toObject();if(e["id"].toString()!=path[path.size()-2])continue;int n=path.last().toInt();if(n<0||n>=100)return false;auto sections=e["sections"].toArray();while(sections.size()<=n)sections.append(QJsonObject{});sections[n]=section;e["sections"]=sections;parent.cueBoard[i]=e;return setCueBoardContext(root,parentPath,parent);}return false;}
 bool setCueBoardContext(Element &root,const QStringList &path,const Element &context){if(path.isEmpty()){root=context;return true;}auto section=cueBoardSection(root,path);section["design"]=context.design;section["board"]=context.cueBoard;section["boardSettings"]=context.cueBoardSettings;section["name"]=context.name;return setCueBoardSection(root,path,section);}
