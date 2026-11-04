@@ -518,6 +518,9 @@ void BuildCanvas::paintEvent(QPaintEvent *) {
         if(m_modal.snapX)p.drawLine(QPointF(m_modal.snapPoint.x(),r.top()),QPointF(m_modal.snapPoint.x(),r.bottom()));
         if(m_modal.snapY)p.drawLine(QPointF(r.left(),m_modal.snapPoint.y()),QPointF(r.right(),m_modal.snapPoint.y()));
     }
+    if (m_m->editMode) drawEdit(p, cam, r);
+    else drawSelection(p, cam, r);
+    // Keep the origin visible when it coincides with a corner/vertex handle.
     if(showOrigins){
         for(const auto &object:d.objects){
             if(!object.isRenderable()||!d.effectiveVisible(object))continue;
@@ -525,8 +528,6 @@ void BuildCanvas::paintEvent(QPaintEvent *) {
             p.setPen(QPen(QColor("#20242a"),1));p.setBrush(object.id==m_m->activeId?QColor("#ffc46b"):m_m->isSelected(object.id)?QColor("#e29657"):QColor("#939ba6"));p.drawEllipse(at,3,3);
         }
     }
-    if (m_m->editMode) drawEdit(p, cam, r);
-    else drawSelection(p, cam, r);
     if (showGizmos) drawGizmos(p, cam, r);
 
     if (m_boxing) {

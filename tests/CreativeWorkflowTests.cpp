@@ -6,6 +6,7 @@
 #include <QToolButton>
 #include <QDialogButtonBox>
 #include <QPainter>
+#include <QWheelEvent>
 #include <QPointer>
 #include <QPlainTextEdit>
 #include <QCheckBox>
@@ -82,7 +83,26 @@ private slots:
         Library lib;BuildWorkspace workspace(&lib);workspace.resize(1300,850);workspace.show();auto *model=workspace.findChild<BuildModel*>();model->reset(scene());model->select("subject");QVERIFY(model->setOrigin("Bounds:Top Left"));
         auto *canvas=workspace.findChild<BuildCanvas*>();auto *button=workspace.findChild<QToolButton*>("viewportOverlays");QVERIFY(canvas&&button);QCheckBox *origins=nullptr;for(auto *check:button->menu()->findChildren<QCheckBox*>())if(check->text()=="Object origins")origins=check;QVERIFY(origins);
         button->menu()->findChild<QCheckBox*>("overlayMaster")->setChecked(true);origins->setChecked(true);QTest::qWait(20);const auto sceneData=model->design.toJson();const auto final=render(model->design);const auto shown=canvas->grab().toImage();QVERIFY(shown.save("artifacts/origin-position.png"));
+        bool visibleOrigin=false;for(int y=0;y<shown.height();++y)for(int x=0;x<shown.width();++x)if(shown.pixelColor(x,y)==QColor("#ffc46b"))visibleOrigin=true;QVERIFY(visibleOrigin);
         origins->setChecked(false);QVERIFY(!canvas->showOrigins);QVERIFY(canvas->grab().toImage()!=shown);QCOMPARE(model->design.toJson(),sceneData);QCOMPARE(render(model->design),final);origins->setChecked(true);
+    }
+    void canvasZoomKeepsPointerAndFinalStable(){
+        Library lib;BuildModel model;model.reset(scene());model.select("subject");BuildCanvas canvas(&model,&lib);canvas.resize(800,500);canvas.show();QTest::qWait(20);
+        const auto saved=model.design.toJson();const auto final=render(model.design);
+        for(bool broadcast:{true,false}){
+            if(broadcast)canvas.setCameraView(true);else canvas.viewFront();canvas.frameAll();canvas.grab();
+            const QPointF anchor(110,330);
+            for(int delta:{-120,-1200,1200,120,-12000,12000}){
+                const auto before=canvas.property("compositionFrame").toRectF();QVERIFY(before.width()>0&&before.height()>0);
+                const QPointF normalized((anchor.x()-before.x())/before.width(),(anchor.y()-before.y())/before.height());
+                QWheelEvent wheel(anchor,canvas.mapToGlobal(anchor.toPoint()),QPoint(),QPoint(0,delta),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);QApplication::sendEvent(&canvas,&wheel);const auto screenshot=canvas.grab();
+                const auto after=canvas.property("compositionFrame").toRectF();QVERIFY(qIsFinite(after.width())&&after.width()>0);QVERIFY(qIsFinite(after.height())&&after.height()>0);
+                QVERIFY(qAbs((anchor.x()-after.x())/after.width()-normalized.x())<.001);QVERIFY(qAbs((anchor.y()-after.y())/after.height()-normalized.y())<.001);
+                const auto spacing=canvas.property("rulerSpacing").toPointF();QVERIFY(spacing.x()>=60&&spacing.y()>=60);
+                QCOMPARE(model.design.toJson(),saved);QCOMPARE(render(model.design),final);
+                if(broadcast&&delta==-1200)QVERIFY(screenshot.save("artifacts/canvas-zoom-out.png"));
+            }
+        }
     }
     void formEditsUseDisplayedPoseAndCancel(){
         Library lib;BuildModel model;model.reset(ElementDesign::defaultScene());const auto id=model.addMesh("Cube");auto *o=model.byId(id);o->base.rot={0,0,0};const Mesh zero=o->mesh;o->mesh.v[0].setX(o->mesh.v[0].x()+2);const auto path=FormAnimation::capture(*o,zero,"Corner");o->style[path]=.25;
