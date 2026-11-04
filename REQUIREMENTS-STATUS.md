@@ -1,6 +1,6 @@
 # Cuebase completion ledger
 
-Updated 2026-11-03. This is a development record, not a release certificate.
+Updated 2026-11-04. This is a development record, not a release certificate.
 The user-facing counter is in COMPLETION-CHECKLIST.md: 84 acceptance groups.
 Update that counter after each verified completion; partial work remains open.
 The user requires the complete requested scope before final delivery. A successful
@@ -24,11 +24,18 @@ Do not convert an untested feature into a completed item merely because it exist
 
 ## Immediate repair pass
 
+2026-11-04: origins, modifier application, graph editing and zoom pass run
+41878592859, including
+native Windows and the packaged creative runtime. Surface origin relocation
+preserves exact output pixels; animated form output survives save/reopen and PNG
+export. An editable example ships in the preview. Current count: **29 of 84,
+55 remaining**. Wider deformed-surface appearance remains open under task 06.
+
 2026-11-03: tasks 13 and 83 pass cloud and native Windows workflows in run
 41591759703. Only selected curves are shown; the active curve and tree row remain
 synchronized, including direct curve clicks and cleared selections. Final preview
 stays unchanged while the work camera uses Front, Right or Top. Output presets
-save/reopen and cancel correctly. Native captures inspected. Current count:
+save/reopen and cancel correctly. Native captures inspected. Count at that checkpoint:
 **25 of 84, 59 remaining**. Form editing, shape-surface conversion and Inspector
 undo received integration fixes; wider surface behavior remains under task 06.
 

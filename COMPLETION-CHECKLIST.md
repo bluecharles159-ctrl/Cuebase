@@ -1,11 +1,11 @@
 # Cuebase completion counter
 
-Updated 2026-11-03. **25 of 84 tasks completed — 59 remaining.**
+Updated 2026-11-04. **29 of 84 tasks completed — 55 remaining.**
 
-The Claude transcript adds four distinct acceptance groups (81–84). Row 06 is
-reopened: earlier checks covered transforms/material color, but inspection shows
-that shape conversion still hides Background/Effects and loses full surface
-rendering. The counter does not treat that narrower check as full completion.
+The Claude transcript adds four distinct acceptance groups (81–84). Row 06 remains
+open: converted surfaces now retain their Inspector controls and unchanged
+appearance, but outward effects on deformed faces and combined surface materials
+still need work. The counter does not treat the narrower checks as full completion.
 
 These are fixed acceptance groups, not equal units of effort or a release-readiness
 percentage. Partial implementation stays unchecked. Completed rows have recorded
@@ -20,8 +20,8 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 
 ## Interaction and animation
 
-- [ ] 01. Origin dots, positioning controls and overlay visibility; native review.
-- [ ] 02. Apply-modifier action/shortcut, undo and stack behavior; native review.
+- [x] 01. Origin dots, positioning controls and overlay visibility. Run 41878592859 passes native and offscreen origin relocation, child/world geometry, exact surface-render preservation, save/reopen, undo and editor-only visibility tests. Origin capture inspected, including dots placed on corner handles.
+- [x] 02. Apply-modifier action/shortcut, undo and stack behavior. Run 41878592859 exercises the actual modifier-card button and Ctrl+Shift+M shortcut, prefix ordering, unchanged evaluated geometry, undo/redo and disabled actions in Form Animation or on locked objects. Native and packaged creative suites pass; influence preservation is covered separately.
 - [x] 03. Mirror reference-object picker and cancel; modifier-card interaction. Actual card button, viewport selection, Escape, undo/redo and saved reference verified in `mirror-card-results.txt`.
 - [x] 04. Enter/Return commits numeric values and releases input focus.
 - [x] 05. Select All feedback without unintended transforms or hidden selection.
@@ -33,9 +33,9 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 - [x] 11. Build manual hold/continue for individual cue plays.
 - [ ] 12. Nested cue boards, duplication, delays, scheduling, trims and on-air edit protection.
 - [x] 13. Selected-only graph curves, active-curve emphasis and Translation labels. GitHub run 41591759703 verifies selected/empty/multiple curves, activation from both the tree and curve, and stable selection after rebuild in offscreen and native Windows modes. Active-curve capture reviewed.
-- [ ] 14. Graph handles, interpolation, key transforms/copy/paste and navigation persistence.
+- [x] 14. Graph handles, interpolation, key transforms/copy/paste and navigation persistence. Run 41876580763 passes handle dragging/evaluation, mixed interpolation, pan/zoom persistence, key clipboard and duplicate cancel, constrained keyboard scale/move, Enter confirmation and right-click cancellation. Creative interactions also pass native Windows and packaged-runtime checks.
 - [x] 15. Orange modified key replaces the saved key; unchanged yellow key removes it.
-- [ ] 16. Pointer-anchored canvas zoom, adaptive rulers/grid and native navigation review.
+- [x] 16. Pointer-anchored canvas zoom, adaptive rulers/grid and native navigation review. Run 41878592859 verifies ordinary and extreme zoom in Broadcast and Front views, stable pointer coordinates, bounded dimensions, readable ruler spacing and unchanged scene/Final output. Zoom-out capture inspected; grid retains a minimum screen spacing.
 - [ ] 17. Parenting, isolated parent transforms, hierarchy search/reveal and rounded corners.
 
 ## Appearance and studio interface

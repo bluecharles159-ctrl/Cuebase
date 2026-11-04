@@ -1,31 +1,35 @@
-# Verification — updated 2026-11-03
+# Verification — updated 2026-11-04
 
 ## Latest verified checkpoint
 
-[Build workflow 41591759703](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41591759703)
-passes for `504fc88c5e81e3ae5ddc400153e81e0e2b10f1e7`: all seven CTest suites,
-25 native editor cases, 14 native creative-workflow cases, and packaged editor/
-component checks with MSYS2 removed from PATH. No failures or skips.
-[Windows ZIP](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41591759703/artifacts/13210039480)
-and [reports/screenshots](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41591759703/artifacts/13210039486).
+[Build workflow 41878592859](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41878592859)
+passes for `6e662d26a0e03a98ee3fbbd8a772311eca693859`: all seven CTest suites,
+25 native editor cases, 27 native creative-workflow cases, and packaged editor,
+creative and component checks with MSYS2 removed from PATH. No failed or skipped
+cases in the native reports.
+[Windows ZIP](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41878592859/artifacts/13348795649)
+and [reports/screenshots](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41878592859/artifacts/13347224281).
 
-The new workflow checks converted Shape/Text/Image rendering and save/reopen,
-Inspector nonmutation and undo, edits at partial form influence, extrusion keys
-surviving subdivision, applying an Array modifier without losing form animation,
-form rename/bake/undo, graph selection and curve-click emphasis, duplicate cancel,
-key clipboard, independent work cameras and persisted output presets. Native
-captures for active curves, dual views and the form panel were inspected.
+This checkpoint verifies form influence at partial poses, extrusion/inset and
+subdivision, modifier application, join/separate, I/K hover keys, modified-key
+removal, rename/bake, undo and serialization. The editable example in the package
+exports frames identical to the reopened scene's renderer. Start/end images were
+inspected. Origin relocation now composes texture compensation in the world
+matrix, preventing float-rounding changes to unchanged rounded surfaces.
 
-Tasks 13 and 83 are complete: **25 of 84 completed, 59 remaining**. Task 06 stays
-open for the wider appearance/geometry interaction: deformed surfaces retain
-mapped content, but padded effects on arbitrary edited faces need further work.
-The follow-up [run 41643522537](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41643522537)
-also passes for `fa279024b01e3afe29fb942c91fd15748e7cb6ce`, adding form-aware
-join/separate, displayed-pose inset, I/K hover keys and explicit modified-key
-removal. Windows artifact 13234880701 contains inner ZIP SHA-256
-`69dcb98c26b3d3e4e62f16a87f47c4ed5c7f241337f1c771a0d2c0143c290795`
-(135,813,248 bytes). Packaged-creative tests and graph keyboard-scale checks are
-newer than that checkpoint and require their next successful run.
+Origin controls, modifier application, graph editing and canvas zoom complete
+tasks 01, 02, 14 and 16: **29 of 84 completed, 55 remaining**. Native checks cover origin visibility, child/world coordinates,
+exact surface pixels, graph selection/active emphasis, constrained key transforms,
+clipboard, cancellation and independent Work/Final views. The broader Build suite
+checks Bezier handles, interpolation and persisted graph navigation. Native
+captures for the origin overlay, active curves, dual views and form panel were
+inspected. Task 06 remains open for outward effects on deformed surfaces and
+combined surface materials; this is a development preview.
+
+The modifier card and Ctrl+Shift+M shortcut pass prefix-stack baking, undo/redo,
+Form Animation and locked-object guards. Native zoom tests cover the cursor
+anchor at ordinary and extreme scales, adaptive ruler spacing and unchanged
+scene/Final pixels. Origin dots remain visible over corner selection handles.
 
 ### Earlier checkpoints
 

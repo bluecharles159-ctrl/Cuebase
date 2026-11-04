@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+from time import time_ns
 import urllib.error
 import urllib.request
 from urllib.parse import urlparse
@@ -21,7 +22,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 def request(endpoint, authenticated=False):
-    headers = {'User-Agent': 'Cuebase-build-monitor', 'Accept': 'application/vnd.github+json'}
+    headers = {'User-Agent': 'Cuebase-build-monitor', 'Accept': 'application/vnd.github+json', 'Cache-Control': 'no-cache'}
     if authenticated:
         env = dict(os.environ, GIT_TERMINAL_PROMPT='0', GCM_INTERACTIVE='never')
         result = subprocess.run(['git', 'credential', 'fill'], input='protocol=https\nhost=github.com\n\n', text=True, capture_output=True, env=env, cwd=ROOT)
@@ -32,7 +33,11 @@ def request(endpoint, authenticated=False):
         headers['Authorization'] = 'Bearer '+token
     opener = urllib.request.build_opener(NoRedirect)
     try:
-        with opener.open(urllib.request.Request(API+endpoint, headers=headers), timeout=45) as response:
+        # Polls must not reuse a cached queued/in-progress response after the
+        # job has finished. Leave signed artifact redirects untouched below.
+        separator = '&' if '?' in endpoint else '?'
+        url = API+endpoint+separator+'_cuebase_poll='+str(time_ns())
+        with opener.open(urllib.request.Request(url, headers=headers), timeout=45) as response:
             return response.read()
     except urllib.error.HTTPError as error:
         if error.code in (401, 403) and not authenticated:

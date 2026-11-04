@@ -29,23 +29,29 @@ These checks validate the workflows below, not the unfinished transcript items.
 - Work/Material/Wire views show off-camera objects under a dark translucent
   overlay. Final rendering remains cropped to its camera.
 
+## November 4 verification
+
+Dual Final/Work cameras, side views and aspect presets are verified. Origin
+controls, graph handles/interpolation, key transforms and clipboard, independent
+work views, form topology/influence and editable form exports pass run
+41876580763. The original surface appearance survives conversion, resizing and
+origin moves; wider deformed-surface behavior remains open.
+
 ## Still required from the transcript
 
 - Layer/front-middle-back stack model, 14-pixel G/Z steps, delayed/pulsing NEW
   layer at both ends, release commit, cancel restoration, colors and overlap-only
   broadcast rendering. Existing overlay Z-index controls do not satisfy this.
-- Dual-camera layout, side-view toggle and final-camera aspect presets.
 - Boolean effects for text.
 - Full grid snapping (the current bypass applies to existing alignment snaps).
 - Shortcut reference, loading transitions and requested timeline redesign.
 - Multi-object handle audit and native mouse verification beyond viewport edges.
-- Shape-to-mesh Edit Mode preserves some properties in memory but hides surface
-  panels and does not preserve their full rendering. This needs a coordinated
-  renderer/Inspector fix, not simply making controls visible.
+- Converted surfaces now preserve Inspector panels and their original rendering.
+  Outward effects on deformed faces and combined surface materials remain open.
 
 Markdown text and image/video element backgrounds already exist; they were not
-newly copied from Claude. Existing keyframe copy/paste and apply transforms still
-need the user's requested broader audit. Supabase and cloud archive remain
+newly copied from Claude. Graph clipboard, transforms, interpolation and navigation pass the November 4
+verification. Applying object transforms still needs the broader audit. Supabase and cloud archive remain
 deferred. Mobbin was connected in Claude, not in this Codex task; no Mobbin access
 or review is claimed here.
 

@@ -8,6 +8,8 @@ This is a development preview, not a production-ready release.
 - Form Animation: capture confirmed mesh transforms, extrusions and insets, rename
   forms and key their influence. Topology operations transfer earlier forms, and
   join/separate preserves their animation. Hover Influence and press I or K.
+- An editable Form Animation example with exported start/end frames.
+- Origin relocation preserves surface pixels, animation and child placement.
 - Separate Final and Work pictures with independent Front/Right/Top work views
   and saved output-format presets.
 - Graph curves follow channel selection, highlight the active curve and retain
@@ -19,8 +21,8 @@ This is a development preview, not a production-ready release.
 
 ## Install and run
 
-Download the Windows ZIP from the release assets and extract the entire archive
-to a writable folder. Run Cuebase.exe from that folder; retain the bundled DLLs
+Download the Windows artifact linked in README.md and extract the application
+ZIP inside it to a writable folder. Run Start Cuebase.cmd; retain the bundled DLLs
 and plugins. Save your work and close the running application before replacing it.
 An unsigned preview may trigger Windows reputation prompts; no code-signing
 certificate is claimed for this build.

@@ -10,14 +10,14 @@ animation, audio assets and broadcast planning.
 
 ## Windows download
 
-The verified preview candidate is commit `504fc88`.
-[Open its successful build and downloads](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41591759703).
+The verified preview candidate is commit `6e662d2`.
+[Open its successful build and downloads](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41878592859).
 Select the **Cuebase-Windows** artifact. GitHub may require sign-in for Actions
 downloads. A public Releases download has not yet been published.
 
 1. Download and extract the artifact ZIP, then extract the application ZIP inside.
 2. Keep the complete extracted folder, including DLLs and plugins.
-3. Launch `Cuebase.exe`. Save and close Cuebase before replacing an older build.
+3. Double-click `Start Cuebase.cmd`. Save and close Cuebase before replacing an older build.
 
 Only Windows is packaged at this checkpoint. No signed installer, macOS build or
 Linux build is claimed.
