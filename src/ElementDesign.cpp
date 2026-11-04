@@ -766,13 +766,18 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
             const double paddingY = qMax(0, tex.height() - qBound(1, qRound(obj.h*kPxPerUnit), 4096)) / (2*kPxPerUnit);
             const double hw = obj.w / 2 + paddingX, hh = obj.h / 2 + paddingY;
             const QVector3D corners[4] = {{float(-hw), float(hh), 0}, {float(hw), float(hh), 0}, {float(hw), float(-hh), 0}, {float(-hw), float(-hh), 0}};
+            // Compose the origin compensation once. Adding it to each float
+            // corner loses precision and makes unchanged textures shimmer after
+            // moving their pivot (especially padded, rounded surfaces).
+            QMatrix4x4 surfaceWorld = W;
+            surfaceWorld.translate(obj.surfaceOffset());
             QPolygonF dst;
             double depth = 0;
             bool ok = true;
             for (const QVector3D &c : corners) {
                 QPointF pt;
                 double d;
-                if (!cam.toScreen(W.map(c+obj.surfaceOffset()), rect, &pt, &d)) {
+                if (!cam.toScreen(surfaceWorld.map(c), rect, &pt, &d)) {
                     ok = false;
                     break;
                 }
