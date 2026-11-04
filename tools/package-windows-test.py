@@ -125,11 +125,14 @@ def stage():
     for name in ('CMakeLists.txt', 'CMakePresets.json', 'Run-Cuebase.cmd', 'Build-Cuebase.cmd', 'package-source.py'):
         copy(ROOT/name, source/name)
     copy(Path(__file__), source/'tools'/Path(__file__).name)
+    for name in ('FormAnimation.cuebuild', 'form-start.png', 'form-end.png'):
+        copy(ROOT/'artifacts'/name, STAGE/'examples'/name)
     for name in ('mediamtx.exe', 'mediamtx.yml', 'LICENSE', 'README.md'):
         if (ROOT/'tools'/'mediamtx'/name).exists():
             copy(ROOT/'tools'/'mediamtx'/name, STAGE/'optional-local-receiver'/name)
     (STAGE/'Start Cuebase.cmd').write_text('@echo off\ncd /d "%~dp0app"\nstart "Cuebase" "Cuebase.exe"\n', encoding='utf-8')
-    (STAGE/'README.txt').write_text('Cuebase Windows test build - 25 October 2026\n\nExtract the whole ZIP, then double-click Start Cuebase.cmd. Do not run it inside the ZIP.\nThe app folder includes Qt, media codecs and FFmpeg; MSYS2 is not required to launch it.\nYour existing Cuebase profile is used when launching the app. Back up important projects before testing.\n\nThis is a development checkpoint, not completion of the full requested feature list.\nSee source/CLAUDE-REQUESTS.md and source/COMPLETION-CHECKLIST.md for exact scope.\nThe source folder contains the complete app source, tests, assets and backend setup.\nSupabase credentials are not configured in this package.\nThe optional-local-receiver folder is only for explicitly starting a local MediaMTX receiver.\nThird-party license notices are included. No Windows/macOS/Linux production release is claimed.\n', encoding='utf-8')
+    revision = os.environ.get('GITHUB_SHA', 'local build')
+    (STAGE/'README.txt').write_text(f'Cuebase Windows development preview\nBuild: {NAME}\nRevision: {revision}\n\nExtract the whole ZIP, then double-click Start Cuebase.cmd. Keep the app folder and its bundled DLLs together.\nMSYS2 is not required to launch this package.\n\nTRY FORM ANIMATION\nDrag examples/FormAnimation.cuebuild into Build, select Animated form, and press Play.\nUse Tab and the key icon to open the influence controls. The examples folder includes exported start/end frames.\nSee source/FORM-ANIMATION.md for controls and supported operations.\n\nThe Final picture stays visible while you inspect Front, Right or Top in the Work viewport.\nThe source folder contains app source, tests, assets and backend setup.\nVerification reports are in verification/.\n\nThis is a development checkpoint; source/COMPLETION-CHECKLIST.md records unfinished requirements.\nYour existing Cuebase profile is used. Supabase service configuration is deferred.\nThe optional-local-receiver folder contains an optional localhost test receiver.\nThird-party license notices are included.\n', encoding='utf-8')
     print(STAGE, flush=True)
 
 def verify():

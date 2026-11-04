@@ -15,6 +15,9 @@
 #include "BuildWorkspace.h"
 #include "FormAnimation.h"
 #include "FormAnimationPanel.h"
+#include "FrameExport.h"
+#include <QSaveFile>
+#include <QTemporaryDir>
 #include "OutputFormatDialog.h"
 #include "PropertyInspector.h"
 #include "UiTheme.h"
@@ -137,6 +140,16 @@ private slots:
         FormAnimationPanel panel(&model);panel.resize(380,350);panel.show();QTest::qWait(20);auto *input=panel.findChild<QDoubleSpinBox*>("formInfluence");input->setValue(.25);QCursor::setPos(input->mapToGlobal(input->rect().center()));QTest::keyClick(input,Qt::Key_I);QVERIFY(model.propertyIsKeyed(*model.active(),path,0));
         model.setTime(1000);input->setValue(.75);QCursor::setPos(input->mapToGlobal(input->rect().center()));QTest::keyClick(input,Qt::Key_K);QCOMPARE(model.active()->track(path)->keys.size(),2);
         input->setValue(.5);const auto before=model.design.toJson();panel.findChild<QPushButton*>("formRemoveKey")->click();QVERIFY(!model.propertyIsKeyed(*model.active(),path,1000));QVERIFY(model.undo());QCOMPARE(model.design.toJson(),before);
+    }
+    void formAnimationExportsAfterReopen(){
+        auto design=ElementDesign::defaultScene();design.durationMs=2000;design.camera()->cam.orthoScale=12;
+        DObject object;object.id="form-demo";object.name="Animated form";object.mesh=Mesh::primitive("Cube");object.base.rot={20,0,25};object.mat.color=QColor("#5da9ff");const auto zero=object.mesh;
+        for(auto &vertex:object.mesh.v)if(vertex.z()>0)vertex.setZ(vertex.z()+1.5f);
+        const auto path=FormAnimation::capture(object,zero,"Lift top face");object.keyChannel(path,0,0);object.keyChannel(path,1000,1);object.keyChannel(path,2000,0);design.objects.append(object);
+        const auto json=design.toJson().toUtf8();QSaveFile example("artifacts/FormAnimation.cuebuild");QVERIFY(example.open(QIODevice::WriteOnly));QCOMPARE(example.write(json),json.size());QVERIFY(example.commit());const auto restored=ElementDesign::fromJson(QString::fromUtf8(json));
+        QTemporaryDir temporary;FrameExportOptions options;options.size={640,360};options.endFrame=26;const auto result=exportSceneFrames(restored,temporary.path()+"/frames",options);QVERIFY2(result.success,qPrintable(result.error));QCOMPARE(result.written,26);
+        for(int frame:{0,25}){const QImage exported(temporary.path()+QString("/frames/frame_%1.png").arg(frame,6,10,QChar('0')));QVERIFY(!exported.isNull());QCOMPARE(exported.convertToFormat(QImage::Format_ARGB32),render(design,frame*40).convertToFormat(QImage::Format_ARGB32));QVERIFY(exported.save(QString("artifacts/form-%1.png").arg(frame==0?"start":"end")));}
+        QVERIFY(render(design,0)!=render(design,1000));
     }
     void graphSelectionActiveAndEmptyRemainStable(){
         BuildModel model;model.reset(scene());model.select("subject");int axisIndex=0;for(const auto &axis:QStringList{"x","y","z"}){model.active()->keyChannel("position."+axis,0,0);model.active()->keyChannel("position."+axis,1000,2.-.6*axisIndex++);}
