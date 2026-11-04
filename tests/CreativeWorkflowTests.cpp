@@ -17,6 +17,7 @@
 #include "FormAnimation.h"
 #include "FormAnimationPanel.h"
 #include "FrameExport.h"
+#include "CueSequence.h"
 #include <QSaveFile>
 #include <QTemporaryDir>
 #include "OutputFormatDialog.h"
@@ -37,6 +38,18 @@ class CreativeWorkflowTests : public QObject {
         for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->data(0,Qt::UserRole+1).toString()==path)return *it;return nullptr;
     }
 private slots:
+    void nestedCueBoardRespectsTotalSectionLimit(){
+        auto source=ElementDesign::defaultScene();source.durationMs=1000;
+        const QJsonObject cue{{"id","child"},{"name","Child"},{"start",0},{"end",1000},{"repeat",100},{"hold",false}};
+        source.animationCues={cue};const auto nestedEntry=newCueBoardEntry(cue);
+        const QJsonObject section{{"design",source.toJson()},{"board",QJsonArray{nestedEntry}},{"boardSettings",QJsonObject{{"repeat",100}}}};
+        auto outer=newCueBoardEntry(cue);outer["repeat"]=1;outer["sections"]=QJsonArray{section};
+        const auto exact=compileCueBoard(source,QJsonArray{outer},{});QVERIFY2(exact.error.isEmpty(),qPrintable(exact.error));QCOMPARE(exact.steps.size(),10000);QCOMPARE(exact.duration(),qint64(10000000));
+        const auto last=exact.sample(9999999);QVERIFY(last.visible);QCOMPARE(last.step,9999);QCOMPARE(last.frame,qint64(999));
+        outer["repeat"]=2;outer["sections"]=QJsonArray{section,section};
+        const auto excessive=compileCueBoard(source,QJsonArray{outer},{});QVERIFY(!excessive.error.isEmpty());QVERIFY(excessive.steps.size()<=10000);QCOMPARE(excessive.duration(),qint64(0));QVERIFY(!excessive.sample(0).visible);
+        outer["repeat"]=1;const auto siblings=compileCueBoard(source,QJsonArray{outer,outer},{});QVERIFY(!siblings.error.isEmpty());QVERIFY(siblings.steps.size()<=10000);
+    }
     void initTestCase(){QStandardPaths::setTestModeEnabled(true);qApp->setApplicationName("CuebaseCreativeWorkflowTests");installUiBehavior(qApp);applyUiTheme("Studio Blue",false);QDir().mkpath("artifacts");}
     void convertedSurfacePreservesAppearance_data(){QTest::addColumn<QString>("kind");for(const auto &kind:QStringList{"Shape","Text","Image"})QTest::newRow(qPrintable(kind))<<kind;}
     void convertedSurfacePreservesAppearance(){

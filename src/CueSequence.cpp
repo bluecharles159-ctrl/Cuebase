@@ -73,6 +73,11 @@ CuePlan compileCueBoard(const ElementDesign &source,const QJsonArray &board,cons
                 std::sort(children.begin(),children.end(),[](const auto &a,const auto &b){return a["start"].toDouble()<b["start"].toDouble();});
                 QJsonArray childBoard=section["board"].toArray();if(!section.contains("board"))for(const auto &child:children)childBoard.append(newCueBoardEntry(child));
                 auto nested=compileCueBoard(design,childBoard,section["boardSettings"].toObject(),depth+1);if(!nested.error.isEmpty()){plan.error=nested.error;return plan;}
+                // Each child is bounded independently, but repeated children
+                // must also respect the containing board's total limit.
+                if(nested.steps.size()>10000-plan.steps.size()){
+                    plan.error="This board exceeds 10,000 playback sections. Reduce its repeat counts.";return plan;
+                }
                 const int childFirst=plan.steps.size();for(auto step:nested.steps){step.entryId=entry["id"].toString();step.iteration=n;if(step.loopTo>=0)step.loopTo+=childFirst;plan.steps.append(step);}
                 if(plan.steps.size()>childFirst){auto &last=plan.steps.last();last.holdMs+=holdTime(timing);last.manualHold=last.manualHold||manualHold(timing);}
             }else{
