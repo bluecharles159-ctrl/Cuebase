@@ -2,13 +2,13 @@
 
 ## Latest verified checkpoint
 
-[Build workflow 41878592859](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41878592859)
-passes for `6e662d26a0e03a98ee3fbbd8a772311eca693859`: all seven CTest suites,
-25 native editor cases, 27 native creative-workflow cases, and packaged editor,
+[Build workflow 41922990132](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41922990132)
+passes for `cbb2b4e581e036b7516c5ad2888b2b32301d63f1`: all seven CTest suites,
+25 native editor cases, 29 native creative-workflow cases, and packaged editor,
 creative and component checks with MSYS2 removed from PATH. No failed or skipped
 cases in the native reports.
-[Windows ZIP](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41878592859/artifacts/13348795649)
-and [reports/screenshots](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41878592859/artifacts/13347224281).
+[Windows ZIP](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41922990132/artifacts/13367793388)
+and [reports/screenshots](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41922990132/artifacts/13367843186).
 
 This checkpoint verifies form influence at partial poses, extrusion/inset and
 subdivision, modifier application, join/separate, I/K hover keys, modified-key
@@ -23,13 +23,19 @@ exact surface pixels, graph selection/active emphasis, constrained key transform
 clipboard, cancellation and independent Work/Final views. The broader Build suite
 checks Bezier handles, interpolation and persisted graph navigation. Native
 captures for the origin overlay, active curves, dual views and form panel were
-inspected. Task 06 remains open for outward effects on deformed surfaces and
+inspected. Task 06 remains open for outward effects on more complex faces and
 combined surface materials; this is a development preview.
 
 The modifier card and Ctrl+Shift+M shortcut pass prefix-stack baking, undo/redo,
 Form Animation and locked-object guards. Native zoom tests cover the cursor
 anchor at ordinary and extreme scales, adaptive ruler spacing and unchanged
 scene/Final pixels. Origin dots remain visible over corner selection handles.
+
+Planar four-corner form deformation preserves outward shadow/blur pixels, with
+keyed zero/full poses, save/reopen and undo covered by two additional native and
+packaged cases. More complex surface topology and material combinations remain
+open; this is not completion of task 06. The shadow/blur proof captures were
+inspected, and the downloaded evidence ZIP matches GitHub's SHA-256 digest.
 
 ### Earlier checkpoints
 

@@ -24,6 +24,11 @@ Do not convert an untested feature into a completed item merely because it exist
 
 ## Immediate repair pass
 
+2026-11-04 follow-up: run 41922990132 verifies outward shadow/blur on planar
+four-corner Form Animation surfaces, keyed zero/full appearance, save/reopen
+and undo. Native creative cases increase to 29. Task 06 stays open for wider
+surface topologies/materials; completion remains 29 of 84.
+
 2026-11-04: origins, modifier application, graph editing and zoom pass run
 41878592859, including
 native Windows and the packaged creative runtime. Surface origin relocation

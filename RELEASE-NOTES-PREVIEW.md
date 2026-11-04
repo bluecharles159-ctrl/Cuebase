@@ -10,6 +10,7 @@ This is a development preview, not a production-ready release.
   join/separate preserves their animation. Hover Influence and press I or K.
 - An editable Form Animation example with exported start/end frames.
 - Origin relocation preserves surface pixels, animation and child placement.
+- Planar four-corner form warps retain outward shadows and blur.
 - Separate Final and Work pictures with independent Front/Right/Top work views
   and saved output-format presets.
 - Graph curves follow channel selection, highlight the active curve and retain
@@ -31,8 +32,8 @@ certificate is claimed for this build.
 
 - DSP processing is offline and creates a new file; it is not a live mixer insert.
 - Form topology transfer rejects incompatible changes. Text/shape/image surfaces
-  keep their original look on conversion; outward effects on deformed faces and
-  combined surface materials still need further work.
+  keep their original look on conversion; outward effects on more complex faces
+  and combined surface materials still need further work.
 - The broader feature backlog remains incomplete. Account synchronization still
   requires service configuration. macOS and Linux packages are not included.
 - Back up valuable projects before testing this preview.

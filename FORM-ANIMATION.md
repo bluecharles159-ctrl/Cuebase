@@ -29,10 +29,11 @@ save/reopen. The same evaluator feeds Build, Studio and PNG rendering.
 
 Text, images and shapes retain their source appearance and relevant Inspector
 controls when converted to editable surfaces. Entering the mode preserves output
-pixels, including padded shadows. Arbitrary deformed surfaces currently map their
-content to edited faces; outward effects on those faces, combined surface
-materials still belong to the open
-surface-workflow task. They are not claimed as completed 3D material support.
+pixels, including padded shadows. Convex planar four-corner forms warp the full
+padded texture, retaining outward shadow and blur during deformation. Other
+deformed surfaces map content to individual faces; outward effects on those
+faces and combined surface materials remain part of the open surface workflow.
+These features are not complete 3D material support.
 
 ## Try the editable example
 
@@ -43,7 +44,7 @@ frames at zero and full influence. Open the form controls to adjust or rekey it.
 
 ## Verification
 
-GitHub run **41878592859**, commit **6e662d2**, passes seven suites, 27 native
+GitHub run **41922990132**, commit **cbb2b4e**, passes seven suites, 29 native
 creative cases and 25 native editor cases. Packaged creative, editor and component
 checks pass without a development toolchain on PATH. The tests include origin
 changes, text resizing, animated form export after reopening, partial influence,

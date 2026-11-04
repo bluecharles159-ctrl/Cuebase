@@ -4,8 +4,8 @@ Updated 2026-11-04. **29 of 84 tasks completed — 55 remaining.**
 
 The Claude transcript adds four distinct acceptance groups (81–84). Row 06 remains
 open: converted surfaces now retain their Inspector controls and unchanged
-appearance, but outward effects on deformed faces and combined surface materials
-still need work. The counter does not treat the narrower checks as full completion.
+appearance. Planar four-corner forms now preserve outward effects; other deformed
+faces and combined surface materials still need work. The counter does not treat the narrower checks as full completion.
 
 These are fixed acceptance groups, not equal units of effort or a release-readiness
 percentage. Partial implementation stays unchecked. Completed rows have recorded
