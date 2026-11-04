@@ -64,6 +64,23 @@ private slots:
         const auto displayed=model.active()->evaluated(0);QVector3D low,high;QVERIFY(FormAnimation::evaluate(*model.active(),0).bounds(low,high));QVERIFY(qAbs(high.x()-low.x()-displayed.w)<.0001);QVERIFY(qAbs(high.y()-low.y()-displayed.h)<.0001);
         QCOMPARE(render(ElementDesign::fromJson(model.design.toJson())),render(design));
     }
+    void planarFormKeepsOutwardEffects_data(){QTest::addColumn<bool>("shadow");QTest::newRow("shadow")<<true;QTest::newRow("blur")<<false;}
+    void planarFormKeepsOutwardEffects(){
+        QFETCH(bool,shadow);BuildModel model;auto design=scene("Text");design.world.transparent=true;
+        auto *text=design.find("subject");text->text.clear();text->style=QJsonObject{{"text.background",true},{"text.backgroundColor","#ffdd2233"}};
+        text->style["shadow.enabled"]=shadow;text->style["shadow.color"]="#ff00ff00";text->style["shadow.x"]=60.;text->style["shadow.y"]=30.;text->style["shadow.blur"]=0.;text->style["effects.blur"]=shadow?0.:12.;
+        model.reset(design);model.select("subject");const auto initial=render(model.design);QVERIFY(model.enterEdit());QCOMPARE(model.active()->mesh.v.size(),4);
+        model.pushUndo(true);const auto zero=model.active()->mesh;model.active()->mesh.v[0].setX(model.active()->mesh.v[0].x()+.7f);
+        const auto path=FormAnimation::capture(*model.active(),zero,"Warp corner");QVERIFY(!path.isEmpty());model.active()->keyChannel(path,0,0);model.active()->keyChannel(path,1000,1);model.notify();
+        QCOMPARE(render(model.design,0),initial);const auto frame=render(model.design,1000);QVERIFY(frame!=initial);
+        const auto camera=model.design.sceneCamera(1000,640./360.);const auto world=model.design.worldMatrix(*model.active(),1000);QPolygonF face;
+        const auto mesh=FormAnimation::evaluate(*model.active(),1000);for(int vertex:mesh.f.first()){QPointF at;QVERIFY(camera.toScreen(world.map(mesh.v[vertex]),QRectF(0,0,640,360),&at));face<<at;}
+        auto without=model.design;without.find("subject")->style["shadow.enabled"]=false;without.find("subject")->style["effects.blur"]=0.;const auto plain=render(without,1000);
+        auto outside=[&](const QImage &image){int count=0;for(int y=0;y<image.height();++y)for(int x=0;x<image.width();++x)if(qAlpha(image.pixel(x,y))>30&&!face.containsPoint(QPointF(x+.5,y+.5),Qt::OddEvenFill))++count;return count;};
+        QVERIFY2(outside(frame)>outside(plain)+100,"The effect must remain visible outside the deformed face, not be clipped to its triangles.");
+        const auto restored=ElementDesign::fromJson(model.design.toJson());QCOMPARE(render(restored,1000),frame);QVERIFY(frame.save(shadow?"artifacts/form-surface-shadow.png":"artifacts/form-surface-blur.png"));
+        QVERIFY(model.undo());QCOMPARE(render(model.design),initial);
+    }
     void surfaceOriginsPreservePictureAndChildren_data(){convertedSurfacePreservesAppearance_data();}
     void surfaceOriginsPreservePictureAndChildren(){
         QFETCH(QString,kind);Library lib;BuildModel model;auto design=scene(kind);DObject child;child.id="child";child.type="Shape";child.parentId="subject";child.w=1;child.h=.5;child.base.loc={1,0,1};child.mat.color=Qt::yellow;design.objects.append(child);model.reset(design);model.select("subject");

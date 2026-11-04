@@ -723,6 +723,38 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
                 // Retain the source surface on edited faces. Rest coordinates
                 // provide stable texture mapping when vertices are animated.
                 if (!surface.isNull() && clipped.size()==vp.size()) {
+                    // A planar four-corner surface can warp its entire padded
+                    // texture. Triangle clipping would cut off its outward
+                    // shadow and blur as soon as one corner is animated.
+                    if(m.v.size()==4 && m.f.size()==1 && restSurface.v.size()==4 && L.size()==4
+                       && qAbs(QVector3D::dotProduct(wp[3]-wp[0],n))<1e-4f){
+                        QPolygonF uv;bool convex=true;double winding=0;
+                        for(int corner=0;corner<4;++corner){
+                            const auto a=it.poly[(corner+1)%4]-it.poly[corner];
+                            const auto b=it.poly[(corner+2)%4]-it.poly[(corner+1)%4];
+                            const double cross=a.x()*b.y()-a.y()*b.x();
+                            if(qAbs(cross)<1e-8 || (winding!=0 && cross*winding<0))convex=false;
+                            winding=cross;
+                            const auto local=restSurface.v[L[corner]]-obj.surfaceOffset();
+                            uv<<QPointF((local.x()+obj.w/2)*kPxPerUnit+padX,(obj.h/2-local.y())*kPxPerUnit+padY);
+                        }
+                        if(convex && QTransform::quadToQuad(uv,it.poly,it.tr)){
+                            // Reject a projective pole inside the padded bitmap.
+                            // Such a warp is unbounded even when the face is visible.
+                            double sign=0;bool bounded=true;
+                            for(const auto &corner:QPolygonF(QRectF(surface.rect()))){
+                                const double denominator=it.tr.m13()*corner.x()+it.tr.m23()*corner.y()+it.tr.m33();
+                                if(qAbs(denominator)<1e-8 || (sign!=0 && denominator*sign<0))bounded=false;
+                                sign=denominator;
+                            }
+                            if(bounded){
+                                it.textured=true;it.img=surface;
+                                it.backdrop=obj.propertyBase("backdrop.blur");it.brightness=obj.propertyBase("backdrop.brightness");
+                                it.backdropClip=it.tr.map(surfaceOutline(QRectF(padX,padY,surface.width()-2*padX,surface.height()-2*padY),obj));
+                                items.append(it);continue;
+                            }
+                        }
+                    }
                     bool textured=false;
                     for(int triangle=1;triangle+1<L.size();++triangle){
                         const int indices[3]={L[0],L[triangle],L[triangle+1]};
