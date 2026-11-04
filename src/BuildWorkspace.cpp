@@ -1060,7 +1060,8 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
             for (QPushButton *b : {up, dn, rm}) b->setFixedWidth(30);
             head->addWidget(on, 1);
             auto *apply=new QPushButton(uiIcon("apply"),"");apply->setObjectName("applyModifier");apply->setFixedWidth(26);apply->setToolTip(i==0?"Apply modifier · Ctrl+Shift+M":"Apply this modifier and the preceding stack to the mesh");apply->setEnabled(!m->editMode&&!o->locked);head->addWidget(apply);
-            connect(apply,&QPushButton::clicked,this,[=,this]{say(m->applyModifier(oid,i)?"Modifier applied to mesh":"Exit Edit Mode and select an unlocked mesh",false);});
+            apply->setAccessibleName(i==0?"Apply modifier":"Apply modifier and preceding stack");
+            connect(apply,&QPushButton::clicked,this,[=,this]{const bool applied=m->applyModifier(oid,i);say(applied?"Modifier applied to mesh":"Exit Form Animation and select an unlocked mesh",!applied);});
             head->addWidget(up);
             head->addWidget(dn);
             head->addWidget(rm);

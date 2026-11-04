@@ -116,6 +116,26 @@ private slots:
         const auto before=model.design.toJson();const auto atZero=model.design.evalMesh(*o,0).toJson();const auto atFull=model.design.evalMesh(*o,1000).toJson();
         model.setTime(500);QVERIFY(model.applyModifier(o->id,0));o=model.active();QVERIFY(o->mods.isEmpty());QCOMPARE(o->track(path)->keys.size(),2);QCOMPARE(model.design.evalMesh(*o,0).toJson(),atZero);QCOMPARE(model.design.evalMesh(*o,1000).toJson(),atFull);QVERIFY(model.undo());QCOMPARE(model.design.toJson(),before);
     }
+    void modifierCardAndShortcutPreserveStack(){
+        Library lib;BuildWorkspace workspace(&lib);workspace.resize(1300,850);workspace.show();
+        auto *model=workspace.findChild<BuildModel*>();auto *canvas=workspace.findChild<BuildCanvas*>();QVERIFY(model&&canvas);
+        model->reset(ElementDesign::defaultScene());model->addMesh("Cube");
+        Modifier mirror;mirror.type="Mirror";mirror.ax=true;mirror.options["offset.x"]=2.;model->active()->mods.append(mirror);
+        Modifier array;array.type="Array";array.count=2;array.rel={2,0,0};model->active()->mods.append(array);model->notify();
+        auto *tab=workspace.findChild<QPushButton*>("buildTab_Modifiers");QVERIFY(tab);tab->click();
+        auto refresh=[&]{QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);QCoreApplication::processEvents();};refresh();
+        auto expand=[&]{for(auto *section:workspace.findChildren<QToolButton*>())if((section->text()=="MIRROR"||section->text()=="ARRAY")&&!section->isChecked())section->click();};expand();
+        auto buttons=workspace.findChildren<QPushButton*>("applyModifier");QCOMPARE(buttons.size(),2);QVERIFY(buttons[1]->isVisible());
+        const auto before=model->design.toJson();const auto expected=model->design.evalMesh(*model->active(),0).toJson();
+        QTest::mouseClick(buttons[1],Qt::LeftButton);QVERIFY(model->active()->mods.isEmpty());QCOMPARE(model->active()->mesh.toJson(),expected);
+        QVERIFY(model->undo());QCOMPARE(model->design.toJson(),before);QVERIFY(model->redo());QCOMPARE(model->active()->mesh.toJson(),expected);QVERIFY(model->undo());refresh();
+        canvas->setFocus();QTest::keyClick(canvas,Qt::Key_M,Qt::ControlModifier|Qt::ShiftModifier);QCOMPARE(model->active()->mods.size(),1);QCOMPARE(model->active()->mods.first().type,QString("Array"));QCOMPARE(model->design.evalMesh(*model->active(),0).toJson(),expected);
+        QVERIFY(model->undo());QCOMPARE(model->design.toJson(),before);QVERIFY(model->enterEdit());refresh();
+        buttons=workspace.findChildren<QPushButton*>("applyModifier");QCOMPARE(buttons.size(),2);for(auto *button:buttons)QVERIFY(!button->isEnabled());
+        const auto editing=model->design.toJson();QTest::keyClick(canvas,Qt::Key_M,Qt::ControlModifier|Qt::ShiftModifier);QCOMPARE(model->design.toJson(),editing);
+        model->exitEdit();model->active()->locked=true;model->notify();refresh();buttons=workspace.findChildren<QPushButton*>("applyModifier");QCOMPARE(buttons.size(),2);for(auto *button:buttons)QVERIFY(!button->isEnabled());
+        const auto locked=model->design.toJson();QTest::keyClick(canvas,Qt::Key_M,Qt::ControlModifier|Qt::ShiftModifier);QCOMPARE(model->design.toJson(),locked);
+    }
     void joinedAndSeparatedFormsRetainAnimation(){
         BuildModel model;model.reset(ElementDesign::defaultScene());const auto first=model.addMesh("Cube");auto *o=model.active();const auto zero=o->mesh;o->mesh.v[0].setX(2);
         const auto path=FormAnimation::capture(*o,zero,"Corner");o->keyChannel(path,0,0);o->keyChannel(path,1000,1);
