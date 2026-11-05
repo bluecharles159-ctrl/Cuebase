@@ -1,6 +1,6 @@
 # Cuebase completion ledger
 
-Updated 2026-11-04. This is a development record, not a release certificate.
+Updated 2026-11-05. This ledger records verified development checkpoints.
 The user-facing counter is in COMPLETION-CHECKLIST.md: 84 acceptance groups.
 Update that counter after each verified completion; partial work remains open.
 The user requires the complete requested scope before final delivery. A successful
@@ -23,6 +23,11 @@ Mobbin gallery access has not been established and must not be claimed.
 Do not convert an untested feature into a completed item merely because it exists.
 
 ## Immediate repair pass
+
+2026-11-05. Windows build 42 verifies tasks 08 and 12 across Build, Studio
+and playout. Native checks cover cue extraction, selection highlighting, nested
+edits, independent copies, trim and extension, and scheduled and manual live
+edit boundaries. The completion count is 31 of 84, with 53 remaining.
 
 2026-11-04 follow-up: run 41922990132 verifies outward shadow/blur on planar
 four-corner Form Animation surfaces, keyed zero/full appearance, save/reopen
@@ -146,7 +151,6 @@ The latest evidence is described in VERIFICATION.md: 44 Build cases and 7 focuse
 | Graph editor, channel selection, handles, interpolation, key transforms/copy/paste, equal-value spans and persistent navigation | Existing graph regressions are not a complete audit of every requested shortcut and visual state. |
 | Screen-element browser, saved-scene switching, crops, playlists, metadata and presets | Existing workflows require a full visual and persistence review. |
 | Editable general text/media fields preserving animations | Existing text and media validation coverage; audit naming syntax, labels and all supported object types. |
-| Recursive cue boards, duplication, holds/loops, delay scheduling, durations and on-air edit protection | Existing compiler/Studio coverage; verify per-play changes and nested UI, preview highlighting, trim/extension semantics and live edit boundaries together. |
 | Studio timeline, removable main-track items, exact clip duration, fixed playhead and navigation | Source-aligned waveform/thumbnail strips and persistent settings passed focused verification, including both trim modes. Fixed-center navigation exists; the requested primary-sequence architecture and native/performance review remain open. |
 | Replay effects, private scrubbing with live picture-in-picture, return-to-live and emergency content | Partial implementation and regression coverage. Verify full UX, transitions, editable error messages and recovery. Live-camera DVR replay is not implemented. |
 | Channel identity, circular imported logos, onboarding, isolated channels and multiple windows | Circular logo treatment exists; production accounts and isolated multi-channel workspaces remain open. |

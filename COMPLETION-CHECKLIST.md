@@ -1,6 +1,6 @@
 # Cuebase completion counter
 
-Updated 2026-11-04. **29 of 84 tasks completed — 55 remaining.**
+Updated 2026-11-05. **31 of 84 tasks completed — 53 remaining.**
 
 The Claude transcript adds four distinct acceptance groups (81–84). Row 06 remains
 open: converted surfaces now retain their Inspector controls and unchanged
@@ -27,11 +27,11 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 - [x] 05. Select All feedback without unintended transforms or hidden selection.
 - [ ] 06. Parented Edit Mode world coordinates and full shape appearance preservation, including Background/Effects controls and rendering after conversion.
 - [x] 07. Independent per-object inspector expansion, including text Typography defaults. Verified selection/default/persistence workflow in `portable-editor-results.txt`.
-- [ ] 08. Independent frame-range cues, empty state, extraction and timeline highlighting.
+- [x] 08. Independent frame-range cues, empty state, extraction and timeline highlighting. Build 42 verifies the selected play's range in Build and Studio, the selected-key dialog, cancel cleanup and source isolation. The native graph capture shows the highlight between the selected keys. Save, undo and restricted playback also pass in the Build suite.
 - [ ] 09. Rounded cue creation/edit modal and polished cue-board cards/padding.
 - [x] 10. Loop counts and independent per-play holds, timings and Studio controls. Verified finite/infinite edits and preserved per-play holds in `cue-loop-editor-results.txt` and `cue-loop-studio-results.txt`.
 - [x] 11. Build manual hold/continue for individual cue plays.
-- [ ] 12. Nested cue boards, duplication, delays, scheduling, trims and on-air edit protection. Build 38 verifies nested text edits, independent delayed placements, stacking order and save/reopen. End-to-end duplication, trimming and live boundary coverage remain open.
+- [x] 12. Nested cue boards, duplication, delays, scheduling, trims and on-air edit protection. Build 42 verifies the native Studio controls, delayed independent placements, duplicate/extend/left trim, repeated output frames, reopening, the five-minute edit boundary and early manual takes.
 - [x] 13. Selected-only graph curves, active-curve emphasis and Translation labels. GitHub run 41591759703 verifies selected/empty/multiple curves, activation from both the tree and curve, and stable selection after rebuild in offscreen and native Windows modes. Active-curve capture reviewed.
 - [x] 14. Graph handles, interpolation, key transforms/copy/paste and navigation persistence. Run 41876580763 passes handle dragging/evaluation, mixed interpolation, pan/zoom persistence, key clipboard and duplicate cancel, constrained keyboard scale/move, Enter confirmation and right-click cancellation. Creative interactions also pass native Windows and packaged-runtime checks.
 - [x] 15. Orange modified key replaces the saved key; unchanged yellow key removes it.

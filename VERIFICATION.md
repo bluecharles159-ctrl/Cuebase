@@ -2,6 +2,23 @@
 
 ## Latest verified checkpoint
 
+Build 42 passed all seven CTest suites and the portable runtime checks at
+`2df4024`. The native Windows reports recorded 25 editor, 32 creative and
+5 cue-board passes, including suite setup and cleanup, with zero failures or skips.
+[Windows ZIP](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41981933553/artifacts/13394895499)
+and [test reports and captures](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41981933553/artifacts/13394780712).
+
+The Build extraction test opens play two with its own authored time range,
+selects two graph keys and opens the cue dialog. The native capture shows the
+green selection between those keys. Cancel clears it. Studio tests duplicate
+a board through the timeline menu, extend it, trim from the left, sample a
+frame in the next cycle and reopen the saved copy. They also check saving at
+exactly five minutes before a play, rejecting a save one millisecond closer,
+and protecting a play taken to air early. Tasks 08 and 12 bring the verified
+count to **31 of 84, with 53 remaining**.
+
+## Earlier Studio checkpoint
+
 Build 38 passed the Windows workflow for `02b1f32`. Studio interaction coverage
 opens a nested cue without dirtying the draft, edits exposed text on a converted
 surface, and renders a delayed, repeated copy. The saved copy preserves its

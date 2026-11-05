@@ -8,6 +8,8 @@ Cue and board duration includes every timed hold and repetition. For example, a 
 
 **Render** saves the board and places an independent snapshot on a free overlay layer at the current playhead plus the delay, initially three seconds. Set zero for immediate placement or enter a longer delay in seconds. Infinite boards are bounded by the placed clip's end. **Continue on air** advances a rendered copy past a hold/loop; **Hide on air** hides that copy. Neither changes other copies or the source. Extending a finite board beyond its original total length repeats it.
 
+To try a different cut, right-click the placed board and choose **Duplicate on another layer**. Drag the right edge of the copy to repeat the board, then drag the left edge to choose where playback starts. The retained section keeps its timing even when it starts in a later repetition. Open **Edit this cue board** on the copy to change its text or per-play settings.
+
 Right-click a board clip on the Studio timeline to edit that copy or duplicate it onto a free layer. Keyframe/board edits while broadcasting require at least five minutes before the affected section. Played or near-air sections are protected. Closing an unsaved timeline-board editor offers Save, Discard or Cancel.
 
 Hover over the main viewport to use its draggable preview scrubber. Scrubbing opens a private preview while a small bottom-right monitor keeps showing live output. **Return to live** synchronizes the operator view with a short graphic transition; the outgoing stream is unaffected.
