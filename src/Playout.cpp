@@ -341,6 +341,7 @@ void Playout::start(int segment, qint64 inSegmentMs) {
     if (m_segs.isEmpty()) return;
     if (m_state == Stopped) {
         m_finished.clear();
+        m_advancedBoardStarts.clear();
         m_total = 0;
         m_state = Playing;
         m_index = -1;
@@ -411,6 +412,7 @@ void Playout::playProgram(const QString &programId) {
 void Playout::stop() {
     m_finishAfterReplay=false;
     m_manualCues.clear();
+    m_advancedBoardStarts.clear();
     if (m_state == Stopped) return;
     m_state = Stopped;
     m_index = -1;

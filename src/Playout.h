@@ -88,6 +88,8 @@ public:
     GraphicPlayback graphicPlayback(const Element &element,qint64 timelineTime,qint64 placementStart=-1,qint64 offset=0) const;
     void triggerElementAnimation(const QString &elementId,const QString &cueId);
     void advanceElementCue(const QString &elementId);
+    bool canEditPlacementBoard(const Element &before, const Element &after,
+                               const Placement &placement, QString *reason) const;
 
 public slots:
     void start(int segment = 0, qint64 inSegmentMs = 0);
@@ -130,6 +132,7 @@ private:
     DesignAudio *m_designAudio = nullptr;
     QHash<QString,QPair<QString,ElementDesign>> m_audioDesigns;
     QHash<QString,QPair<QString,qint64>> m_manualCues;
+    QHash<QString,qint64> m_advancedBoardStarts;
     mutable QHash<QString,QPair<QString,QJsonArray>> m_cueCache;
     mutable QHash<QString,QPair<QString,CuePlan>> m_boardCache;
     void resetSounds();

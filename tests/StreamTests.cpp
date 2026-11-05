@@ -551,6 +551,30 @@ private slots:
         QVERIFY(plan.steps[1].design.contains("Second play only"));
         QCOMPARE(library.element(source.id)->cueBoard,source.cueBoard);
         play.stop();
+
+        // Hold the first play long enough that the next one is editable on
+        // the schedule, then take it to air early with Continue.
+        auto longRow = source.cueBoard[0].toObject();
+        longRow["plays"] = QJsonArray{QJsonObject{{"hold",true},{"holdMs",310000},{"holdManual",false}}};
+        source.cueBoard[0] = longRow;
+        first.startMs = 0;
+        first.durationMs = first.boardCycleMs = 312000;
+        first.boardSnapshot = bakeCueBoard(source);
+        library.placements = {first};
+        play.start(0,1000);
+        play.togglePause();
+        const auto before = library.placementElement(first);
+        auto after = before;
+        longRow["sections"] = QJsonArray{QJsonObject{},QJsonObject{{"disabled",true}}};
+        after.cueBoard[0] = longRow;
+        QString reason;
+        QVERIFY(play.canEditPlacementBoard(before,after,first,&reason));
+        play.advanceElementCue("placement:"+first.id);
+        QVERIFY(!play.canEditPlacementBoard(before,after,first,&reason));
+        play.triggerElementAnimation("placement:"+first.id,{});
+        QVERIFY(!play.canEditPlacementBoard(before,after,first,&reason));
+        play.stop();
+        QVERIFY(play.canEditPlacementBoard(before,after,first,&reason));
     }
     void cueBoardLiveAndDrafts(){
         applyUiTheme("Studio Blue",false);

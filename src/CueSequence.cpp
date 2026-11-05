@@ -25,18 +25,27 @@ QJsonArray defaultBoard(const ElementDesign &design){
     }
     return board;
 }
+QPair<qint64,qint64> frameRange(const ElementDesign &source,const QJsonObject &play) {
+    const qint64 start=qBound(qint64(0),qint64(play["start"].toDouble()),qint64(qMax(0,source.durationMs-1)));
+    const qint64 end=qBound<qint64>(start+1,qint64(play["end"].toDouble(source.durationMs)),qMax<qint64>(start+1,source.durationMs));
+    return {start,end};
+}
 void appendCue(CuePlan &plan,const ElementDesign &source,const QJsonObject &cue,const QString &entry,int iteration,const QString &json){
     if(cue["disabled"].toBool())return;
     const int first=plan.steps.size();
     for(int n=0;n<repetitions(cue);++n){
         const auto play=playSettings(cue,n);
-        const qint64 start=qBound(qint64(0),qint64(play["start"].toDouble()),qint64(qMax(0,source.durationMs-1)));
-        const qint64 end=qBound<qint64>(start+1,qint64(play["end"].toDouble(source.durationMs)),qMax<qint64>(start+1,source.durationMs));
+        const auto [start,end]=frameRange(source,play);
         if(plan.steps.size()>=10000){plan.error="This board exceeds 10,000 playback sections. Reduce its repeat counts.";return;}
         plan.steps.append({entry,cue["id"].toString(),cue["name"].toString("Animation"),json,entry.isEmpty()?n:iteration,start,end,holdTime(play),manualHold(play),-1});
     }
     if(cue["loop"].toBool()&&plan.steps.size()>first)plan.steps.last().loopTo=first;
 }
+}
+QPair<qint64,qint64> cueBoardPlayRange(const ElementDesign &source, QJsonObject cue,
+                                     const QJsonObject &entry, int playIndex) {
+    if (entry.contains("plays")) cue["plays"] = entry["plays"];
+    return frameRange(source,playSettings(cue,playIndex));
 }
 qint64 CuePlan::duration()const{
     if(!error.isEmpty())return 0;

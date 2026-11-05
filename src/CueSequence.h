@@ -25,6 +25,8 @@ struct CuePlan {
 };
 CuePlan compileCueBoard(const ElementDesign &source,const QJsonArray &board,const QJsonObject &settings={},int depth=0);
 CuePlan compileAnimationCue(const ElementDesign &source,const QJsonObject &cue);
+QPair<qint64,qint64> cueBoardPlayRange(const ElementDesign &source, QJsonObject cue,
+                                     const QJsonObject &entry, int playIndex);
 QJsonObject newCueBoardEntry(const QJsonObject &cue);
 QString cueTimingLabel(const QJsonObject &cue);
 

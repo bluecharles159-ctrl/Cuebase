@@ -1578,7 +1578,15 @@ void BuildWorkspace::editElement(const QString &id) {
 void BuildWorkspace::editCueSection(const QString &elementId,const QString &entryId,int iteration){editCuePath(elementId,{}, {entryId,QString::number(iteration)});}
 void BuildWorkspace::editCuePath(const QString &elementId,const QString &placementId,const QStringList &path){
     if(path.size()<2||path.size()%2)return;Element root;if(!placementId.isEmpty()){auto *p=m_lib->placement(placementId);if(!p)return;root=m_lib->placementElement(*p);}else{const auto *e=m_lib->element(elementId);if(!e)return;root=*e;}
-    const auto parent=cueBoardContext(root,path.mid(0,path.size()-2));QJsonObject entry;for(auto v:parent.cueBoard)if(v.toObject()["id"].toString()==path[path.size()-2])entry=v.toObject();if(entry.isEmpty())return;const auto source=ElementDesign::fromJson(parent.design);QJsonObject cue;for(auto c:source.animationCues)if(c.toObject()["id"]==entry["cue"])cue=c.toObject();if(cue.isEmpty())return;const auto section=cueBoardSection(root,path);auto design=section["design"].toString().isEmpty()?source:ElementDesign::fromJson(section["design"].toString());if(section["design"].toString().isEmpty()){design.animationCues={};design.startMs=cue["start"].toInt();design.durationMs=cue["end"].toInt();design.loop=false;}const auto fields=section["fields"].toObject();for(auto key:fields.keys())setStudioField(design,key,fields[key].toString());
+    const auto parent=cueBoardContext(root,path.mid(0,path.size()-2));QJsonObject entry;for(auto v:parent.cueBoard)if(v.toObject()["id"].toString()==path[path.size()-2])entry=v.toObject();if(entry.isEmpty())return;const auto source=ElementDesign::fromJson(parent.design);QJsonObject cue;for(auto c:source.animationCues)if(c.toObject()["id"]==entry["cue"])cue=c.toObject();if(cue.isEmpty())return;const auto section=cueBoardSection(root,path);auto design=section["design"].toString().isEmpty()?source:ElementDesign::fromJson(section["design"].toString());
+    if (section["design"].toString().isEmpty()) {
+        const auto [start, end] = cueBoardPlayRange(source, cue, entry, path.last().toInt());
+        design.animationCues = {};
+        design.startMs = int(start);
+        design.durationMs = int(end);
+        design.loop = false;
+    }
+    const auto fields=section["fields"].toObject();for(auto key:fields.keys())setStudioField(design,key,fields[key].toString());
     m_editingId=elementId;m_cuePath=path;m_cuePlacement=placementId;m_cueEntry=entry["id"].toString();m_cueIteration=path.last().toInt();m_cueBase=QString::fromUtf8(QJsonDocument(bakeCueBoard(root)).toJson(QJsonDocument::Compact));refreshElements();m_name->setText(section["name"].toString(parent.name+" · "+cue["name"].toString()+QString(" · Play %1").arg(m_cueIteration+1)));m_model->reset(design);m_model->setTime(design.startMs);m_savedJson=m_model->design.toJson();m_savedName=m_draftName=m_name->text();m_canvas->frameAll();say("Independent cue keyframes. New cues become children of this section.");
 }
 

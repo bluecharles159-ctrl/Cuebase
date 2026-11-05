@@ -71,9 +71,28 @@ Playout::GraphicPlayback Playout::graphicPlayback(const Element &element,qint64 
 
 void Playout::triggerElementAnimation(const QString &elementId,const QString &cueId){
     const auto instance=resolveCueInstance(m_lib,*this,elementId);if(!instance)return;const auto *element=&instance->element;
-    if(cueId.startsWith("@board:")){const auto plan=compileCueBoard(ElementDesign::fromJson(element->design),element->cueBoard,element->cueBoardSettings);bool ok=false;const int first=cueId.mid(7).toInt(&ok);if(!ok||!plan.error.isEmpty()||first<0||first>=plan.steps.size())return;}
+    if (cueId.startsWith("@board:")) {
+        const auto plan = compileCueBoard(ElementDesign::fromJson(element->design),element->cueBoard,element->cueBoardSettings);
+        bool ok = false;
+        const int first = cueId.mid(7).toInt(&ok);
+        if (!ok || !plan.error.isEmpty() || first < 0 || first >= plan.steps.size()) return;
+        if (isLive() && elementId.startsWith("placement:")) {
+            // Continue can take a later play to air before its scheduled time.
+            // Keep the earliest effective start even if the operator then hides it.
+            qint64 effectiveStart = playheadMs();
+            for (int i = 0; i < first; ++i)
+                effectiveStart -= qMax<qint64>(0,plan.steps[i].duration());
+            m_advancedBoardStarts[elementId] = qMin(effectiveStart,m_advancedBoardStarts.value(elementId,effectiveStart));
+        }
+    }
     else if(!cueId.isEmpty()){const auto cues=QJsonDocument::fromJson(element->design.toUtf8()).object()["animationCues"].toArray();bool found=false;for(auto value:cues)found|=value.toObject()["id"].toString()==cueId;if(!found)return;}
     m_manualCues[elementId]={cueId,playheadMs()};syncDesignAudio();emit ticked();
+}
+bool Playout::canEditPlacementBoard(const Element &before, const Element &after,
+                                    const Placement &placement, QString *reason) const {
+    const auto scheduled = placement.startMs - placement.offsetMs;
+    const auto earliest = qMin(scheduled,m_advancedBoardStarts.value("placement:" + placement.id,scheduled));
+    return canEditCueBoard(before,after,earliest,playheadMs(),isLive(),reason);
 }
 void Playout::advanceElementCue(const QString &elementId){
     const auto instance=resolveCueInstance(m_lib,*this,elementId);if(!instance)return;const auto *element=&instance->element;const auto current=graphicPlayback(*element,playheadMs(),instance->start,instance->offset);

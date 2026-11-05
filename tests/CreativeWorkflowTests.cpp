@@ -39,6 +39,60 @@ class CreativeWorkflowTests : public QObject {
         for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->data(0,Qt::UserRole+1).toString()==path)return *it;return nullptr;
     }
 private slots:
+    void buildExtractsTheSelectedPlaysRange() {
+        auto design = scene();
+        design.durationMs = 4000;
+        const QJsonObject cue{{"id","promo"},{"name","Promo"},{"start",0},{"end",2000},
+                              {"repeat",2},{"hold",false}};
+        design.animationCues = {cue};
+        auto entry = newCueBoardEntry(cue);
+        entry["plays"] = QJsonArray{QJsonObject{},QJsonObject{{"start",800},{"end",1600}}};
+        Element source;
+        source.id = "extract-play";
+        source.type = "Custom";
+        source.design = design.toJson();
+        source.cueBoard = {entry};
+        Library library;
+        library.elements = {source};
+        BuildWorkspace workspace(&library);
+        workspace.editCueSection(source.id,entry["id"].toString(),1);
+        auto *model = workspace.findChild<BuildModel*>();
+        QVERIFY(model);
+        QCOMPARE(model->design.startMs,800);
+        QCOMPARE(model->design.durationMs,1600);
+        QCOMPARE(model->t,qint64(800));
+        QVERIFY(model->design.animationCues.isEmpty());
+        const auto studio = compileCueBoard(design,source.cueBoard);
+        QCOMPARE(studio.steps.size(),2);
+        QCOMPARE(studio.steps[1].start,qint64(model->design.startMs));
+        QCOMPARE(studio.steps[1].end,qint64(model->design.durationMs));
+        model->select("subject");
+        model->active()->keyChannel("position.x",920,1.);
+        model->active()->keyChannel("position.x",1280,2.);
+        AnimationEditor graph(model,true);
+        graph.resize(800,320);
+        graph.show();
+        QTest::qWait(20);
+        auto *curve = graph.findChild<QWidget*>("animationCurve");
+        QVERIFY(curve);
+        QTest::keyClick(curve,Qt::Key_A,Qt::ControlModifier);
+        QToolButton *cueButton = nullptr;
+        for (auto *button : graph.findChildren<QToolButton*>())
+            if (button->accessibleName() == "Cue selected frames") cueButton = button;
+        QVERIFY(cueButton);
+        cueButton->click();
+        auto *dialog = workspace.findChild<QDialog*>("cueRangeDialog");
+        QVERIFY(dialog);
+        QCOMPARE(model->cueRangeStart,qint64(920));
+        QCOMPARE(model->cueRangeEnd,qint64(1280));
+        QVERIFY(graph.grab().save("artifacts/selected-cue-range.png"));
+        dialog->reject();
+        QCOMPARE(model->cueRangeStart,qint64(-1));
+        QCOMPARE(model->cueRangeEnd,qint64(-1));
+        QVERIFY(model->design.animationCues.isEmpty());
+        QCOMPARE(library.element(source.id)->design,source.design);
+        QCOMPARE(library.element(source.id)->cueBoard,source.cueBoard);
+    }
     void implicitNestedCueEntriesStayEditable(){
         auto design=ElementDesign::defaultScene();design.durationMs=1000;
         const QJsonObject cue{{"id","child"},{"name","Child"},{"start",0},{"end",1000},{"hold",false}};design.animationCues={cue};

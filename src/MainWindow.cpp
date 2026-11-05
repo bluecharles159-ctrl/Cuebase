@@ -435,7 +435,7 @@ void MainWindow::buildUi() {
     setCentralWidget(m_stack);
     connect(m_build, &BuildWorkspace::closeRequested, this, [this] { showStudio(); });
     connect(m_lib, &Library::buildRequested, this, [this](const QString &id) { showBuild(id, true); });
-    m_build->cueEditGuard=[this](const Element &before,const Element &after,const Placement &p,QString *error){return canEditCueBoard(before,after,p.startMs-p.offsetMs,m_play->playheadMs(),m_play->isLive(),error);};
+    m_build->cueEditGuard=[this](const Element &before,const Element &after,const Placement &p,QString *error){return m_play->canEditPlacementBoard(before,after,p,error);};
     connect(m_lib,&Library::cuePathBuildRequested,this,[this](const QString &id,const QString &placement,const QStringList &path){if(m_build->hasUnsavedChanges()&&!m_build->saveForClose())return;m_build->editCuePath(id,placement,path);showBuild({},false);});
     connect(m_lib,&Library::openCuePlacementRequested,this,[this](const QString &id){const auto *p=m_lib->placement(id);if(!p)return;auto *dialog=new CueBoardDialog(this);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setWindowTitle("Timeline cue board · "+p->name);dialog->resize(570,780);auto *layout=new QVBoxLayout(dialog);auto *scroll=new QScrollArea;scroll->setWidgetResizable(true);scroll->setWidget(studioCueBoard(m_lib,m_play,p->refId,id));layout->addWidget(scroll);dialog->show();});
     connect(m_lib,&Library::cueBuildRequested,this,[this](const QString &id,const QString &entry,int iteration){if(m_build->hasUnsavedChanges()&&!m_build->saveForClose())return;m_build->editCueSection(id,entry,iteration);showBuild({},false);});
