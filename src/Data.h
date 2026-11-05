@@ -49,6 +49,8 @@ struct Transition {
     QString in = "None", out = "None";
     int inMs = 600, outMs = 600;
 };
+QJsonObject fxToJson(const Transition &transition);
+Transition fxFromJson(const QJsonObject &json);
 
 // What a transition does to the picture at one moment.
 struct FxState {

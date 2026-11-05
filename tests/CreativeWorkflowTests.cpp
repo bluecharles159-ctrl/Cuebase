@@ -22,6 +22,9 @@
 #include "FormAnimation.h"
 #include "FormAnimationPanel.h"
 #include "FrameExport.h"
+#include "GraphicPackage.h"
+#include "AssetImport.h"
+#include "MediaFrames.h"
 #include "CueSequence.h"
 #include "Data.h"
 #include <QSaveFile>
@@ -44,6 +47,69 @@ class CreativeWorkflowTests : public QObject {
         for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->data(0,Qt::UserRole+1).toString()==path)return *it;return nullptr;
     }
 private slots:
+    void portableGraphicAndBakedCueMovie() {
+        QTemporaryDir temp; QVERIFY(temp.isValid());
+        auto art=[&](QString name,QColor color){
+            QImage image(32,32,QImage::Format_ARGB32);image.fill(color);
+            const auto path=temp.filePath(name);return image.save(path)?path:QString();
+        };
+        const auto red=art("original.png",Qt::red),blue=art("override.png",Qt::blue);
+        QVERIFY(!red.isEmpty() && !blue.isEmpty());
+        auto scene=ElementDesign::defaultScene();scene.world.transparent=true;scene.durationMs=400;
+        DObject image;image.type="Image";image.id="photo";image.image=red;image.w=4;image.h=3;
+        image.base.rot={90,0,0};image.mat.shadeless=true;image.style["studio.editable"]=true;
+        scene.objects.append(image);
+        QJsonObject cue{{"id","open"},{"name","Open"},{"start",0},{"end",400},{"hold",false}};
+        scene.animationCues={cue};
+        auto first=newCueBoardEntry(cue),child=newCueBoardEntry(cue);
+        child["sections"]=QJsonArray{QJsonObject{{"fields",QJsonObject{{"photo",blue}}}}};
+        auto second=newCueBoardEntry(cue);
+        second["sections"]=QJsonArray{QJsonObject{{"design",scene.toJson()},{"board",QJsonArray{child}}}};
+        Element board;board.id="master";board.type="Custom";board.name="Color change";board.design=scene.toJson();
+        board.fx.in="Fade";board.fx.inMs=100;board.cueBoard={first,second};
+        const auto archive=temp.filePath("colors.cuegraphic");
+        QString error;QVERIFY2(exportGraphicPackage(board,archive,&error),qPrintable(error));
+        QVERIFY(QFile::remove(red));QVERIFY(QFile::remove(blue));
+        Library library; BuildWorkspace workspace(&library);workspace.newElement();
+        QVERIFY(workspace.importFile(archive));
+        QCOMPARE(library.elements.size(),1);
+        const auto imported=library.elements.first();QVERIFY(imported.id!=board.id);
+        QCOMPARE(imported.fx.in,QString("Fade"));QCOMPARE(imported.fx.inMs,100);
+        const auto plan=compileCueBoard(ElementDesign::fromJson(imported.design),imported.cueBoard,imported.cueBoardSettings);
+        QVERIFY2(plan.error.isEmpty(),qPrintable(plan.error));QCOMPARE(plan.duration(),qint64(800));
+        auto a=ElementDesign::fromJson(plan.steps.first().design),b=ElementDesign::fromJson(plan.steps.last().design);
+        QCOMPARE(QImage(a.find("photo")->image).pixelColor(0,0),QColor(Qt::red));
+        QCOMPARE(QImage(b.find("photo")->image).pixelColor(0,0),QColor(Qt::blue));
+        Library reopened;reopened.load();QVERIFY(reopened.element(imported.id));
+        QCOMPARE(reopened.element(imported.id)->cueBoard,imported.cueBoard);
+        FrameExportOptions options;options.size={160,90};options.fps=10;options.endFrame=8;
+        QString encoder=QCoreApplication::applicationDirPath()+"/ffmpeg.exe";
+        if(!QFileInfo::exists(encoder)) encoder=QStandardPaths::findExecutable("ffmpeg");
+        const auto movie=temp.filePath("baked.mov");
+        const auto baked=exportCueMovie(imported,movie,encoder,options);
+        QVERIFY2(baked.success,qPrintable(baked.error));QCOMPARE(baked.written,8);
+        const auto before=MediaFrames::frame(movie,100,"verify-baked"),after=MediaFrames::frame(movie,600,"verify-baked");
+        QVERIFY(!before.isNull() && !after.isNull());
+        QCOMPARE(before.pixelColor(80,45),QColor(Qt::red));QCOMPARE(after.pixelColor(80,45),QColor(Qt::blue));
+        QCOMPARE(after.pixelColor(1,1).alpha(),0);
+        QFile damage(archive);QVERIFY(damage.open(QIODevice::ReadWrite));QVERIFY(damage.seek(damage.size()-1));
+        char byte;QVERIFY(damage.getChar(&byte));QVERIFY(damage.seek(damage.size()-1));QVERIFY(damage.putChar(byte^1));damage.close();
+        QVERIFY(importGraphicPackage(library,archive,&error).isEmpty());QVERIFY(error.contains("checksum"));QCOMPARE(library.elements.size(),1);
+    }
+    void exportPosedMeshToObj() {
+        QTemporaryDir temp;BuildModel model;model.reset(ElementDesign::defaultScene());model.addMesh("Cube");
+        auto *o=model.active();o->base.loc={2,1,3};o->keyChannel("position.x",0,2);o->keyChannel("position.x",1000,5);
+        const auto path=temp.filePath("cube.obj");QString error;
+        QVERIFY2(AssetImport::exportObj(model.design,1000,path,&error),qPrintable(error));
+        const auto imported=AssetImport::meshes(path,&error);QVERIFY2(!imported.isEmpty(),qPrintable(error));
+        QVector3D minimum,maximum;QVERIFY(imported.first().mesh.bounds(minimum,maximum));
+        QVector3D originalLow,originalHigh;QVERIFY(o->mesh.bounds(originalLow,originalHigh));
+        const auto transform=model.design.worldMatrix(*o,1000);
+        QVERIFY((minimum-transform.map(originalLow)).length()<.0001);
+        QVERIFY((maximum-transform.map(originalHigh)).length()<.0001);
+        o->visible=false;QVERIFY(!AssetImport::exportObj(model.design,1000,path,&error));
+        QVERIFY(!AssetImport::meshes(path,&error).isEmpty());
+    }
     void masterGraphicVariantsShareTokensAndKeepLayoutEdits() {
         Library library;
         BuildWorkspace workspace(&library);

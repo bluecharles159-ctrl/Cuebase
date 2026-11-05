@@ -244,7 +244,7 @@ void MainWindow::buildMenus() {
     // File
     auto *file = newMenu("File");
     auto *importAction=file->addAction(uiIcon("add"),"Import…");importAction->setShortcut(QKeySequence("Ctrl+I"));
-    connect(importAction,&QAction::triggered,this,[this]{const auto files=QFileDialog::getOpenFileNames(this,"Import into Cuebase",{},"Media and designs (*.png *.jpg *.jpeg *.webp *.bmp *.gif *.svg *.ico *.mp4 *.mov *.mkv *.avi *.webm *.mxf *.wav *.mp3 *.flac *.ogg *.aac *.fbx *.obj *.gltf *.glb *.dae *.stl *.ply *.cuebuild)");importFiles(files);});
+    connect(importAction,&QAction::triggered,this,[this]{const auto files=QFileDialog::getOpenFileNames(this,"Import into Cuebase",{},"Media and designs (*.png *.jpg *.jpeg *.webp *.bmp *.gif *.svg *.ico *.mp4 *.mov *.mkv *.avi *.webm *.mxf *.wav *.mp3 *.flac *.ogg *.aac *.fbx *.obj *.gltf *.glb *.dae *.stl *.ply *.cuebuild *.cuegraphic)");importFiles(files);});
     auto *exportAction=file->addAction(uiIcon("save"),"Export Build…");connect(exportAction,&QAction::triggered,this,[this]{m_build->exportFile();});
     file->addSeparator();add(file, "Quit", QKeySequence("Ctrl+Q"), [this] { close(); });
 
@@ -791,7 +791,7 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *e) {
     auto *widget=qobject_cast<QWidget*>(obj);
     if(widget&&(widget==this||isAncestorOf(widget))){
         if(e->type()==QEvent::MouseButtonPress&&!isMaximized()&&!isFullScreen()&&widget->window()==this){auto *mouse=static_cast<QMouseEvent*>(e);const auto at=mapFromGlobal(mouse->globalPosition().toPoint());Qt::Edges edges;if(at.x()<4)edges|=Qt::LeftEdge;if(at.x()>=width()-4)edges|=Qt::RightEdge;if(at.y()<4)edges|=Qt::TopEdge;if(at.y()>=height()-4)edges|=Qt::BottomEdge;if(mouse->button()==Qt::LeftButton&&edges&&windowHandle()&&windowHandle()->startSystemResize(edges)){e->accept();return true;}}
-        auto supportedFiles=[](const QMimeData *mime){QStringList files;for(const auto &url:mime->urls()){if(!url.isLocalFile())continue;QFileInfo file(url.toLocalFile());if(file.isFile()&&QStringList{"png","jpg","jpeg","bmp","gif","webp","tif","tiff","svg","ico","mp4","mov","mkv","avi","webm","m4v","mpeg","mpg","ts","wav","mp3","flac","ogg","aac","m4a","opus","aiff","fbx","obj","gltf","glb","dae","stl","ply","cuebuild","json"}.contains(file.suffix().toLower()))files.append(file.absoluteFilePath());}return files;};
+        auto supportedFiles=[](const QMimeData *mime){QStringList files;for(const auto &url:mime->urls()){if(!url.isLocalFile())continue;QFileInfo file(url.toLocalFile());if(file.isFile()&&QStringList{"png","jpg","jpeg","bmp","gif","webp","tif","tiff","svg","ico","mp4","mov","mkv","avi","webm","m4v","mpeg","mpg","ts","wav","mp3","flac","ogg","aac","m4a","opus","aiff","fbx","obj","gltf","glb","dae","stl","ply","cuebuild","cuegraphic","json"}.contains(file.suffix().toLower()))files.append(file.absoluteFilePath());}return files;};
         if(e->type()==QEvent::DragEnter||e->type()==QEvent::DragMove){auto *drop=static_cast<QDropEvent*>(e);if(!supportedFiles(drop->mimeData()).isEmpty()){drop->acceptProposedAction();if(!m_fileOverlay)m_fileOverlay=new FileDropOverlay(this);return true;}}
         if(e->type()==QEvent::DragLeave){if(m_fileOverlay){delete m_fileOverlay;m_fileOverlay=nullptr;}}
         if(e->type()==QEvent::Drop){auto *drop=static_cast<QDropEvent*>(e);const auto files=supportedFiles(drop->mimeData());if(!files.isEmpty()){drop->acceptProposedAction();if(m_fileOverlay){delete m_fileOverlay;m_fileOverlay=nullptr;}QTimer::singleShot(0,this,[this,files]{importFiles(files);});return true;}}

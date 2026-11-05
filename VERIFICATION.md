@@ -2,6 +2,16 @@
 
 ## Latest verified checkpoint
 
+Build 44 verifies shared master graphics in Build. The Windows interaction test
+creates all three layouts, edits the lower third, changes the shared headline,
+schedule and font, then reopens the library and checks local and inherited
+values. The chooser capture shows all three rendered layouts. Task 64 brings
+the count to 33 of 84, with 51 remaining.
+[Windows ZIP](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42033224082/artifacts/13417491432)
+and [native reports and chooser capture](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42033224082/artifacts/13416733945).
+
+## Build 43
+
 Build 43 passed the Windows workflow for `6c6771b`. Build's save control
 was exercised for all twelve scene-name categories. Tests reopened the library,
 checked the category and object text, and confirmed failure recovery and the

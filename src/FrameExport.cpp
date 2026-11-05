@@ -1,9 +1,14 @@
 #include "FrameExport.h"
+#include "CueSequence.h"
+#include "Data.h"
 #include "ColorManagement.h"
 #include <QDir>
 #include <QJsonDocument>
 #include <QPainter>
 #include <QSaveFile>
+#include <QTemporaryDir>
+#include <QProcess>
+#include <QFileInfo>
 #include <QtMath>
 #include <cmath>
 #include <numeric>
@@ -19,8 +24,9 @@ bool FrameExportOptions::setProjectFrameRate(int rate,double base) {
     fps=int(numerator/divisor);fpsBase=int(denominator/divisor);return true;
 }
 
-FrameExportResult exportSceneFrames(ElementDesign scene,const QString &directory,
-    const FrameExportOptions &o,const std::function<bool(int,int)> &progress) {
+static FrameExportResult writeFrames(const QString &directory,const FrameExportOptions &o,
+    const std::function<bool(int,int)> &progress,
+    const std::function<void(QPainter &,const QRect &,qint64,const RenderSettings &)> &paint) {
     FrameExportResult result;
     auto fail=[&](QString message){result.error=message;return result;};
     if(directory.trimmed().isEmpty()||o.size.width()<16||o.size.height()<16||
@@ -42,7 +48,7 @@ FrameExportResult exportSceneFrames(ElementDesign scene,const QString &directory
         if(image.isNull())return fail("There is not enough memory for this frame size.");
         image.fill(Qt::transparent);
         {QPainter painter(&image);painter.setRenderHint(QPainter::Antialiasing);painter.setRenderHint(QPainter::SmoothPixmapTransform);
-         scene.render(painter,image.rect(),qRound64(double(frame)*1000*o.fpsBase/o.fps),true,&settings,false);}
+         paint(painter,image.rect(),qRound64(double(frame)*1000*o.fpsBase/o.fps),settings);}
         if(colorManagementActive(o.colorView,o.colorLook,o.exposure,o.gamma))
             applyColorManagement(image,o.colorView,o.colorLook,o.exposure,o.gamma);
         QSaveFile file(output.filePath(QString("frame_%1.png").arg(frame,6,10,QChar('0'))));
@@ -60,4 +66,60 @@ FrameExportResult exportSceneFrames(ElementDesign scene,const QString &directory
         return fail("Frames were written, but the timing manifest could not be saved.");
     if(progress)progress(count,count);
     result.success=true;return result;
+}
+
+FrameExportResult exportSceneFrames(ElementDesign scene,const QString &directory,
+    const FrameExportOptions &o,const std::function<bool(int,int)> &progress) {
+    return writeFrames(directory,o,progress,[&](QPainter &p,const QRect &rect,qint64 time,const RenderSettings &settings) {
+        scene.render(p,rect,time,true,&settings,false);
+    });
+}
+
+FrameExportResult exportCueFrames(const Element &board,const QString &directory,
+    const FrameExportOptions &o,const std::function<bool(int,int)> &progress) {
+    const auto plan=compileCueBoard(ElementDesign::fromJson(board.design),board.cueBoard,board.cueBoardSettings);
+    if(!plan.error.isEmpty() || plan.steps.isEmpty())
+        return {false,false,0,plan.error.isEmpty() ? QString("Add a cue before exporting its animation.") : plan.error};
+    QString lastDesign;
+    ElementDesign scene;
+    return writeFrames(directory,o,progress,[&](QPainter &p,const QRect &rect,qint64 time,const RenderSettings &settings) {
+        const auto sample=plan.sample(time);
+        if(!sample.visible) return;
+        const auto &json=plan.steps[sample.step].design;
+        if(lastDesign!=json){scene=ElementDesign::fromJson(json);lastDesign=json;}
+        scene.render(p,rect,sample.frame,true,&settings,false);
+    });
+}
+
+FrameExportResult exportCueMovie(const Element &board,const QString &file,const QString &encoder,
+    const FrameExportOptions &options,const std::function<bool(int,int)> &progress) {
+    if(encoder.isEmpty()) return {false,false,0,"The FFmpeg encoder could not be found."};
+    const QFileInfo destination(file);
+    QTemporaryDir staging(destination.absoluteDir().filePath(".cuebase-animation-XXXXXX"));
+    if(!staging.isValid()) return {false,false,0,staging.errorString()};
+    auto result=exportCueFrames(board,staging.path(),options,progress);
+    if(!result.success) return result;
+    const auto movie=staging.filePath("animation.mov");
+    QProcess process;
+    process.start(encoder,{"-nostdin","-hide_banner","-loglevel","error","-framerate",
+        QString("%1/%2").arg(options.fps).arg(options.fpsBase),"-start_number",QString::number(options.firstFrame),
+        "-i",staging.filePath("frame_%06d.png"),"-an","-c:v","qtrle","-pix_fmt","argb",movie});
+    if(!process.waitForStarted()) return {false,false,0,process.errorString()};
+    while(process.state()!=QProcess::NotRunning && !process.waitForFinished(100)) {
+        if(progress && !progress(result.written,result.written)) {
+            process.kill();process.waitForFinished();return {false,true,0,{}};
+        }
+    }
+    if(process.exitStatus()!=QProcess::NormalExit || process.exitCode()!=0)
+        return {false,false,0,"Movie encoding failed. "+QString::fromUtf8(process.readAllStandardError()).trimmed()};
+    if(!destination.exists() && QFile::rename(movie,file)) return result;
+    QFile input(movie);QSaveFile output(file);
+    if(!input.open(QIODevice::ReadOnly) || !output.open(QIODevice::WriteOnly)) return {false,false,0,"Could not write the animation file."};
+    while(!input.atEnd()){
+        if(progress && !progress(result.written,result.written)) return {false,true,0,{}};
+        const auto block=input.read(1024*1024);
+        if(input.error()!=QFile::NoError || output.write(block)!=block.size()) return {false,false,0,"Could not finish writing the animation file."};
+    }
+    if(!output.commit()) return {false,false,0,output.errorString()};
+    return result;
 }

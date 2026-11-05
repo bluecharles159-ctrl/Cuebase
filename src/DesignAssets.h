@@ -4,6 +4,7 @@
 
 struct DesignAsset {QString objectId,objectName,role,path;};
 QList<DesignAsset> designAssets(const ElementDesign &design);
+void setDesignAsset(ElementDesign &design,const DesignAsset &asset,const QString &path);
 void resolveDesignAssets(ElementDesign &design,const QString &directory);
 QString missingDesignAsset(const ElementDesign &design);
 bool relinkDesignAsset(ElementDesign &design,const QString &previous,const QString &replacement,QString *error);

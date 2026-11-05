@@ -5,6 +5,7 @@
 #include "AudioLibrary.h"
 #include "BuildWorkspace.h"
 #include "GraphicMaster.h"
+#include "GraphicPackage.h"
 #include "TextureLibrary.h"
 #include "ComponentLibrary.h"
 #include "FrameExport.h"
@@ -1485,6 +1486,13 @@ bool BuildWorkspace::hasUnsavedChanges() const {return m_savedJson!=m_model->des
 bool BuildWorkspace::saveForClose(){save();return !m_editingId.isEmpty()&&!hasUnsavedChanges();}
 bool BuildWorkspace::importFile(const QString &path){
     const auto suffix=QFileInfo(path).suffix().toLower();
+    if(suffix=="cuegraphic"){
+        if(hasUnsavedChanges() && !saveForClose()) return false;
+        QString error;
+        const auto id=importGraphicPackage(*m_lib,path,&error);
+        if(id.isEmpty()){say(error,true);return false;}
+        editElement(id);say("Imported graphic and its media.");return true;
+    }
     if(QStringList{"wav","mp3","flac","ogg","aac","m4a","opus","aiff"}.contains(suffix)){
         if(auto *panel=findChild<AudioLibraryPanel*>("buildAudioLibrary")){panel->importFile(path);if(auto *tab=findChild<QPushButton*>("buildTab_Audio"))tab->click();return true;}return false;
     }
@@ -1507,7 +1515,23 @@ bool BuildWorkspace::importFile(const QString &path){
 }
 void BuildWorkspace::exportFile(){
     QString selectedFilter;
-    QString path=QFileDialog::getSaveFileName(this,"Export Build composition",m_name->text(),"Cuebase composition (*.cuebuild);;Portable composition with media (*.cuebuild);;PNG image (*.png);;PNG animation folder (*.frames)",&selectedFilter);if(path.isEmpty())return;
+    QString path=QFileDialog::getSaveFileName(this,"Export Build composition",m_name->text(),"Cuebase composition (*.cuebuild);;Portable composition with media (*.cuebuild);;Graphic with cues and media (*.cuegraphic);;Wavefront mesh geometry (*.obj);;PNG image (*.png);;PNG animation folder (*.frames)",&selectedFilter);if(path.isEmpty())return;
+    if(selectedFilter.startsWith("Graphic with") || path.endsWith(".cuegraphic",Qt::CaseInsensitive)){
+        if(!path.endsWith(".cuegraphic",Qt::CaseInsensitive)) path+=".cuegraphic";
+        Element element;
+        if(m_cuePath.isEmpty()) if(const auto *saved=m_lib->element(m_editingId)) element=*saved;
+        element.name=m_name->text();element.design=m_model->design.toJson();element.type=sceneEffect(m_model->design)?"Effect":"Custom";
+        element.seconds=qMax(1,int(qCeil(m_model->design.durationMs/1000.0)));
+        QString error;
+        if(!exportGraphicPackage(element,path,&error)) say(error,true); else say("Exported graphic with cues and media.");
+        return;
+    }
+    if(selectedFilter.startsWith("Wavefront") || path.endsWith(".obj",Qt::CaseInsensitive)){
+        if(!path.endsWith(".obj",Qt::CaseInsensitive)) path+=".obj";
+        QString error;
+        if(!AssetImport::exportObj(m_model->design,m_model->t,path,&error)) say(error,true); else say("Exported visible meshes at the playhead.");
+        return;
+    }
     if(selectedFilter.startsWith("Portable composition")){
         if(!path.endsWith(".cuebuild",Qt::CaseInsensitive))path+=".cuebuild";
         QProgressDialog progress("Collecting composition media…","Cancel",0,designAssets(m_model->design).size(),this);progress.setWindowModality(Qt::WindowModal);progress.setMinimumDuration(0);progress.setAutoClose(false);progress.setAutoReset(false);

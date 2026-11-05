@@ -10,9 +10,9 @@ animation, audio assets and broadcast planning.
 
 ## Windows download
 
-The verified preview candidate is commit `6c6771b`.
-[Download the Windows preview](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42029717279/artifacts/13415263657)
-or [open the build and test reports](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42029717279).
+The verified preview candidate is commit `71a394a`.
+[Download the Windows preview](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42033224082/artifacts/13417491432)
+or [open the build and test reports](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42033224082).
 Select the **Cuebase-Windows** artifact. GitHub may require sign-in for Actions
 downloads. A public Releases download has not yet been published.
 
@@ -24,6 +24,12 @@ Only Windows is packaged at this checkpoint. No signed installer, macOS build or
 Linux build is claimed.
 
 ## Explore the preview
+
+In Build, choose **Presets → Master graphics → New master graphic**. Enter the
+headline and schedule, choose the shared colors, typeface and optional logo,
+and pick the layout to open. All three variants appear in Studio's **Master
+graphics** playlist. Reopen the named master under Presets to update the family.
+Text and colors edited locally in a variant keep their overrides.
 
 ### Build and Form Animation
 

@@ -35,6 +35,7 @@ add_library(CuebaseBuildCore STATIC
     src/BuildCanvas.h src/BuildCanvas.cpp
     src/BuildWorkspace.h src/BuildWorkspace.cpp
     src/GraphicMaster.h src/GraphicMaster.cpp
+    src/GraphicPackage.h src/GraphicPackage.cpp
     src/AnimationEditor.h src/AnimationEditor.cpp
     src/CurveNoise.h src/CurveNoise.cpp
     src/AnimationCuePanel.h src/AnimationCuePanel.cpp

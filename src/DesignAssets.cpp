@@ -18,18 +18,16 @@ QList<DesignAsset> designAssets(const ElementDesign &design){
     }
     return assets;
 }
-namespace {
-void setAsset(ElementDesign &design,const DesignAsset &asset,const QString &path){
+void setDesignAsset(ElementDesign &design,const DesignAsset &asset,const QString &path){
     if(auto *object=design.find(asset.objectId)){
         if(asset.role=="image")object->image=path;
         else if(asset.role=="texture")object->style["texture.file"]=path;
         else if(asset.role=="audio")object->style["audio.file"]=path;
     }
 }
-}
 void resolveDesignAssets(ElementDesign &design,const QString &directory){
     for(const auto &asset:designAssets(design))if(QFileInfo(asset.path).isRelative())
-        setAsset(design,asset,QDir(directory).absoluteFilePath(asset.path));
+        setDesignAsset(design,asset,QDir(directory).absoluteFilePath(asset.path));
 }
 QString missingDesignAsset(const ElementDesign &design){
     for(const auto &asset:designAssets(design))if(!QFileInfo(asset.path).isFile())
@@ -39,7 +37,7 @@ QString missingDesignAsset(const ElementDesign &design){
 bool relinkDesignAsset(ElementDesign &design,const QString &previous,const QString &replacement,QString *error){
     if(!QFileInfo(replacement).isFile()){if(error)*error="The replacement media file does not exist.";return false;}
     bool found=false;
-    for(const auto &asset:designAssets(design))if(asset.path==previous){setAsset(design,asset,QFileInfo(replacement).absoluteFilePath());found=true;}
+    for(const auto &asset:designAssets(design))if(asset.path==previous){setDesignAsset(design,asset,QFileInfo(replacement).absoluteFilePath());found=true;}
     if(error)*error=found?QString():QString("The original media reference no longer exists.");return found;
 }
 bool exportPortableDesign(const ElementDesign &source,const QString &file,QString *error,const std::function<bool(int,int)> &progress){
@@ -74,7 +72,7 @@ bool exportPortableDesign(const ElementDesign &source,const QString &file,QStrin
             if(!output.commit())return fail(output.errorString());
             relative=folder+"/"+name;copied.insert(key,relative);
         }
-        setAsset(design,asset,relative);
+        setDesignAsset(design,asset,relative);
     }
     if(progress&&!progress(assets.size(),assets.size()))return fail("Export cancelled; the existing composition was preserved.");
     QSaveFile composition(destination.absoluteFilePath());const auto bytes=design.toJson().toUtf8();

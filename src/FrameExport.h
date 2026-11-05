@@ -16,3 +16,8 @@ struct FrameExportResult { bool success=false, cancelled=false; int written=0; Q
 // The scene is copied so UI edits cannot change an export in progress.
 FrameExportResult exportSceneFrames(ElementDesign scene, const QString &directory,
     const FrameExportOptions &options, const std::function<bool(int,int)> &progress={});
+struct Element;
+FrameExportResult exportCueFrames(const Element &board,const QString &directory,
+    const FrameExportOptions &options,const std::function<bool(int,int)> &progress={});
+FrameExportResult exportCueMovie(const Element &board,const QString &file,const QString &encoder,
+    const FrameExportOptions &options,const std::function<bool(int,int)> &progress={});

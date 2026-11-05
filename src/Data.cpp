@@ -38,6 +38,7 @@ double ease(double x) {
     x = qBound(0.0, x, 1.0);
     return x * x * (3.0 - 2.0 * x);
 }
+} // namespace
 QJsonObject fxToJson(const Transition &t) {
     return {{"in", t.in}, {"out", t.out}, {"inMs", t.inMs}, {"outMs", t.outMs}};
 }
@@ -49,7 +50,6 @@ Transition fxFromJson(const QJsonObject &j) {
     t.outMs = j["outMs"].toInt(600);
     return t;
 }
-} // namespace
 
 // k: 0 = fully hidden, 1 = fully shown. isIn tells which end of the clip this is.
 static void applyFx(FxState &s, const QString &kind, double k, bool isIn) {

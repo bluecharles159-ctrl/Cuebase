@@ -3,8 +3,47 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include <QFileInfo>
+#include <QSaveFile>
+#include <QTextStream>
+#include <QRegularExpression>
+#include <algorithm>
 #include <QUuid>
 #include <functional>
+
+bool AssetImport::exportObj(const ElementDesign &scene,qint64 time,const QString &path,QString *error) {
+    QSaveFile file(path);
+    auto fail=[&](QString message){if(error)*error=message;return false;};
+    if (!file.open(QIODevice::WriteOnly)) return fail(file.errorString());
+    QTextStream out(&file);
+    out.setLocale(QLocale::c());
+    out.setRealNumberPrecision(9);
+    out << "# Cuebase geometry at " << time << " ms\n";
+    qint64 offset=1;
+    for (const auto &object:scene.objects) {
+        if (object.type!="Mesh" || !scene.effectiveVisible(object)) continue;
+        const auto &mesh=scene.evalMesh(object,time);
+        if (mesh.isEmpty()) continue;
+        auto name=object.name.simplified();
+        name.replace(QRegularExpression("[\\r\\n#]"),"_");
+        out << "o " << (name.isEmpty()?object.id:name) << '\n';
+        const auto transform=scene.worldMatrix(object,time);
+        for (const auto &vertex:mesh.v) {
+            const auto p=transform.map(vertex);
+            out << "v " << p.x() << ' ' << p.y() << ' ' << p.z() << '\n';
+        }
+        for (auto face:mesh.f) {
+            if (transform.determinant()<0) std::reverse(face.begin(),face.end());
+            out << "f";
+            for (const auto i:face) out << ' ' << offset+i;
+            out << '\n';
+        }
+        offset+=mesh.v.size();
+    }
+    if (offset==1) return fail("Add a visible mesh to export its geometry.");
+    out.flush();
+    if (out.status()!=QTextStream::Ok || !file.commit()) return fail(file.errorString());
+    return true;
+}
 
 QVector<DObject> AssetImport::meshes(const QString &path,QString *error){
     Assimp::Importer importer;

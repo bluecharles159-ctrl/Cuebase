@@ -1,5 +1,8 @@
 #include "StudioCueBoard.h"
 #include "CueSequence.h"
+#include "GraphicPackage.h"
+#include "FrameExport.h"
+#include "NetworkOutput.h"
 #include "ElementLibrary.h"
 #include "Playout.h"
 #include "UiControls.h"
@@ -23,6 +26,9 @@
 #include <QElapsedTimer>
 #include <QGroupBox>
 #include <QJsonDocument>
+#include <QFileDialog>
+#include <QProgressDialog>
+#include <QDialogButtonBox>
 #include <QtMath>
 
 namespace {
@@ -45,6 +51,55 @@ class CueBoardEditor final:public QWidget {
     bool persist(){QString error;auto full=compileCueBoard(ElementDesign::fromJson(draft.design),draft.cueBoard,draft.cueBoardSettings);if(!full.error.isEmpty()){status->setText(full.error);return false;}if(!placementId.isEmpty()){auto *p=lib->placement(placementId);if(!p){status->setText("This timeline copy was removed.");return false;}auto current=lib->placementElement(*p);if(signature(current)!=signature(base)){status->setText("This copy changed elsewhere. Reopen it before saving.");return false;}if(!play->canEditPlacementBoard(base,draft,*p,&error)){status->setText(error);return false;}const auto previous=*p;updateBakedPlacement(*p,draft,full.duration());if(!lib->saveChecked(&error)){*p=previous;status->setText(error);return false;}setProperty("saving",true);emit lib->placementsChanged();setProperty("saving",false);}else{Element *target=nullptr;for(auto &e:lib->elements)if(e.id==elementId)target=&e;if(!target){status->setText("This source element was removed.");return false;}if(signature(*target)!=signature(base)){status->setText("Source changed elsewhere. Reopen before saving this draft.");return false;}auto previous=*target;target->cueBoard=draft.cueBoard;target->cueBoardSettings=draft.cueBoardSettings;if(!lib->saveChecked(&error)){*target=previous;status->setText(error);return false;}setProperty("saving",true);emit lib->elementsChanged();setProperty("saving",false);}base=draft;setProperty("dirty",false);status->setText("Cue board saved");return true;}
     void addCue(){auto *dialog=new QDialog(this);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setWindowTitle("Add animation cue");dialog->resize(390,420);auto *l=new QVBoxLayout(dialog);auto *search=new QLineEdit;search->setPlaceholderText("Find a cue…");auto *choices=new QListWidget;choices->setSpacing(5);l->addWidget(search);l->addWidget(choices);const auto design=ElementDesign::fromJson(context().design);for(auto v:design.animationCues){auto c=v.toObject();auto *item=new QListWidgetItem(uiIcon("cue"),c["name"].toString()+"\n"+cueTimingLabel(c));item->setData(Qt::UserRole,c);choices->addItem(item);}auto *buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);l->addWidget(buttons);connect(search,&QLineEdit::textChanged,dialog,[=,this](QString value){for(int i=0;i<choices->count();++i)choices->item(i)->setHidden(!choices->item(i)->text().contains(value,Qt::CaseInsensitive));});auto insert=[=,this]{if(!choices->currentItem())return;auto c=context();auto e=newCueBoardEntry(choices->currentItem()->data(Qt::UserRole).toJsonObject());c.cueBoard.append(e);selected=e["id"].toString();iteration=0;store(c);elapsed=0;previewing=true;refresh();dialog->accept();};connect(buttons,&QDialogButtonBox::accepted,dialog,insert);connect(choices,&QListWidget::itemDoubleClicked,dialog,[=,this]{insert();});connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::reject);dialog->open();}
     void modify(){if(selected.isEmpty()||!persist())return;emit lib->cuePathBuildRequested(elementId,placementId,sectionPath());}
+    enum class ExportKind { Editable, Frames, Movie };
+    void exportBoard(ExportKind kind) {
+        const auto board=context();
+        QString error;
+        if(kind==ExportKind::Editable){
+            auto file=QFileDialog::getSaveFileName(this,"Export editable graphic",board.name,"Cuebase graphic (*.cuegraphic)");
+            if(file.isEmpty())return;
+            if(!file.endsWith(".cuegraphic",Qt::CaseInsensitive))file+=".cuegraphic";
+            status->setText(exportGraphicPackage(board,file,&error) ? "Exported editable graphic and media." : error);
+            return;
+        }
+        auto compiled=compileCueBoard(ElementDesign::fromJson(board.design),board.cueBoard,board.cueBoardSettings);
+        if(!compiled.error.isEmpty() || compiled.steps.isEmpty()){
+            status->setText(compiled.error.isEmpty()?"Add a cue before baking the board.":compiled.error);return;
+        }
+        const auto &display=lib->display;
+        FrameExportOptions options;
+        if(!options.setProjectFrameRate(display.fps,display.fpsBase)){status->setText("Choose a supported channel frame rate.");return;}
+        options.size={display.resX(),display.resY()};
+        options.colorView=display.colorView;options.colorLook=display.colorLook;options.exposure=display.exposure;options.gamma=display.gamma;
+        options.renderSettings.motionBlur=display.motionBlur;options.renderSettings.shutter=display.shutter;options.renderSettings.samples=display.mbSamples;
+        qint64 duration=compiled.duration();
+        if(duration<0){
+            auto *box=roundedModal(this,"Bake loop or manual hold");
+            auto *form=new QFormLayout(box);
+            auto *seconds=new ValueInput;seconds->setRange(.01,86400);seconds->setDecimals(2);seconds->setValue(10);seconds->setSuffix(" s");
+            form->addRow("Export duration",seconds);
+            form->addRow(new QLabel("Manual holds keep their final frame until the export ends."));
+            auto *buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);form->addRow(buttons);
+            connect(buttons,&QDialogButtonBox::accepted,box,&QDialog::accept);connect(buttons,&QDialogButtonBox::rejected,box,&QDialog::reject);
+            const auto accepted=box->exec()==QDialog::Accepted; duration=qRound64(seconds->value()*1000);box->deleteLater();
+            if(!accepted)return;
+        }
+        const auto count=std::ceil(double(duration)*options.fps/(1000.*options.fpsBase));
+        if(count>100000){status->setText("Shorten the board or choose a lower frame rate to fit the 100,000-frame export limit.");return;}
+        options.endFrame=qMax(1,int(count));
+        const bool movie=kind==ExportKind::Movie;
+        auto path=movie ? QFileDialog::getSaveFileName(this,"Export transparent animation",board.name,"QuickTime animation (*.mov)")
+                        : QFileDialog::getExistingDirectory(this,"Choose an empty folder for the baked PNG sequence");
+        if(path.isEmpty())return;
+        if(movie && !path.endsWith(".mov",Qt::CaseInsensitive))path+=".mov";
+        QProgressDialog progress("Baking cue board animation…","Cancel",0,options.endFrame,this);
+        progress.setWindowModality(Qt::WindowModal);
+        progress.setAutoClose(false);progress.setAutoReset(false);
+        auto report=[&](int n,int){progress.setValue(n);QApplication::processEvents();return !progress.wasCanceled();};
+        const auto result=movie ? exportCueMovie(board,path,NetworkOutput::findEncoder(),options,report) : exportCueFrames(board,path,options,report);
+        status->setText(result.success ? QString("Exported %1 animation frames.").arg(result.written) :
+                        result.cancelled ? QString("Cancelled after %1 frames.").arg(result.written) : result.error);
+    }
     void enterChildren(){
         const auto target = sectionPath();
         if (cueBoardContext(draft, target).design.isEmpty()) return;
@@ -63,7 +118,16 @@ public:
         layout=new QVBoxLayout(this);layout->setContentsMargins(12,12,12,12);layout->setSpacing(8);layout->setAlignment(Qt::AlignTop);layout->setSizeConstraint(QLayout::SetMinimumSize);back=new QPushButton(uiIcon("back"),"Parent animation");back->setObjectName("parentCueBoard");layout->addWidget(back);connect(back,&QPushButton::clicked,this,[=,this]{path=path.mid(0,qMax(0,path.size()-2));selected.clear();elapsed=0;previewing=true;refresh();});
         auto *card=new QWidget;card->setObjectName("cuePreviewCard");card->setStyleSheet("QWidget#cuePreviewCard{background:palette(alternate-base);border:1px solid palette(mid);border-radius:8px;} QWidget#cuePreviewCard QLabel{background:transparent;border:0;}");auto *cardLayout=new QHBoxLayout(card);cardLayout->setContentsMargins(10,10,10,10);preview=new ElementPreview;preview->setObjectName("cueBoardPreview");preview->setFixedHeight(126);preview->setMinimumWidth(170);cardLayout->addWidget(preview,1,Qt::AlignTop);card->setMaximumHeight(146);auto *details=new QVBoxLayout;title=new QLabel;title->setWordWrap(true);title->setStyleSheet("color:palette(window-text);font-size:12px;font-weight:600;");summary=new QLabel;summary->setWordWrap(true);summary->setStyleSheet("color:palette(placeholder-text);");details->addWidget(title);details->addSpacing(8);details->addWidget(summary);details->addStretch();cardLayout->addLayout(details,1);layout->addWidget(card);
         auto *seekRow=new QHBoxLayout;previewButton=new QPushButton(uiIcon("pause"),"");previewButton->setToolTip("Pause or resume private preview");previewButton->setFixedWidth(30);scrub=new QSlider(Qt::Horizontal);scrub->setObjectName("cueBoardScrubber");duration=new QLabel;auto *nextPreview=new QPushButton(uiIcon("next"),"");nextPreview->setObjectName("continueCuePreview");nextPreview->setFixedWidth(30);nextPreview->setToolTip("Continue past the current preview hold or loop");connect(nextPreview,&QPushButton::clicked,this,[=,this]{const auto sample=plan.sample(elapsed,previewFirst);if(!sample.visible)return;previewFirst=sample.step+1;if(previewFirst>=plan.steps.size()){previewFirst=0;previewing=false;}else previewing=true;elapsed=0;frame();});seekRow->addWidget(nextPreview);seekRow->addWidget(previewButton);seekRow->addWidget(scrub,1);seekRow->addWidget(duration);layout->addLayout(seekRow);position=new QLabel;position->setStyleSheet("color:palette(link);");layout->addWidget(position);
-        auto *renderRow=new QHBoxLayout;auto *renderButton=new QPushButton(uiIcon("broadcast"),"Render");renderButton->setObjectName("renderCueBoard");delay=new ValueInput;delay->setObjectName("cueRenderDelay");delay->setRange(0,86400);delay->setDecimals(2);delay->setValue(3);delay->setSuffix(" s delay");delay->setToolTip("Place at the current playhead plus this delay. Zero places immediately.");delay->setMaximumWidth(120);renderRow->addWidget(renderButton,1);renderRow->addWidget(delay);layout->addLayout(renderRow);auto *liveRow=new QHBoxLayout;auto *continueLive=new QPushButton(uiIcon("next"),"Continue on air");auto *hideLive=new QPushButton(uiIcon("visible"),"Hide on air");continueLive->setToolTip("Continue the rendered copy past its current manual hold or loop.");hideLive->setToolTip("Hide this rendered copy without changing its source or other copies.");liveRow->addWidget(continueLive);liveRow->addWidget(hideLive);layout->addLayout(liveRow);auto onAir=[this]{const auto *p=lib->placement(onAirPlacement);return p&&play->isLive()&&play->playheadMs()>=p->startMs&&play->playheadMs()<p->startMs+p->lengthMs();};connect(continueLive,&QPushButton::clicked,this,[=,this]{if(onAir())play->advanceElementCue("placement:"+onAirPlacement);else status->setText("This rendered copy is not currently on air.");});connect(hideLive,&QPushButton::clicked,this,[=,this]{if(onAir())play->triggerElementAnimation("placement:"+onAirPlacement,QString());else status->setText("This rendered copy is not currently on air.");});connect(renderButton,&QPushButton::clicked,this,[=,this]{render();});
+        auto *renderRow=new QHBoxLayout;auto *renderButton=new QPushButton(uiIcon("broadcast"),"Render");renderButton->setObjectName("renderCueBoard");delay=new ValueInput;delay->setObjectName("cueRenderDelay");delay->setRange(0,86400);delay->setDecimals(2);delay->setValue(3);delay->setSuffix(" s delay");delay->setToolTip("Place at the current playhead plus this delay. Zero places immediately.");delay->setMaximumWidth(120);renderRow->addWidget(renderButton,1);renderRow->addWidget(delay);
+        auto *exportMenu=new QMenu(this);
+        exportMenu->addAction("Editable graphic with media…",this,[this]{exportBoard(ExportKind::Editable);});
+        exportMenu->addAction("Bake transparent movie (no audio)…",this,[this]{exportBoard(ExportKind::Movie);});
+        exportMenu->addAction("Bake animation to PNG sequence…",this,[this]{exportBoard(ExportKind::Frames);});
+        auto *exportButton=new QToolButton;
+        exportButton->setObjectName("cueBoardExport");exportButton->setIcon(uiIcon("export"));exportButton->setToolTip("Export cue board");
+        exportButton->setAccessibleName("Export cue board");exportButton->setPopupMode(QToolButton::InstantPopup);exportButton->setMenu(exportMenu);
+        renderRow->addWidget(exportButton);layout->addLayout(renderRow);
+        auto *liveRow=new QHBoxLayout;auto *continueLive=new QPushButton(uiIcon("next"),"Continue on air");auto *hideLive=new QPushButton(uiIcon("visible"),"Hide on air");continueLive->setToolTip("Continue the rendered copy past its current manual hold or loop.");hideLive->setToolTip("Hide this rendered copy without changing its source or other copies.");liveRow->addWidget(continueLive);liveRow->addWidget(hideLive);layout->addLayout(liveRow);auto onAir=[this]{const auto *p=lib->placement(onAirPlacement);return p&&play->isLive()&&play->playheadMs()>=p->startMs&&play->playheadMs()<p->startMs+p->lengthMs();};connect(continueLive,&QPushButton::clicked,this,[=,this]{if(onAir())play->advanceElementCue("placement:"+onAirPlacement);else status->setText("This rendered copy is not currently on air.");});connect(hideLive,&QPushButton::clicked,this,[=,this]{if(onAir())play->triggerElementAnimation("placement:"+onAirPlacement,QString());else status->setText("This rendered copy is not currently on air.");});connect(renderButton,&QPushButton::clicked,this,[=,this]{render();});
         auto *rundownControls=new QWidget;auto *rundownLayout=new QVBoxLayout(rundownControls);rundownLayout->setContentsMargins(0,0,0,0);
         auto *rundownLabel=new QLabel;rundownLabel->setWordWrap(true);rundownLayout->addWidget(rundownLabel);
         auto *rundownButtons=new QHBoxLayout;auto *continueRundown=new QPushButton(uiIcon("next"),"Continue rundown cue");auto *hideRundown=new QPushButton(uiIcon("hidden"),"Hide rundown graphic");
