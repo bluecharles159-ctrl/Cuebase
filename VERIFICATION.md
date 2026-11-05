@@ -2,6 +2,15 @@
 
 ## Latest verified checkpoint
 
+Build 47 tested a paint stroke and a mask through the Windows paint editor.
+Cancel kept the original image. Saving produced the expected transparency,
+layer visibility and partial opacity. Undo, redo and reopening the scene
+preserved the expected pixels.
+[Windows ZIP](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42080845506/artifacts/13442230634)
+and [test reports and editor capture](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42080845506/artifacts/13441720568).
+
+## Build 46
+
 Windows Build 46 reopened a portable graphic after its original media was
 removed, recovered nested cue overrides, rejected a damaged package and decoded
 the expected colors and alpha from a baked cue movie. A rotated, animated cube

@@ -1,6 +1,6 @@
 # Cuebase completion counter
 
-Updated 2026-11-05. **34 of 84 tasks completed — 50 remaining.**
+Updated 2026-11-05. **35 of 84 tasks completed — 49 remaining.**
 
 The Claude transcript adds four distinct acceptance groups (81–84). Row 06 remains
 open: converted surfaces now retain their Inspector controls and unchanged
@@ -87,7 +87,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 - [ ] 53. Ordered material layers, mapping/blends, shared styles and evaluated surface properties.
 - [ ] 54. Editable shape/alpha/luma/gradient/text/brush masks, combinations, feathering and animation.
 - [ ] 55. Shared text/logo appearance effects, reflections, bevel/extrusion, glass and light sweeps.
-- [ ] 56. Nondestructive surface painting, brush controls, ordered layers, masks and undo.
+- [x] 56. Nondestructive surface painting, brush controls, ordered layers, masks and undo (Build 47).
 - [ ] 57. Drawable editable effect splines, handles, moving-object attachment and animated paths.
 - [ ] 58. Particle/mesh emitters, sparks, fire, smoke, fog, dust, debris, liquid and atmospheric presets.
 - [x] 59. Pixel/block/liquid/scattered-piece reveals with smooth/constant/step/flicker timing. Actual Inspector controls, undo/redo, saved settings, repeatable backward scrubbing and exact PNG parity for five surface styles × five timing modes pass in `reveal-workflow-results.txt` (5 cases). Rendered proof sheet inspected. These are 2D surface effects; 3D emitters/fluid simulation remain in task 58.

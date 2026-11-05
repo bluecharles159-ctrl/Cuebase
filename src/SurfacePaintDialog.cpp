@@ -99,16 +99,18 @@ private:
 };
 }
 
-void SurfacePaint::edit(QWidget *parent,BuildModel *model) {
+void SurfacePaint::edit(QWidget *parent,BuildModel *model,const QString &layerKey) {
     const auto *object=model->active();
     if (!object || !object->hasSurface() || object->locked) return;
     const auto id=object->id;
-    const auto original=object->style.value("paint.layers").toArray();
-    std::unique_ptr<QDialog> dialog(roundedModal(parent,"Paint surface"));
+    const bool brushMask=layerKey!="paint.layers";
+    const auto original=object->style.value(layerKey).toArray();
+    const auto title=brushMask?QStringLiteral("Paint mask"):QStringLiteral("Paint surface");
+    std::unique_ptr<QDialog> dialog(roundedModal(parent,title));
     dialog->setObjectName("surfacePaintDialog");
     dialog->resize(780,530);
     auto *root=new QVBoxLayout(dialog.get());
-    root->addWidget(new QLabel("Paint surface  ·  "+object->name));
+    root->addWidget(new QLabel(title+"  ·  "+object->name));
     auto *body=new QHBoxLayout;
     root->addLayout(body,1);
     auto *canvas=new PaintCanvas(dialog.get());
@@ -116,9 +118,13 @@ void SurfacePaint::edit(QWidget *parent,BuildModel *model) {
     auto source=object->evaluated(model->t);
     source.style.remove("paint.layers");
     source.fitTextLayout();
-    const auto texture=model->design.textureFor(source);
     const int w=qBound(1,qRound(source.w*kPxPerUnit),4096),h=qBound(1,qRound(source.h*kPxPerUnit),4096);
-    canvas->base=texture.copy((texture.width()-w)/2,(texture.height()-h)/2,w,h);
+    if (brushMask) {
+        canvas->base=QImage(w,h,QImage::Format_ARGB32_Premultiplied);canvas->base.fill(Qt::black);
+    } else {
+        const auto texture=model->design.textureFor(source);
+        canvas->base=texture.copy((texture.width()-w)/2,(texture.height()-h)/2,w,h);
+    }
     if (w>640 || h>640) canvas->base=canvas->base.scaled(640,640,Qt::KeepAspectRatio,Qt::SmoothTransformation);
     auto *controls=new QVBoxLayout;
     body->addLayout(controls);
@@ -134,6 +140,7 @@ void SurfacePaint::edit(QWidget *parent,BuildModel *model) {
     };
     auto *addPaint=button(addRow,"+ Paint"),*addMask=button(addRow,"+ Mask");
     addMask->setObjectName("surfaceAddMask");
+    addMask->setVisible(!brushMask);
     auto *actions=new QHBoxLayout;
     controls->addLayout(actions);
     auto *up=button(actions,"Raise"),*down=button(actions,"Lower"),*remove=button(actions,"Remove");
@@ -156,7 +163,7 @@ void SurfacePaint::edit(QWidget *parent,BuildModel *model) {
     struct Snapshot { QJsonArray layers; int selection; };
     QVector<Snapshot> history{{canvas->layers,selected}};
     int step=0;
-    QColor ink("#3d9aff");
+    QColor ink(brushMask?"#ffffff":"#3d9aff");
     auto syncBrush=[&] {
         canvas->brush={{"color",ink.name(QColor::HexArgb)},{"size",size->value()/100.},
                        {"flow",flow->value()/100.},{"jitter",jitter->value()/100.},{"erase",erase->isChecked()}};
@@ -236,9 +243,9 @@ void SurfacePaint::edit(QWidget *parent,BuildModel *model) {
     syncBrush();refresh();
     if (dialog->exec()!=QDialog::Accepted || (original.isEmpty() && step==0) || canvas->layers==original) return;
     auto *target=model->byId(id);
-    if (!target || target->locked || target->style.value("paint.layers").toArray()!=original) return;
+    if (!target || target->locked || target->style.value(layerKey).toArray()!=original) return;
     model->pushUndo(true);
-    if (canvas->layers.isEmpty()) target->style.remove("paint.layers");
-    else target->style["paint.layers"]=canvas->layers;
+    if (canvas->layers.isEmpty()) target->style.remove(layerKey);
+    else target->style[layerKey]=canvas->layers;
     model->notify();
 }

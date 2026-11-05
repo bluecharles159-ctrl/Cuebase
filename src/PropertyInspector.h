@@ -14,6 +14,7 @@ public:
 private:
     void rebuild();
     void refresh();
+    void maskControls();
     QFormLayout *section(const QString &title, bool open = true);
     void number(QFormLayout *form, const QString &label, const QString &path, double low, double high, double step = 1, const QString &suffix = {});
     void choice(QFormLayout *form, const QString &label, const QString &path, const QStringList &options, const QString &fallback);

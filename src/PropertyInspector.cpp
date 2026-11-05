@@ -4,6 +4,9 @@
 #include "BuildModel.h"
 #include "Data.h"
 #include "MediaFrames.h"
+#include "SurfacePaint.h"
+#include <QJsonDocument>
+#include <QUuid>
 #include <QCheckBox>
 #include "ColorPicker.h"
 #include <QComboBox>
@@ -14,6 +17,7 @@
 #include <QFormLayout>
 #include <QLabel>
 #include <QMessageBox>
+#include <QMenu>
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -116,8 +120,88 @@ void PropertyInspector::color(QFormLayout *form,const QString &label,const QStri
     sync.append([=, this]{QColor c=get();button->setText(c.name(QColor::HexArgb));button->setStyleSheet("background:"+c.name()+";color:"+(c.lightness()>140?"#111":"#fff")+";");});
 }
 void PropertyInspector::refresh(){syncing=true;for(const auto &fn:sync)fn();syncing=false;}
+void PropertyInspector::maskControls(){
+    const auto *object=m->active();
+    const auto stack=object->style.value("mask.stack").toArray();
+    auto *form=section("MASKS");
+    auto *add=new QPushButton("Add mask");
+    add->setObjectName("addSurfaceMask");
+    auto *menu=new QMenu(add);
+    add->setMenu(menu);add->setEnabled(!object->locked);form->addRow(add);
+    for(const QString kind:QStringList{"Ellipse","Rectangle","Gradient","Alpha","Luminance","Text","Brush"}){
+        menu->addAction(kind,this,[this,kind]{
+            auto *o=m->active();if(!o||o->locked)return;
+            QString file;
+            if(kind=="Alpha"||kind=="Luminance"){
+                file=QFileDialog::getOpenFileName(this,"Mask image",{},"Images (*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)");
+                if(file.isEmpty())return;
+            }
+            const auto id=QUuid::createUuid().toString(QUuid::WithoutBraces);
+            const auto prefix="mask."+id+".";
+            apply([&]{auto order=o->style.value("mask.stack").toArray();order.append(id);o->style["mask.stack"]=order;
+                o->style[prefix+"type"]=kind;
+                if(!file.isEmpty())o->style[prefix+"file"]=file;});
+        });
+    }
+    for(int index=0;index<stack.size();++index){
+        const auto id=stack.at(index).toString(),prefix="mask."+id+".";
+        const auto kind=object->style.value(prefix+"type").toString("Ellipse");
+        auto *fields=section(QString("MASK %1 · %2").arg(index+1).arg(kind.toUpper()));
+        auto *actionRow=new QWidget;auto *actions=new QHBoxLayout(actionRow);actions->setContentsMargins(0,0,0,0);
+        for(const QString action:QStringList{"Earlier","Later","Remove"}){
+            auto *b=new QPushButton(action);actions->addWidget(b);
+            b->setEnabled(!object->locked && (action!="Earlier" || index>0) && (action!="Later" || index+1<stack.size()));
+            connect(b,&QPushButton::clicked,this,[this,action,id,prefix]{
+                auto *o=m->active();if(!o||o->locked)return;
+                auto order=o->style.value("mask.stack").toArray();qsizetype pos=0;
+                while(pos<order.size() && order.at(pos).toString()!=id)++pos;
+                if(pos>=order.size())return;
+                apply([&]{
+                    order.removeAt(pos);
+                    if(action=="Remove"){
+                        for(const auto &key:o->style.keys())if(key.startsWith(prefix))o->style.remove(key);
+                        o->tracks.removeIf([&](const auto &track){return track.property.startsWith(prefix);});
+                        for(const auto &key:o->overrides.keys())if(key.startsWith(prefix))o->overrides.remove(key);
+                        for(const auto &key:o->defaults.keys())if(key.startsWith(prefix))o->defaults.remove(key);
+                    }else order.insert(qBound<qsizetype>(0,pos+(action=="Earlier"?-1:1),order.size()),id);
+                    o->style["mask.stack"]=order;
+                });
+            });
+        }
+        fields->addRow(actionRow);
+        choice(fields,"Enabled",prefix+"enabled",{"On","Off"},"On");
+        choice(fields,"Combine",prefix+"combine",{"Intersect","Add","Subtract","Replace"},"Intersect");
+        choice(fields,"Invert",prefix+"invert",{"Off","On"},"Off");
+        if(kind=="Text"){
+            auto *input=new QLineEdit;input->setAccessibleName("Mask text");fields->addRow("Text",input);
+            connect(input,&QLineEdit::editingFinished,this,[this,input,prefix]{
+                if(auto *o=m->active();o && !o->locked && input->isModified()){
+                    input->setModified(false);apply([&]{o->style[prefix+"text"]=input->text();});}
+            });
+            sync.append([this,input,prefix]{if(auto *o=m->active()){
+                if(!input->hasFocus())input->setText(o->style.value(prefix+"text").toString("TITLE"));
+                input->setEnabled(!o->locked);}});
+        }else if(kind=="Brush"){
+            auto *paint=new QPushButton("Paint mask…");paint->setEnabled(!object->locked);fields->addRow(paint);
+            connect(paint,&QPushButton::clicked,this,[this,prefix]{SurfacePaint::edit(this,m,prefix+"brush");});
+        }else if(kind=="Alpha"||kind=="Luminance"){
+            auto *file=new QPushButton;fields->addRow("Image",file);
+            connect(file,&QPushButton::clicked,this,[this,prefix]{
+                const auto path=QFileDialog::getOpenFileName(this,"Replace mask image",{},"Images (*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)");
+                if(auto *o=m->active();o && !o->locked && !path.isEmpty())apply([&]{o->style[prefix+"file"]=path;});
+            });
+            sync.append([this,file,prefix]{if(auto *o=m->active()){
+                file->setText(QFileInfo(o->style.value(prefix+"file").toString()).fileName());file->setEnabled(!o->locked);}});
+        }
+        number(fields,"Center X",prefix+"x",-2,3,.01);number(fields,"Center Y",prefix+"y",-2,3,.01);
+        number(fields,"Width",prefix+"width",.001,4,.01);number(fields,"Height",prefix+"height",.001,4,.01);
+        number(fields,"Rotation",prefix+"angle",-3600,3600,1,"°");
+        number(fields,"Feather",prefix+"feather",0,100,1," px");number(fields,"Strength",prefix+"opacity",0,1,.01);
+    }
+}
 void PropertyInspector::rebuild(){
     auto *o=m->active();QString sig=o?o->id+o->type+QString::number(m->sel.size()):QString("none");
+    if(o && o->hasSurface())sig+=QString::fromUtf8(QJsonDocument(o->style.value("mask.stack").toArray()).toJson(QJsonDocument::Compact))+QString::number(o->locked);
     if(sig==signature)return;signature=sig;sync.clear();
     while(auto *item=layout->takeAt(0)){if(item->widget())item->widget()->deleteLater();delete item;}
     if(!o){layout->addWidget(new QLabel("Select a layer to inspect its properties."));layout->addStretch();return;}
@@ -216,6 +300,7 @@ void PropertyInspector::rebuild(){
             number(form,"X","textShadow.x",-1000,1000,1," px");number(form,"Y","textShadow.y",-1000,1000,1," px");number(form,"Blur","textShadow.blur",0,80,1," px");color(form,"Color","textShadow.color","#99000000");
         }
         auto *effects=section("EFFECTS",false);
+        maskControls();
         number(effects,"Backdrop blur","backdrop.blur",0,80,1," px");number(effects,"Backdrop brightness","backdrop.brightness",0,3,.05);
         number(effects,"Blur","effects.blur",0,80,1," px");
         number(effects,"Reveal","effects.reveal",0,1,.01);

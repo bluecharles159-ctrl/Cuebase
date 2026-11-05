@@ -143,6 +143,11 @@ void DObject::refreshLegacyKeys() {
 }
 
 double DObject::propertyBase(const QString &path) const {
+    if(path.startsWith("mask.")) {
+        const auto field=path.section('.',-1);
+        const double fallback=field=="x"||field=="y"?.5:field=="opacity"?1.:field=="width"||field=="height"?.75:0.;
+        return style[path].toDouble(fallback);
+    }
     if(path=="texture.scaleX"||path=="texture.scaleY"||path=="texture.opacity")return style[path].toDouble(1);
     if(path=="effects.revealBlock")return style[path].toDouble(32);
     if(path=="effects.revealSpread")return style[path].toDouble(1);

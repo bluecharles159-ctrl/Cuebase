@@ -24,6 +24,8 @@
 #include "FrameExport.h"
 #include "GraphicPackage.h"
 #include "SurfacePaint.h"
+#include "SurfaceMasks.h"
+#include "DesignAssets.h"
 #include "AssetImport.h"
 #include "MediaFrames.h"
 #include "CueSequence.h"
@@ -48,6 +50,46 @@ class CreativeWorkflowTests : public QObject {
         for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->data(0,Qt::UserRole+1).toString()==path)return *it;return nullptr;
     }
 private slots:
+    void animatedMaskStackAndInspector() {
+        auto d=scene();auto *o=d.find("subject");o->style={};
+        Library library;BuildModel model;model.reset(d);model.select("subject");
+        PropertyInspector inspector(&model,&library);
+        auto *add=inspector.findChild<QPushButton*>("addSurfaceMask");QVERIFY(add && add->menu());
+        add->menu()->actions().first()->trigger();
+        o=model.active();const auto stack=o->style["mask.stack"].toArray();QCOMPARE(stack.size(),1);
+        const auto prefix="mask."+stack.first().toString()+".";
+        QVERIFY(inspector.findChild<QDoubleSpinBox*>("property_"+prefix+"feather"));
+        auto renderMask=[&](int ms=0){
+            QImage image(100,100,QImage::Format_ARGB32_Premultiplied);image.fill(Qt::white);
+            SurfaceMasks::apply(image,image.rect(),o->evaluated(ms));return image;
+        };
+        QCOMPARE(renderMask().pixelColor(50,50).alpha(),255);QCOMPARE(renderMask().pixelColor(1,1).alpha(),0);
+        o->keyChannel(prefix+"x",0,.5);o->keyChannel(prefix+"x",1000,1.2);
+        QCOMPARE(renderMask(1000).pixelColor(50,50).alpha(),0);
+        o->style["mask.stack"]=QJsonArray{stack.first(),"cut"};
+        o->style["mask.cut.type"]="Rectangle";o->style["mask.cut.width"]=.2;o->style["mask.cut.combine"]="Subtract";
+        QCOMPARE(renderMask().pixelColor(50,50).alpha(),0);QCOMPARE(renderMask().pixelColor(30,50).alpha(),255);
+        o->style["mask.cut.feather"]=5;const int softened=renderMask().pixelColor(40,50).alpha();QVERIFY(softened>0 && softened<255);
+        o->style["mask.cut.combine"]="Add";o->style["mask.cut.invert"]="On";QCOMPARE(renderMask().pixelColor(2,2).alpha(),255);
+        o->style["mask.stack"]=QJsonArray{"only"};
+        const QString key="mask.only.";o->style[key+"width"]=1.;o->style[key+"height"]=1.;
+        o->style[key+"type"]="Gradient";auto ramp=renderMask();QVERIFY(ramp.pixelColor(10,50).alpha()<ramp.pixelColor(90,50).alpha());
+        o->style[key+"type"]="Text";o->style[key+"text"]="HI";auto textMask=renderMask();
+        int ink=0;for(int y=0;y<100;++y)for(int x=0;x<100;++x)if(textMask.pixelColor(x,y).alpha()>127)++ink;
+        QVERIFY(ink>200 && ink<9000);
+        o->style[key+"type"]="Brush";
+        const QJsonObject dab{{"points",QJsonArray{QJsonArray{.5,.5}}},{"size",.3},{"color","#ffffff"}};
+        o->style[key+"brush"]=QJsonArray{QJsonObject{{"strokes",QJsonArray{dab}}}};
+        QCOMPARE(renderMask().pixelColor(50,50).alpha(),255);QCOMPARE(renderMask().pixelColor(2,2).alpha(),0);
+        QTemporaryDir temp;QImage gray(20,20,QImage::Format_ARGB32);
+        gray.fill(QColor(100,100,100,128));const auto path=temp.filePath("mask.png");QVERIFY(gray.save(path));
+        o->style[key+"type"]="Alpha";o->style[key+"file"]=path;
+        QCOMPARE(renderMask().pixelColor(50,50).alpha(),128);
+        o->style[key+"type"]="Luminance";QVERIFY(qAbs(renderMask().pixelColor(50,50).alpha()-50)<=1);
+        const auto assets=designAssets(model.design);QCOMPARE(assets.size(),1);QCOMPARE(assets.first().path,path);
+        const auto saved=model.design.textureFor(*o);const auto restored=ElementDesign::fromJson(model.design.toJson());
+        QCOMPARE(restored.textureFor(*restored.find("subject")),saved);
+    }
     void paintSurfaceEditorLayersAndUndo() {
         auto design=scene();
         auto *subject=design.find("subject");

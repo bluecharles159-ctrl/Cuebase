@@ -15,6 +15,11 @@ QList<DesignAsset> designAssets(const ElementDesign &design){
         if(!audio.isEmpty())assets.append({object.id,object.name,"audio",audio});
         const auto texture=object.style["texture.file"].toString();
         if(!texture.isEmpty())assets.append({object.id,object.name,"texture",texture});
+        for(auto id:object.style.value("mask.stack").toArray()){
+            const auto key="mask."+id.toString()+".file";
+            const auto file=object.style.value(key).toString();
+            if(!file.isEmpty())assets.append({object.id,object.name,key,file});
+        }
     }
     return assets;
 }
@@ -23,6 +28,7 @@ void setDesignAsset(ElementDesign &design,const DesignAsset &asset,const QString
         if(asset.role=="image")object->image=path;
         else if(asset.role=="texture")object->style["texture.file"]=path;
         else if(asset.role=="audio")object->style["audio.file"]=path;
+        else if(asset.role.startsWith("mask.") && asset.role.endsWith(".file"))object->style[asset.role]=path;
     }
 }
 void resolveDesignAssets(ElementDesign &design,const QString &directory){
