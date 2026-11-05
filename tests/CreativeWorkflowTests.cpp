@@ -103,10 +103,12 @@ private slots:
         QVERIFY2(AssetImport::exportObj(model.design,1000,path,&error),qPrintable(error));
         const auto imported=AssetImport::meshes(path,&error);QVERIFY2(!imported.isEmpty(),qPrintable(error));
         QVector3D minimum,maximum;QVERIFY(imported.first().mesh.bounds(minimum,maximum));
-        QVector3D originalLow,originalHigh;QVERIFY(o->mesh.bounds(originalLow,originalHigh));
         const auto transform=model.design.worldMatrix(*o,1000);
-        QVERIFY((minimum-transform.map(originalLow)).length()<.0001);
-        QVERIFY((maximum-transform.map(originalHigh)).length()<.0001);
+        Mesh expected=o->mesh;
+        for(auto &vertex:expected.v) vertex=transform.map(vertex);
+        QVector3D expectedLow,expectedHigh;QVERIFY(expected.bounds(expectedLow,expectedHigh));
+        QVERIFY((minimum-expectedLow).length()<.0001);
+        QVERIFY((maximum-expectedHigh).length()<.0001);
         o->visible=false;QVERIFY(!AssetImport::exportObj(model.design,1000,path,&error));
         QVERIFY(!AssetImport::meshes(path,&error).isEmpty());
     }
