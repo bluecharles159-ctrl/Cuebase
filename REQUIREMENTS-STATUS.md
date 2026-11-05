@@ -24,6 +24,11 @@ Do not convert an untested feature into a completed item merely because it exist
 
 ## Immediate repair pass
 
+2026-11-05. Windows build 43 completes task 29. All twelve scene-name
+categories save and reopen with the intended playlist and role. Build and
+Studio also preserve an existing timeline cut when its source board changes
+duration. The completion count is 32 of 84, with 52 remaining.
+
 2026-11-05. Windows build 42 verifies tasks 08 and 12 across Build, Studio
 and playout. Native checks cover cue extraction, selection highlighting, nested
 edits, independent copies, trim and extension, and scheduled and manual live

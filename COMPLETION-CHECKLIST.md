@@ -1,6 +1,6 @@
 # Cuebase completion counter
 
-Updated 2026-11-05. **31 of 84 tasks completed — 53 remaining.**
+Updated 2026-11-05. **32 of 84 tasks completed — 52 remaining.**
 
 The Claude transcript adds four distinct acceptance groups (81–84). Row 06 remains
 open: converted surfaces now retain their Inspector controls and unchanged
@@ -51,7 +51,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 - [x] 26. Solid/gradient/media backgrounds and backdrop-blur parity in Build/Studio/export. Inspector-to-Final-to-PNG comparisons pass in `export-parity-editor-results.txt` (53 cases); Studio reference comparisons, translucent backdrop and ordering checks pass in `background-studio-format-results.txt` (6 cases). Proof captures inspected. Comparisons use each renderer's native alpha format; display grading and wider lighting acceptance remain task 50.
 - [x] 27. Overlay Z-order controls and editor/rendering agreement. Source and per-placement controls, saved overrides, inheritance, duplicate independence, snapshot order and save failure verified in `placement-order-results.txt` (5 passing cases).
 - [x] 28. Circular imported logo containers, channel overview and editable/imported/built identity. Actual rounded profile dialog, draft previews, Cancel, Save/reopen and built-logo selection verified in `channel-profile-results.txt` (7 passing cases) and final polish in `channel-profile-polish-results.txt` (3 passing cases); dialog capture inspected.
-- [ ] 29. Object naming shorthands for logos, continuity screens and reusable categories.
+- [x] 29. Object naming shorthands for logos, continuity screens and reusable categories. Windows build 43 exercises all twelve scene tags through Build's save button, confirms category and text after reopening, and covers rejected names, failed saves, retry and channel-logo reassignment.
 
 ## Broadcast, preview and audio
 

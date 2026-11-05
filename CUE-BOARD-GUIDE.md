@@ -16,7 +16,9 @@ Hover over the main viewport to use its draggable preview scrubber. Scrubbing op
 
 **Black / standby** immediately replaces outgoing picture and audio. Expand Standby settings to choose black, a branded message, a saved element, or a looping ad/video. Messages are editable. The error selector copies actual media/encoder errors only when chosen; network destinations are removed from that copy. Return to program restores the existing paused/playing rundown. Click the header channel icon to set the channel name, description and imported or Build-made logo.
 
-Scene-name shorthand is separate from editable text: `{{element:main-logo|Station logo}}` assigns the channel's main logo; `{{element:break|We'll be right back}}` categorizes a break screen. Other categories include logo, overlay, lower-third, title, ticker, clock, ident, replay, effect and credits. Editable object text retains the `{{studio:Field label}}Visible text` syntax.
+In Build's scene name field, enter `{{element:main-logo|Station logo}}` and save to use the scene as the channel logo. Enter `{{element:break|We'll be right back}}` to put a scene in the Break screens playlist. The part after the vertical bar becomes the name in Studio. Changing a main logo to a different category releases its channel-logo assignment. A plain rename keeps its category.
+
+Other scene categories include logo, overlay, lower-third, title, ticker, clock, ident, replay, effect and credits. Inside a text object, use `{{studio:Field label}}Visible text` to expose an editable Studio field.
 
 Production accounts, isolated multiple channels and timed multi-source split layouts remain under development; this update does not provide a public cloud account service.
 

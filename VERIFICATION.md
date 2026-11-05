@@ -2,6 +2,18 @@
 
 ## Latest verified checkpoint
 
+Build 43 passed the Windows workflow for `6c6771b`. Build's save control
+was exercised for all twelve scene-name categories. Tests reopened the library,
+checked the category and object text, and confirmed failure recovery and the
+channel identity when reclassifying a main logo. A second regression changes
+a trimmed cue copy to a shorter cycle and then to a manual hold in Build.
+Its cut and source offset survive both edits and a reload. Task 29 brings the
+count to **32 of 84, with 52 remaining**.
+[Windows ZIP](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42029717279/artifacts/13415263657)
+and [test reports](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42029717279/artifacts/13414909917).
+
+## Build 42
+
 Build 42 passed all seven CTest suites and the portable runtime checks at
 `2df4024`. The native Windows reports recorded 25 editor, 32 creative and
 5 cue-board passes, including suite setup and cleanup, with zero failures or skips.
