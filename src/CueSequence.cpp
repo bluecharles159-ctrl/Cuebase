@@ -114,6 +114,27 @@ QString cueTimingLabel(const QJsonObject &cue){
 }
 
 QJsonObject bakeCueBoard(const Element &element){auto design=ElementDesign::fromJson(element.design);for(int i=0;i<design.animationCues.size();++i){auto cue=design.animationCues[i].toObject();cue["trigger"]="Manual";cue.remove("triggerMs");design.animationCues[i]=cue;}auto settings=element.cueBoardSettings;settings.remove("_placementLength");settings.remove("_cycle");return {{"design",design.toJson()},{"cueBoard",element.cueBoard},{"settings",settings}};}
+static qint64 unchangedPlayDuration(const ElementDesign &design, QJsonObject oldRow, QJsonObject newRow) {
+    const QJsonArray oldBoard{oldRow}, newBoard{newRow};
+    for (const auto &key : {QStringLiteral("sections"), QStringLiteral("plays")}) {
+        oldRow.remove(key);
+        newRow.remove(key);
+    }
+    if (oldRow != newRow) return 0;
+
+    // A later play or nested child can change independently of its parent.
+    const auto oldPlan = compileCueBoard(design, oldBoard);
+    const auto newPlan = compileCueBoard(design, newBoard);
+    if (!oldPlan.error.isEmpty() || !newPlan.error.isEmpty()) return 0;
+    const auto count = qMin(oldPlan.steps.size(), newPlan.steps.size());
+    qint64 elapsed = 0;
+    for (qsizetype i = 0; i < count; ++i) {
+        const auto &step = oldPlan.steps[i];
+        if (step != newPlan.steps[i] || step.manualHold || step.loopTo >= 0) break;
+        elapsed += step.duration();
+    }
+    return elapsed;
+}
 bool canEditCueBoard(const Element &before,const Element &after,qint64 start,qint64 now,bool live,QString *reason){
     constexpr qint64 protectionMs = 5 * 60 * 1000;
     if (!live || start - now >= protectionMs) return true;
@@ -127,15 +148,24 @@ bool canEditCueBoard(const Element &before,const Element &after,qint64 start,qin
 
         // The first change occurs on the first traversal. Whole-board repeats
         // and end holds come after an appended cue and cannot protect it.
-        const auto plan = compileCueBoard(ElementDesign::fromJson(before.design), prefix);
-        qint64 earliest = start;
+        const auto design = ElementDesign::fromJson(before.design);
+        const auto plan = compileCueBoard(design, prefix);
         if (plan.error.isEmpty()) {
+            qint64 earliest = start;
+            bool reachedRow = true;
             for (const auto &step : plan.steps) {
                 // Continue on air may release a hold or leave a loop. Count
                 // only the time guaranteed before that operator action.
-                if (step.manualHold || step.loopTo >= 0) break;
+                if (step.manualHold || step.loopTo >= 0) {
+                    reachedRow = false;
+                    break;
+                }
                 earliest += step.duration();
             }
+            if (earliest - now >= protectionMs) return true;
+            if (reachedRow && prefix.size() < common)
+                earliest += unchangedPlayDuration(design, before.cueBoard[prefix.size()].toObject(),
+                                                  after.cueBoard[prefix.size()].toObject());
             if (earliest - now >= protectionMs) return true;
         }
     }

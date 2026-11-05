@@ -8,6 +8,7 @@ struct CueStep {
     qint64 start=0,end=1,holdMs=0;
     bool manualHold=false;
     int loopTo=-1;
+    bool operator==(const CueStep &) const = default;
     qint64 duration() const {return manualHold?-1:end-start+holdMs;}
 };
 struct CueSample {

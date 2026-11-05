@@ -59,6 +59,7 @@
 #include <QDoubleSpinBox>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSlider>
 #include <QWheelEvent>
 
 #include "AudioDsp.h"
@@ -472,6 +473,13 @@ private slots:
         QVERIFY(page->property("dirty").toBool());
         QCOMPARE(library.element(source.id)->cueBoard,source.cueBoard);
         back->click();
+        auto *scrubber = page->findChild<QSlider*>("cueBoardScrubber");
+        QVERIFY(scrubber);
+        scrubber->setSliderDown(true);
+        scrubber->setValue(1250);
+        scrubber->setSliderDown(false);
+        QCOMPARE(list->item(1)->foreground().color(),page->palette().color(QPalette::Link));
+        QCOMPARE(list->item(0)->foreground().color(),page->palette().color(QPalette::Text));
         repeats->setValue(2);
         delay->setValue(3.25);
         const auto expectedStart = playout.playheadMs() + 3250;
@@ -492,6 +500,57 @@ private slots:
         reopened.load();
         QVERIFY(reopened.placement(placement.id));
         QCOMPARE(reopened.placement(placement.id)->boardSnapshot,placement.boardSnapshot);
+    }
+    void livePlacementEditorProtectsIndividualPlays() {
+        Library library;
+        ProgramItem program;
+        program.id = "show";
+        program.seconds = 600;
+        library.programs = {program};
+        auto design = elementPreset("News lower third");
+        const QJsonObject cue{{"id","title"},{"start",0},{"end",1000},{"repeat",2},{"hold",false}};
+        design.animationCues = {cue};
+        Element source;
+        source.id = "source";
+        source.type = "Custom";
+        source.design = design.toJson();
+        source.cueBoard = {newCueBoardEntry(cue)};
+        library.elements = {source};
+        Placement first;
+        first.id = "first";
+        first.type = "Element";
+        first.refId = source.id;
+        first.startMs = 299000;
+        first.durationMs = first.boardCycleMs = 2000;
+        first.boardSnapshot = bakeCueBoard(source);
+        library.placements = {first};
+        Playout play(&library);
+        play.start(0,1);
+        play.togglePause();
+        QScopedPointer<QWidget> page(studioCueBoard(&library,&play,source.id,first.id));
+        auto *list = page->findChild<QListWidget*>("cueBoardList");
+        auto *plays = page->findChild<QComboBox*>("boardPlaySelector");
+        auto *field = page->findChild<QPlainTextEdit*>("cueFieldValue");
+        auto *save = page->findChild<QPushButton*>("saveCueBoard");
+        QVERIFY(list && plays && field && save);
+        list->setCurrentRow(0);
+        plays->setCurrentIndex(1);
+        field->setPlainText("Second play only");
+        save->click();
+        QVERIFY(page->property("dirty").toBool());
+        QCOMPARE(library.placement(first.id)->boardSnapshot,first.boardSnapshot);
+        play.start(0,0);
+        play.togglePause();
+        QCOMPARE(play.playheadMs(),qint64(0));
+        save->click();
+        QVERIFY(!page->property("dirty").toBool());
+        const auto saved = library.placementElement(*library.placement(first.id));
+        const auto plan = compileCueBoard(ElementDesign::fromJson(saved.design),saved.cueBoard,saved.cueBoardSettings);
+        QCOMPARE(plan.steps.size(),2);
+        QVERIFY(!plan.steps[0].design.contains("Second play only"));
+        QVERIFY(plan.steps[1].design.contains("Second play only"));
+        QCOMPARE(library.element(source.id)->cueBoard,source.cueBoard);
+        play.stop();
     }
     void cueBoardLiveAndDrafts(){
         applyUiTheme("Studio Blue",false);
