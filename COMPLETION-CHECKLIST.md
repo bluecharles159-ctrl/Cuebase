@@ -1,6 +1,6 @@
 # Cuebase completion counter
 
-Updated 2026-11-05. **33 of 84 tasks completed — 51 remaining.**
+Updated 2026-11-05. **34 of 84 tasks completed — 50 remaining.**
 
 The Claude transcript adds four distinct acceptance groups (81–84). Row 06 remains
 open: converted surfaces now retain their Inspector controls and unchanged
@@ -96,7 +96,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 - [x] 62. Local component overrides, selective propagation and default-linked animations/cues. Verified local/disabled groups, source ownership, duplicate cue IDs, stale review, rollback, undo and saved-instance reload. Scene-time cue and base-placement limits are recorded in REUSABLE-OBJECTS.md; independent object clocks and bulk cross-document updates are not implied.
 - [ ] 63. Full docking/tabbing/floating/maximize, persisted layouts, presets and safe reset.
 - [x] 64. Master graphic templates, full-screen/lower-third/ID variants and shared brand tokens. Windows build 44 created three editable library scenes, updated shared content and typography, preserved local text, transforms and keys, and verified reload and cancellation. Native chooser capture reviewed.
-- [ ] 65. Portable model/element/animation/baked-cue import/export, assets and round-trip checks.
+- [x] 65. Portable model/element/animation/baked-cue import/export, assets and round-trip checks (Build 46).
 
 ## Accounts, research and delivery
 

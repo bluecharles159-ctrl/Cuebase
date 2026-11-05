@@ -1,4 +1,5 @@
 #include "TextureLibrary.h"
+#include "SurfacePaint.h"
 #include "BuildModel.h"
 #include "Data.h"
 #include "DesignAssets.h"
@@ -31,9 +32,12 @@ class TexturePanel : public QWidget {
     TextureList *list;QLineEdit *search,*name,*collection;QComboBox *filter,*kind;QCheckBox *favorites,*favorite;
     QLabel *status,*selection;QPushButton *apply,*relink,*save,*exportButton,*remove;
     QJsonArray snapshot;QHash<QString,QIcon> thumbnails;
+    QPushButton *paint;
     QString current() const {return list->currentItem()?list->currentItem()->data(Qt::UserRole).toString():QString();}
     void report(const QString &error){status->setText(error);status->setVisible(!error.isEmpty());}
     void details(){
+        const auto *object=model->active();
+        paint->setEnabled(object && object->hasSurface() && !object->locked);
         const auto item=TextureLibrary::entry(*library,current());const bool exists=!item.isEmpty();
         name->setText(item["name"].toString());collection->setText(item["collection"].toString());favorite->setChecked(item["favorite"].toBool());
         for(QWidget *widget:QList<QWidget*>{name,collection,favorite,save,exportButton,remove,relink})widget->setEnabled(exists);
@@ -72,6 +76,10 @@ public:
         setObjectName("textureLibraryPanel");auto *layout=new QVBoxLayout(this);layout->setContentsMargins(0,0,0,0);layout->setSpacing(5);
         auto *header=new QToolButton;header->setText("TEXTURES && MATERIAL PRESETS");header->setCheckable(true);header->setChecked(true);header->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);header->setArrowType(Qt::DownArrow);header->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);layout->addWidget(header);
         auto *body=new QWidget;auto *bodyLayout=new QVBoxLayout(body);bodyLayout->setContentsMargins(10,4,0,4);bodyLayout->setSpacing(5);layout->addWidget(body);
+        paint=new QPushButton("Paint selected surface…");
+        paint->setObjectName("editSurfacePaint");
+        bodyLayout->addWidget(paint);
+        connect(paint,&QPushButton::clicked,this,[this]{SurfacePaint::edit(this,model);});
         connect(header,&QToolButton::toggled,this,[=](bool on){body->setVisible(on);header->setArrowType(on?Qt::DownArrow:Qt::RightArrow);});
         search=new QLineEdit;search->setObjectName("textureSearch");search->setPlaceholderText("Search textures or collections…");bodyLayout->addWidget(search);
         filter=new QComboBox;filter->setObjectName("textureCollectionFilter");filter->addItem("All collections");bodyLayout->addWidget(filter);

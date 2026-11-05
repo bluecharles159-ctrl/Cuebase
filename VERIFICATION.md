@@ -2,6 +2,15 @@
 
 ## Latest verified checkpoint
 
+Windows Build 46 reopened a portable graphic after its original media was
+removed, recovered nested cue overrides, rejected a damaged package and decoded
+the expected colors and alpha from a baked cue movie. A rotated, animated cube
+also survived OBJ export and reimport at the expected world-space bounds.
+[Windows ZIP](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42079009211/artifacts/13439103916)
+and [test reports](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42079009211/artifacts/13439813787).
+
+## Build 44
+
 Build 44 verifies shared master graphics in Build. The Windows interaction test
 creates all three layouts, edits the lower third, changes the shared headline,
 schedule and font, then reopens the library and checks local and inherited

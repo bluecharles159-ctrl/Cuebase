@@ -23,6 +23,7 @@
 #include "FormAnimationPanel.h"
 #include "FrameExport.h"
 #include "GraphicPackage.h"
+#include "SurfacePaint.h"
 #include "AssetImport.h"
 #include "MediaFrames.h"
 #include "CueSequence.h"
@@ -47,6 +48,55 @@ class CreativeWorkflowTests : public QObject {
         for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->data(0,Qt::UserRole+1).toString()==path)return *it;return nullptr;
     }
 private slots:
+    void paintSurfaceEditorLayersAndUndo() {
+        auto design=scene();
+        auto *subject=design.find("subject");
+        subject->style={};
+        subject->mat.color=Qt::white;
+        BuildModel model;model.reset(design);model.select("subject");
+        const auto initial=model.design.textureFor(*model.active());
+        auto paint=[&](bool save) {
+            QTimer::singleShot(0,qApp,[&model,save] {
+                auto *dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());
+                if (!dialog) return;
+                // Close even on a failed assertion in this nested event loop.
+                QTimer::singleShot(10000,dialog,&QDialog::reject);
+                auto *canvas=dialog->findChild<QWidget*>("surfacePaintCanvas");
+                QVERIFY(canvas);
+                auto center=canvas->rect().center();
+                QTest::mousePress(canvas,Qt::LeftButton,{},center-QPoint(12,0));
+                QTest::mouseMove(canvas,center);
+                QTest::mouseRelease(canvas,Qt::LeftButton,{},center+QPoint(12,0));
+                QVERIFY(!model.active()->style.contains("paint.layers"));
+                if (save) {
+                    auto *addMask=dialog->findChild<QPushButton*>("surfaceAddMask");
+                    QVERIFY(addMask);addMask->click();
+                    QTest::mouseClick(canvas,Qt::LeftButton,{},center);
+                    QVERIFY(dialog->grab().save("artifacts/surface-paint.png"));
+                    dialog->accept();
+                } else dialog->reject();
+            });
+            SurfacePaint::edit(nullptr,&model);
+        };
+        paint(false);QCOMPARE(model.design.textureFor(*model.active()),initial);
+        paint(true);
+        auto layers=model.active()->style.value("paint.layers").toArray();
+        QCOMPARE(layers.size(),2);
+        const auto masked=model.design.textureFor(*model.active());
+        const auto center=masked.rect().center();
+        QVERIFY(masked.pixelColor(center).alpha()<5);
+        QCOMPARE(masked.pixelColor(2,2),initial.pixelColor(2,2));
+        const auto reopened=ElementDesign::fromJson(model.design.toJson());
+        QCOMPARE(reopened.textureFor(*reopened.find("subject")),masked);
+        QVERIFY(model.undo());QCOMPARE(model.design.textureFor(*model.design.find("subject")),initial);
+        QVERIFY(model.redo());QCOMPARE(model.design.textureFor(*model.design.find("subject")),masked);
+        auto mask=layers.last().toObject();mask["visible"]=false;layers[1]=mask;
+        auto painted=initial.copy();SurfacePaint::composite(painted,painted.rect(),layers);
+        QCOMPARE(painted.pixelColor(center),QColor("#3d9aff"));
+        mask["visible"]=true;mask["opacity"]=.5;layers[1]=mask;
+        auto half=initial.copy();SurfacePaint::composite(half,half.rect(),layers);
+        QVERIFY(qAbs(half.pixelColor(center).alpha()-128)<=1);
+    }
     void portableGraphicAndBakedCueMovie() {
         QTemporaryDir temp; QVERIFY(temp.isValid());
         auto art=[&](QString name,QColor color){
