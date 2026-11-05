@@ -14,6 +14,8 @@
 #include <QComboBox>
 #include <QLineEdit>
 #include <QMenu>
+#include <QTimer>
+#include <QFontComboBox>
 #include "AnimationEditor.h"
 #include "BuildCanvas.h"
 #include "BuildWorkspace.h"
@@ -42,6 +44,80 @@ class CreativeWorkflowTests : public QObject {
         for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->data(0,Qt::UserRole+1).toString()==path)return *it;return nullptr;
     }
 private slots:
+    void masterGraphicVariantsShareTokensAndKeepLayoutEdits() {
+        Library library;
+        BuildWorkspace workspace(&library);
+        workspace.newElement();
+        auto *menu = workspace.findChild<QMenu*>("masterGraphicsMenu");
+        QVERIFY(menu);
+        auto open = [&](bool create, const std::function<void(QDialog*)> &edit) {
+            emit menu->aboutToShow();
+            QAction *action = create ? menu->actions().first() : menu->actions().last();
+            QTimer::singleShot(0,&workspace,[&] {
+                auto *dialog = workspace.findChild<QDialog*>("graphicMasterDialog");
+                if (!dialog) return;
+                QTimer::singleShot(8000,dialog,&QDialog::reject);
+                edit(dialog);
+            });
+            action->trigger();
+        };
+        open(true,[&](QDialog *d) {
+            auto *title=d->findChild<QLineEdit*>("masterHeadline");
+            auto *schedule=d->findChild<QLineEdit*>("masterSchedule");
+            QVERIFY(title && schedule);
+            title->setText("Evening edition"); schedule->setText("Tonight at eight");
+            d->findChild<QPushButton*>("masterVariant1")->click();
+            QTest::qWait(100);
+            QVERIFY(d->grab().save("artifacts/master-graphics.png"));
+            d->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Save)->click();
+        });
+        QCOMPARE(library.elements.size(),3);
+        const auto records=library.production["graphicMasters"].toObject();
+        QCOMPARE(records.size(),1);
+        const auto ids=records.begin().value().toObject()["variants"].toArray();
+        QCOMPARE(ids.size(),3);
+        auto full=ElementDesign::fromJson(library.element(ids[0].toString())->design);
+        auto lower=ElementDesign::fromJson(library.element(ids[1].toString())->design);
+        auto ident=ElementDesign::fromJson(library.element(ids[2].toString())->design);
+        auto layer=[](ElementDesign &scene,const QString &role)->DObject* {
+            for(auto &o:scene.objects) if(o.style["master.role"].toString()==role) return &o;
+            return nullptr;
+        };
+        QVERIFY(render(full)!=render(ident));
+        QVERIFY(render(full).pixelColor(320,55).alpha()>240);
+        QCOMPARE(render(lower).pixelColor(320,55).alpha(),0);
+        auto *model=workspace.findChild<BuildModel*>();
+        QVERIFY(model && layer(model->design,"Headline"));
+        const auto headlineId=layer(model->design,"Headline")->id;
+        QCOMPARE(headlineId,layer(lower,"Headline")->id);
+        auto *headline=model->design.find(headlineId);
+        headline->base.loc.setX(-2.25f);
+        headline->keyChannel("opacity",250,0.5);
+        headline->text="Local bulletin";
+        model->notify();
+        QVERIFY(workspace.saveForClose());
+        open(false,[&](QDialog *d) {
+            d->findChild<QLineEdit*>("masterHeadline")->setText("Morning edition");
+            d->findChild<QLineEdit*>("masterSchedule")->setText("Tomorrow at nine");
+            d->findChild<QFontComboBox*>()->setCurrentFont(QFont("Arial"));
+            d->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Save)->click();
+        });
+        Library reopened; reopened.load();
+        QCOMPARE(reopened.elements.size(),3);
+        for (int i=0;i<ids.size();++i) {
+            const auto *e=reopened.element(ids[i].toString()); QVERIFY(e);
+            auto scene=ElementDesign::fromJson(e->design);
+            auto *title=layer(scene,"Headline");
+            QVERIFY(title && layer(scene,"Schedule"));
+            QCOMPARE(title->style["text.family"].toString(),QString("Arial"));
+            QCOMPARE(layer(scene,"Schedule")->text,QString("Tomorrow at nine"));
+            QCOMPARE(title->text,i==1 ? QString("Local bulletin") : QString("Morning edition"));
+            if(i==1){QCOMPARE(title->base.loc.x(),-2.25f);QVERIFY(title->track("opacity"));}
+        }
+        const auto before=library.production;
+        open(false,[&](QDialog *d){d->findChild<QLineEdit*>("masterHeadline")->setText("Discard");d->reject();});
+        QCOMPARE(library.production,before);
+    }
     void buildBakedCueEditsKeepTheTimelineCut() {
         auto design = scene();
         design.durationMs = 4000;

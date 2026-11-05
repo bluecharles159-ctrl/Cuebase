@@ -4,6 +4,7 @@
 #include "CurveNoise.h"
 #include "AudioLibrary.h"
 #include "BuildWorkspace.h"
+#include "GraphicMaster.h"
 #include "TextureLibrary.h"
 #include "ComponentLibrary.h"
 #include "FrameExport.h"
@@ -480,6 +481,11 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     auto *sceneBar=new QHBoxLayout;auto *newScene=new QPushButton(uiIcon("add"),"New scene");newScene->setObjectName("newBuildScene");newScene->setToolTip("Save this scene and start a new one");sceneBar->addWidget(newScene);
     connect(newScene,&QPushButton::clicked,this,[this]{if(hasUnsavedChanges()||m_editingId.isEmpty()){save();if(hasUnsavedChanges()||m_editingId.isEmpty())return;}newElement();});
     auto *presets=new QToolButton;presets->setText("Presets");presets->setIcon(uiIcon("composition"));presets->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);presets->setPopupMode(QToolButton::InstantPopup);auto *presetMenu=new QMenu(presets);
+    auto *masters=presetMenu->addMenu(uiIcon("composition"),"Master graphics");
+    masters->setObjectName("masterGraphicsMenu");
+    populateGraphicMasters(masters,lib,this,[this]{return !hasUnsavedChanges() || saveForClose();},
+                           [this](QString id){editElement(id);});
+    presetMenu->addSeparator();
     for(const auto &name:elementPresetNames()){auto *action=presetMenu->addAction(name);connect(action,&QAction::triggered,this,[this,name]{if(hasUnsavedChanges()){save();if(hasUnsavedChanges())return;}newElement();m_name->setText(name);m_draftName=name;m_model->reset(elementPreset(name));m_canvas->frameAll();});}presets->setMenu(presetMenu);sceneBar->addWidget(presets);sceneBar->addStretch();root->addLayout(sceneBar);
     auto *hints=new QLabel;hints->setStyleSheet("color:palette(placeholder-text);font-size:10px;padding:2px;");root->addWidget(hints);
     connect(canvas,&BuildCanvas::shortcutHint,hints,&QLabel::setText);
