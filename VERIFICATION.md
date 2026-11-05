@@ -1,6 +1,16 @@
-# Verification — updated 2026-11-04
+# Verification — updated 2026-11-05
 
 ## Latest verified checkpoint
+
+Build 38 passed the Windows workflow for `02b1f32`. Studio interaction coverage
+opens a nested cue without dirtying the draft, edits exposed text on a converted
+surface, and renders a delayed, repeated copy. The saved copy preserves its
+stacking order and its sibling's text after reload. The creative tests also
+cover stable child identities and the 10,000-section limit for nested boards.
+[Windows ZIP](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41978291483/artifacts/13393230565)
+and [test evidence](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41978291483/artifacts/13392861842).
+
+## Earlier Form Animation checkpoint
 
 [Build workflow 41922990132](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/41922990132)
 passes for `cbb2b4e581e036b7516c5ad2888b2b32301d63f1`: all seven CTest suites,

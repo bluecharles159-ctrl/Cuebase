@@ -115,10 +115,32 @@ QString cueTimingLabel(const QJsonObject &cue){
 
 QJsonObject bakeCueBoard(const Element &element){auto design=ElementDesign::fromJson(element.design);for(int i=0;i<design.animationCues.size();++i){auto cue=design.animationCues[i].toObject();cue["trigger"]="Manual";cue.remove("triggerMs");design.animationCues[i]=cue;}auto settings=element.cueBoardSettings;settings.remove("_placementLength");settings.remove("_cycle");return {{"design",design.toJson()},{"cueBoard",element.cueBoard},{"settings",settings}};}
 bool canEditCueBoard(const Element &before,const Element &after,qint64 start,qint64 now,bool live,QString *reason){
-    if(!live)return true;const auto plan=compileCueBoard(ElementDesign::fromJson(before.design),before.cueBoard,before.cueBoardSettings);
-    qint64 earliest=start;const bool global=before.design!=after.design||before.cueBoardSettings!=after.cueBoardSettings;
-    int first=0;if(!global){while(first<before.cueBoard.size()&&first<after.cueBoard.size()&&before.cueBoard[first]==after.cueBoard[first])++first;if(first==before.cueBoard.size()&&first==after.cueBoard.size())return true;QSet<QString> prefix;for(int i=0;i<first;++i)prefix.insert(before.cueBoard[i].toObject()["id"].toString());for(const auto &step:plan.steps){if(!prefix.contains(step.entryId))break;if(step.duration()<0||step.loopTo>=0){earliest=now;break;}earliest+=step.duration();}}
-    if(earliest-now>=300000)return true;if(reason)*reason="On air, only cues at least five minutes ahead may be changed. Played and near-air cues are protected.";return false;
+    constexpr qint64 protectionMs = 5 * 60 * 1000;
+    if (!live || start - now >= protectionMs) return true;
+    if (before.design == after.design && before.cueBoardSettings == after.cueBoardSettings) {
+        QJsonArray prefix;
+        const auto common = qMin(before.cueBoard.size(), after.cueBoard.size());
+        for (qsizetype i = 0; i < common && before.cueBoard[i] == after.cueBoard[i]; ++i)
+            prefix.append(before.cueBoard[i]);
+        if (prefix.size() == before.cueBoard.size() && prefix.size() == after.cueBoard.size())
+            return true;
+
+        // The first change occurs on the first traversal. Whole-board repeats
+        // and end holds come after an appended cue and cannot protect it.
+        const auto plan = compileCueBoard(ElementDesign::fromJson(before.design), prefix);
+        qint64 earliest = start;
+        if (plan.error.isEmpty()) {
+            for (const auto &step : plan.steps) {
+                // Continue on air may release a hold or leave a loop. Count
+                // only the time guaranteed before that operator action.
+                if (step.manualHold || step.loopTo >= 0) break;
+                earliest += step.duration();
+            }
+            if (earliest - now >= protectionMs) return true;
+        }
+    }
+    if (reason) *reason = "On air, only cues at least five minutes ahead may be changed. Played and near-air cues are protected.";
+    return false;
 }
 
 Element cueBoardContext(const Element &root,const QStringList &path){Element current=root;for(int at=0;at+1<path.size();at+=2){QJsonObject entry;for(auto value:current.cueBoard)if(value.toObject()["id"].toString()==path[at])entry=value.toObject();const auto sections=entry["sections"].toArray();const int n=path[at+1].toInt();if(entry.isEmpty()||n<0||n>=sections.size())return {};const auto section=sections[n].toObject();current.design=section["design"].toString();current.name=section["name"].toString(entry["name"].toString()+QString(" · Play %1").arg(n+1));current.cueBoard=section["board"].toArray();current.cueBoardSettings=section["boardSettings"].toObject();if(!section.contains("board"))current.cueBoard=defaultBoard(ElementDesign::fromJson(current.design));}return current;}

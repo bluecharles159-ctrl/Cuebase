@@ -442,6 +442,30 @@ private slots:
         auto changed=instance;auto entry=changed.cueBoard[0].toObject();entry["repeat"]=3;changed.cueBoard[0]=entry;QString error;QVERIFY(canEditCueBoard(instance,changed,400000,0,true,&error));QVERIFY(!canEditCueBoard(instance,changed,299999,0,true,&error));QVERIFY(!error.isEmpty());QVERIFY(canEditCueBoard(instance,changed,0,10000,false,&error));
         auto snapshot=second.boardSnapshot;snapshot["name"]="Independent";second.boardSnapshot=snapshot;QCOMPARE(first.boardSnapshot["name"].toString(),source.name);
     }
+    void onAirAppendUsesFirstTraversal() {
+        auto design = ElementDesign::defaultScene();
+        const QJsonObject cue{{"id","intro"},{"start",0},{"end",1000},{"hold",false}};
+        design.animationCues = {cue};
+        Element before;
+        before.design = design.toJson();
+        before.cueBoard = {newCueBoardEntry(cue)};
+        before.cueBoardSettings = {{"repeat",10},{"hold",true},{"holdMs",60000},{"holdManual",false}};
+        auto after = before;
+        after.cueBoard.append(newCueBoardEntry(cue));
+        QString reason;
+        QVERIFY(!canEditCueBoard(before,after,298999,0,true,&reason));
+        QVERIFY(!reason.isEmpty());
+        QVERIFY(canEditCueBoard(before,after,299000,0,true));
+        QVERIFY(!canEditCueBoard(after,before,298999,0,true));
+        QVERIFY(canEditCueBoard(before,before,0,1000,true));
+
+        auto first = before.cueBoard.first().toObject();
+        first["loop"] = true;
+        before.cueBoard[0] = first;
+        after.cueBoard[0] = first;
+        QVERIFY(!canEditCueBoard(before,after,299000,0,true));
+        QVERIFY(canEditCueBoard(before,after,300000,0,true));
+    }
     void cueVariantBuildSave(){
         Library lib;Element e;e.id="cue-source";e.name="Cue source";e.type="Custom";auto design=elementPreset("News lower third");QJsonObject cue{{"id","bounce"},{"name","Bounce"},{"start",0},{"end",1000},{"hold",false},{"repeat",2}};design.animationCues={cue};e.design=design.toJson();auto entry=newCueBoardEntry(cue);e.cueBoard={entry};lib.elements={e};BuildWorkspace workspace(&lib);workspace.editCueSection(e.id,entry["id"].toString(),1);auto *model=workspace.findChild<BuildModel*>();QVERIFY(model);QVERIFY(model->design.animationCues.isEmpty());const auto text=model->addText();model->active()->text="Only this repetition";model->notify();emit model->cueFramesRequested(0,400);auto *range=workspace.findChild<QDialog*>("cueRangeDialog");QVERIFY(range);range->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Save)->click();QCOMPARE(model->design.animationCues.size(),1);QVERIFY(workspace.findChild<QPushButton*>("buildTab_Animation Cues")->isChecked());workspace.findChild<QPushButton*>("buildSave")->click();
         QCOMPARE(lib.element(e.id)->design,e.design);const auto sections=lib.element(e.id)->cueBoard[0].toObject()["sections"].toArray();QCOMPARE(sections.size(),2);QVERIFY(sections[0].toObject()["design"].toString().isEmpty());const auto variant=ElementDesign::fromJson(sections[1].toObject()["design"].toString());QVERIFY(variant.find(text));QCOMPARE(variant.animationCues.size(),1);QVERIFY(!workspace.hasUnsavedChanges());Library reopened;reopened.load();QCOMPARE(reopened.element(e.id)->cueBoard,lib.element(e.id)->cueBoard);

@@ -31,7 +31,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 - [ ] 09. Rounded cue creation/edit modal and polished cue-board cards/padding.
 - [x] 10. Loop counts and independent per-play holds, timings and Studio controls. Verified finite/infinite edits and preserved per-play holds in `cue-loop-editor-results.txt` and `cue-loop-studio-results.txt`.
 - [x] 11. Build manual hold/continue for individual cue plays.
-- [ ] 12. Nested cue boards, duplication, delays, scheduling, trims and on-air edit protection.
+- [ ] 12. Nested cue boards, duplication, delays, scheduling, trims and on-air edit protection. Build 38 verifies nested text edits, independent delayed placements, stacking order and save/reopen. End-to-end duplication, trimming and live boundary coverage remain open.
 - [x] 13. Selected-only graph curves, active-curve emphasis and Translation labels. GitHub run 41591759703 verifies selected/empty/multiple curves, activation from both the tree and curve, and stable selection after rebuild in offscreen and native Windows modes. Active-curve capture reviewed.
 - [x] 14. Graph handles, interpolation, key transforms/copy/paste and navigation persistence. Run 41876580763 passes handle dragging/evaluation, mixed interpolation, pan/zoom persistence, key clipboard and duplicate cancel, constrained keyboard scale/move, Enter confirmation and right-click cancellation. Creative interactions also pass native Windows and packaged-runtime checks.
 - [x] 15. Orange modified key replaces the saved key; unchanged yellow key removes it.
