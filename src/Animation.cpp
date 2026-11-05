@@ -143,6 +143,12 @@ void DObject::refreshLegacyKeys() {
 }
 
 double DObject::propertyBase(const QString &path) const {
+    if(path.startsWith("finish.")){
+        static const QHash<QString,double> amounts{{"finish.position",.5},{"finish.intensity",.8},
+            {"finish.band",.12},{"finish.angle",20},{"finish.edge",3},{"finish.depth",6},
+            {"finish.height",48},{"finish.gap",4},{"finish.reflectOpacity",.45}};
+        return style[path].toDouble(amounts.value(path));
+    }
     if(path.startsWith("mask.")) {
         const auto field=path.section('.',-1);
         const double fallback=field=="x"||field=="y"?.5:field=="opacity"?1.:field=="width"||field=="height"?.75:0.;

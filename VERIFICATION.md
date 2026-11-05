@@ -2,6 +2,15 @@
 
 ## Latest verified checkpoint
 
+Build 48 exercised the Inspector's Add mask action and keyed mask placement.
+The renderer passed checks for shape, gradient, text, brush, alpha and luminance
+inputs, feathering, inversion, stack combinations, scene persistence and
+file-backed mask discovery.
+[Windows ZIP](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42082155954/artifacts/13440373733)
+and [test reports](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42082155954/artifacts/13440763218).
+
+## Build 47
+
 Build 47 tested a paint stroke and a mask through the Windows paint editor.
 Cancel kept the original image. Saving produced the expected transparency,
 layer visibility and partial opacity. Undo, redo and reopening the scene

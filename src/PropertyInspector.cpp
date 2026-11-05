@@ -301,6 +301,32 @@ void PropertyInspector::rebuild(){
         }
         auto *effects=section("EFFECTS",false);
         maskControls();
+        auto *finish=section("SURFACE FINISH");
+        choice(finish,"Light sweep","finish.sweep",{"Off","On"},"Off");
+        number(finish,"Sweep position","finish.position",-.5,1.5,.01);
+        number(finish,"Band width","finish.band",.005,1,.01);
+        number(finish,"Brightness","finish.intensity",0,1,.01);
+        number(finish,"Sweep angle","finish.angle",-360,360,1,"°");
+        color(finish,"Sweep color","finish.tint","#ffffff");
+        choice(finish,"Bevel","finish.bevel",{"Off","On"},"Off");
+        number(finish,"Edge width","finish.edge",1,24,1," px");
+        choice(finish,"Extrusion","finish.extrude",{"Off","On"},"Off");
+        number(finish,"Depth","finish.depth",0,64,1," px");
+        color(finish,"Side color","finish.sideColor","#293444");
+        choice(finish,"Reflection","finish.reflection",{"Off","On"},"Off");
+        number(finish,"Reflection height","finish.height",0,256,1," px");
+        number(finish,"Gap","finish.gap",0,100,1," px");
+        number(finish,"Reflection opacity","finish.reflectOpacity",0,1,.01);
+        sync.append([this,finish]{
+            if(auto *object=m->active()){
+                const auto show=[&](const char *key,int first,int last){
+                    const bool enabled=object->style.value(key).toString()=="On";
+                    for(int row=first;row<=last;++row)finish->setRowVisible(row,enabled);
+                };
+                show("finish.sweep",1,5);show("finish.bevel",7,7);
+                show("finish.extrude",9,10);show("finish.reflection",12,14);
+            }
+        });
         number(effects,"Backdrop blur","backdrop.blur",0,80,1," px");number(effects,"Backdrop brightness","backdrop.brightness",0,3,.05);
         number(effects,"Blur","effects.blur",0,80,1," px");
         number(effects,"Reveal","effects.reveal",0,1,.01);

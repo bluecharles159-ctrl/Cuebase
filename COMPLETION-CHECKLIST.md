@@ -1,6 +1,6 @@
 # Cuebase completion counter
 
-Updated 2026-11-05. **35 of 84 tasks completed — 49 remaining.**
+Updated 2026-11-05. **36 of 84 tasks completed — 48 remaining.**
 
 The Claude transcript adds four distinct acceptance groups (81–84). Row 06 remains
 open: converted surfaces now retain their Inspector controls and unchanged
@@ -85,7 +85,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 - [ ] 51. Configurable composition guides, margins, colors, responsive layout, dragging and snapping. Normalized persistent guides, ruler dragging, undo/redo, Clear, safe insets/grid/color dialog and JSON round-trip pass in `composition-guides-results.txt` (50 cases); captures inspected. Responsive object-layout constraints and full native acceptance remain open.
 - [x] 52. Texture library, collections/favorites, reusable presets, missing-file repair and portability. Material panel, managed image imports, stable IDs, search/filtering, favorites, scene drag/drop, presets, undo/redo, save/reopen, missing repair, portable sharing and failed-save rollback pass 9 focused cases in `texture-library-verified-results.txt`; pixel blend checks and animated PNG equality pass. Full editor suite: 55 passing cases in `texture-editor-regression-results.txt`. Captures inspected. This covers 2D text/shape/image surface materials; layered/PBR materials remain task 53.
 - [ ] 53. Ordered material layers, mapping/blends, shared styles and evaluated surface properties.
-- [ ] 54. Editable shape/alpha/luma/gradient/text/brush masks, combinations, feathering and animation.
+- [x] 54. Editable shape/alpha/luma/gradient/text/brush masks, combinations, feathering and animation (Build 48).
 - [ ] 55. Shared text/logo appearance effects, reflections, bevel/extrusion, glass and light sweeps.
 - [x] 56. Nondestructive surface painting, brush controls, ordered layers, masks and undo (Build 47).
 - [ ] 57. Drawable editable effect splines, handles, moving-object attachment and animated paths.

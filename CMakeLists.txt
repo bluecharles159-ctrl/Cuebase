@@ -25,6 +25,7 @@ add_library(CuebaseBuildCore STATIC
     src/TextureLibrary.h src/TextureLibrary.cpp src/TextureLibraryPanel.cpp
     src/SurfacePaint.h src/SurfacePaint.cpp src/SurfacePaintDialog.cpp
     src/SurfaceMasks.h src/SurfaceMasks.cpp
+    src/SurfaceTreatments.h src/SurfaceTreatments.cpp
     src/ComponentLibrary.h src/ComponentLibrary.cpp src/ComponentBrowser.cpp
     src/MediaFrames.h src/MediaFrames.cpp
     src/TimelineMedia.h src/TimelineMedia.cpp

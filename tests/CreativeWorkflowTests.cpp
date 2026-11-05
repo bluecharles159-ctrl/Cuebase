@@ -50,6 +50,42 @@ class CreativeWorkflowTests : public QObject {
         for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->data(0,Qt::UserRole+1).toString()==path)return *it;return nullptr;
     }
 private slots:
+    void surfaceFinishesOnTypeAndLogo() {
+        QTemporaryDir temp;
+        QImage logo(244,128,QImage::Format_ARGB32_Premultiplied);logo.fill(Qt::transparent);
+        {QPainter p(&logo);p.setPen(Qt::NoPen);p.setBrush(QColor("#416488"));p.drawEllipse(20,10,200,108);}
+        const auto path=temp.filePath("logo.png");QVERIFY(logo.save(path));
+        for(const QString kind:QStringList{"Text","Image"}){
+            auto d=scene(kind);auto *o=d.find("subject");
+            o->style={};o->mat.color=QColor("#416488");o->text="Cuebase";o->image=kind=="Image"?path:QString();
+            o->mat.shadeless=true;o->fontPx=90;o->w=3.;o->h=1.5;
+            const auto base=d.textureFor(*o);
+            o->style["finish.bevel"]="On";QVERIFY(base!=d.textureFor(*o));
+            o->style["finish.extrude"]="On";o->style["finish.depth"]=8.;
+            o->style["finish.sideColor"]="#492672";
+            auto raised=d.textureFor(*o);QCOMPARE(raised.width(),base.width()+16);
+            int colored=0;
+            for(int y=0;y<raised.height();++y)for(int x=0;x<raised.width();++x)
+                if(raised.pixelColor(x,y)==QColor("#492672"))++colored;
+            QVERIFY(colored>10);
+            o->style["finish.reflection"]="On";o->style["finish.height"]=32.;o->style["finish.gap"]=8.;
+            auto reflected=d.textureFor(*o);QCOMPARE(reflected.height(),raised.height()+80);
+            int raisedBottom=0;
+            for(int y=0;y<raised.height();++y)for(int x=0;x<raised.width();++x)
+                if(raised.pixelColor(x,y).alpha()>0)raisedBottom=y;
+            const int start=40+raisedBottom+1+8;
+            bool found=false;
+            for(int y=start;y<start+32;++y)for(int x=0;x<reflected.width();++x){
+                const auto a=reflected.pixelColor(x,y).alpha();found|=a>0;QVERIFY(a<=116);
+            }
+            QVERIFY(found);
+            o->style["finish.sweep"]="On";o->style["finish.angle"]=0.;o->style["finish.band"]=.22;
+            o->keyChannel("finish.position",0,.5);o->keyChannel("finish.position",1000,1.5);
+            const auto shot=render(d,0);QVERIFY(shot!=render(d,1000));
+            QCOMPARE(render(ElementDesign::fromJson(d.toJson()),0),shot);
+            QVERIFY(shot.save("artifacts/finish-"+kind.toLower()+".png"));
+        }
+    }
     void animatedMaskStackAndInspector() {
         auto d=scene();auto *o=d.find("subject");o->style={};
         Library library;BuildModel model;model.reset(d);model.select("subject");

@@ -3,6 +3,7 @@
 #include "SurfaceEffects.h"
 #include "SurfacePaint.h"
 #include "SurfaceMasks.h"
+#include "SurfaceTreatments.h"
 #include "RevealEffects.h"
 #include <QPainter>
 #include <QPainterPath>
@@ -91,7 +92,7 @@ QImage ElementDesign::textureFor(const DObject &source) const {
     const bool shadowEnabled=o.style["shadow.enabled"].toBool();
     const bool textShadow=o.type=="Text"&&o.style["text.background"].toBool()&&o.style["textShadow.enabled"].toBool();
     const double textPad=textShadow?qBound(0.,o.propertyBase("textShadow.blur"),80.)*2+qMax(qAbs(o.propertyBase("textShadow.x")),qAbs(o.propertyBase("textShadow.y"))):0;
-    const int padding=qBound(0,qCeil(textPad+qBound(0.0,o.propertyBase("effects.blur"),80.0)*2+(shadowEnabled?qBound(0.0,o.propertyBase("shadow.blur"),80.0)*2+qMax(qAbs(o.propertyBase("shadow.x")),qAbs(o.propertyBase("shadow.y"))):0)),512);
+    const int padding=SurfaceTreatments::padding(o)+qBound(0,qCeil(textPad+qBound(0.0,o.propertyBase("effects.blur"),80.0)*2+(shadowEnabled?qBound(0.0,o.propertyBase("shadow.blur"),80.0)*2+qMax(qAbs(o.propertyBase("shadow.x")),qAbs(o.propertyBase("shadow.y"))):0)),512);
     QImage image(w+padding*2,h+padding*2,QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);
     QPainter p(&image);p.setRenderHint(QPainter::Antialiasing);p.setRenderHint(QPainter::SmoothPixmapTransform);
     p.translate(padding,padding);
@@ -185,6 +186,7 @@ QImage ElementDesign::textureFor(const DObject &source) const {
     // Pixel effects apply to the same texture used by the editor and broadcast renderer.
     SurfacePaint::composite(image,QRect(padding,padding,w,h),o.style.value("paint.layers").toArray());
     SurfaceMasks::apply(image,QRect(padding,padding,w,h),o);
+    SurfaceTreatments::apply(image,QRect(padding,padding,w,h),o);
     QImage pixels=image.convertToFormat(QImage::Format_ARGB32);
     const double saturation=o.propertyBase("effects.saturation")*(1-o.propertyBase("effects.grayscale"));
     const double bright=o.propertyBase("effects.brightness"),contrast=o.propertyBase("effects.contrast"),invert=o.propertyBase("effects.invert"),sepia=o.propertyBase("effects.sepia"),hue=o.propertyBase("effects.hue");
