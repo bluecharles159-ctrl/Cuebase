@@ -1602,7 +1602,26 @@ void BuildWorkspace::newEffect() {
 void BuildWorkspace::save() {
     const QString requestedName=m_name->text();
     QString n = requestedName.trimmed();QString semanticRole,semanticPlaylist;
-    if(m_cueIteration<0){static const QRegularExpression tag("^\\{\\{element:([a-z-]+)\\|([^{}\\r\\n]+)\\}\\}$");const auto match=tag.match(n);if(match.hasMatch()){semanticRole=match.captured(1);n=match.captured(2).trimmed();const QMap<QString,QString> categories{{"logo","Logos"},{"main-logo","Logos"},{"overlay","Overlays"},{"lower-third","Overlays"},{"title","Titles"},{"ticker","Overlays"},{"clock","Overlays"},{"break","Break screens"},{"ident","Break screens"},{"replay","Effects"},{"effect","Effects"},{"credits","Titles"}};if(!categories.contains(semanticRole)){say("Unknown scene category. Use logo, main-logo, overlay, lower-third, title, ticker, clock, break, ident, replay, effect or credits.",true);return;}semanticPlaylist=categories.value(semanticRole);m_name->setText(n);if(auto *camera=m_model->design.camera())camera->style["studio.sceneRole"]=semanticRole;}}
+    if (m_cueIteration < 0 && n.startsWith("{{element:")) {
+        static const QRegularExpression tag(R"(^\{\{element:([a-z-]+)\|([^{}\r\n]+)\}\}$)");
+        static const QMap<QString,QString> categories{
+            {"logo","Logos"},{"main-logo","Logos"},{"overlay","Overlays"},{"lower-third","Overlays"},
+            {"title","Titles"},{"ticker","Overlays"},{"clock","Overlays"},{"break","Break screens"},
+            {"ident","Break screens"},{"replay","Effects"},{"effect","Effects"},{"credits","Titles"}
+        };
+        const auto match = tag.match(n);
+        if (!match.hasMatch() || match.captured(2).trimmed().isEmpty()) {
+            say("Enter a category and scene name, for example {{element:break|Next program}}.",true);
+            return;
+        }
+        semanticRole = match.captured(1);
+        semanticPlaylist = categories.value(semanticRole);
+        if (semanticPlaylist.isEmpty()) {
+            say("Unknown scene category. Use " + categories.keys().join(", ") + ".",true);
+            return;
+        }
+        n = match.captured(2).trimmed();
+    }
 
     if (n.isEmpty()) {
         say("Give the element a name first.", true);
@@ -1618,7 +1637,7 @@ void BuildWorkspace::save() {
         Element root;Placement *placement=nullptr;Element *source=nullptr;if(!m_cuePlacement.isEmpty()){placement=m_lib->placement(m_cuePlacement);if(!placement){say("Timeline copy was removed.",true);return;}root=m_lib->placementElement(*placement);}else{for(auto &e:m_lib->elements)if(e.id==m_editingId)source=&e;if(!source){say("Source element was removed.",true);return;}root=*source;}
         if(QString::fromUtf8(QJsonDocument(bakeCueBoard(root)).toJson(QJsonDocument::Compact))!=m_cueBase){say("This board changed elsewhere. Reopen its cue before saving.",true);return;}const auto before=root;auto section=cueBoardSection(root,m_cuePath);section["design"]=m_model->design.toJson();section["name"]=n;auto fields=section["fields"].toObject();for(auto it=fields.begin();it!=fields.end();++it)if(auto *o=m_model->design.find(it.key()))it.value()=o->text;section["fields"]=fields;
         if(section.contains("board")){auto children=section["board"].toArray();for(auto value:m_model->design.animationCues){bool found=false;for(auto existing:children)found|=existing.toObject()["cue"]==value.toObject()["id"];if(!found)children.append(newCueBoardEntry(value.toObject()));}section["board"]=children;}
-        if(!setCueBoardSection(root,m_cuePath,section)){say("Cue section no longer exists.",true);return;}QString error;if(placement&&cueEditGuard&&!cueEditGuard(before,root,*placement,&error)){say(error,true);return;}const auto oldPlacement=placement?*placement:Placement{};const auto oldSnapshot=placement?placement->boardSnapshot:QJsonObject{};if(placement){const auto plan=compileCueBoard(ElementDesign::fromJson(root.design),root.cueBoard,root.cueBoardSettings);if(!plan.error.isEmpty()){say(plan.error,true);return;}placement->boardSnapshot=bakeCueBoard(root);if(plan.duration()>0){if(placement->lengthMs()==placement->boardCycleMs)placement->durationMs=plan.duration();placement->boardCycleMs=plan.duration();}}else source->cueBoard=root.cueBoard;if(!m_lib->saveChecked(&error)){if(placement)*placement=oldPlacement;else source->cueBoard=before.cueBoard;say(error,true);return;}m_cueBase=QString::fromUtf8(QJsonDocument(bakeCueBoard(root)).toJson(QJsonDocument::Compact));m_savedJson=m_model->design.toJson();m_savedName=m_draftName=m_name->text();if(placement)emit m_lib->placementsChanged();else emit m_lib->elementsChanged();say("Saved independent cue keyframes");return;
+        if(!setCueBoardSection(root,m_cuePath,section)){say("Cue section no longer exists.",true);return;}QString error;if(placement&&cueEditGuard&&!cueEditGuard(before,root,*placement,&error)){say(error,true);return;}const auto oldPlacement=placement?*placement:Placement{};const auto oldSnapshot=placement?placement->boardSnapshot:QJsonObject{};if(placement){const auto plan=compileCueBoard(ElementDesign::fromJson(root.design),root.cueBoard,root.cueBoardSettings);if(!plan.error.isEmpty()){say(plan.error,true);return;}updateBakedPlacement(*placement,root,plan.duration());}else source->cueBoard=root.cueBoard;if(!m_lib->saveChecked(&error)){if(placement)*placement=oldPlacement;else source->cueBoard=before.cueBoard;say(error,true);return;}m_cueBase=QString::fromUtf8(QJsonDocument(bakeCueBoard(root)).toJson(QJsonDocument::Compact));m_savedJson=m_model->design.toJson();m_savedName=m_draftName=m_name->text();if(placement)emit m_lib->placementsChanged();else emit m_lib->elementsChanged();say("Saved independent cue keyframes");return;
     }
     if(const auto *existing=m_lib->element(m_editingId)){const auto saved=ElementDesign::fromJson(existing->design).animationCues;for(int i=0;i<m_model->design.animationCues.size();++i){auto cue=m_model->design.animationCues[i].toObject();for(auto value:saved){const auto prior=value.toObject();if(prior["id"]==cue["id"])for(const auto *key:{"trigger","triggerMs"})if(prior.contains(key))cue[key]=prior[key];}m_model->design.animationCues[i]=cue;}}
     if(const auto *existing=m_lib->element(m_editingId)){
@@ -1627,7 +1646,10 @@ void BuildWorkspace::save() {
             if(object.text==prior->text)object.text=current->text;if(object.image==prior->image)object.image=current->image;
         }
     }
-    const QString json = m_model->design.toJson();
+    auto savedDesign = m_model->design;
+    if (!semanticRole.isEmpty())
+        if (auto *camera = savedDesign.camera()) camera->style["studio.sceneRole"] = semanticRole;
+    const QString json = savedDesign.toJson();
     const int secs = qMax(1, int(qCeil(m_model->design.durationMs / 1000.0)));
     QString color = "#6366f1";
     for (const DObject &o : m_model->design.objects)
@@ -1661,6 +1683,11 @@ void BuildWorkspace::save() {
         m_editingId = e.id;
     }
     if(semanticRole=="main-logo")m_lib->display.channelLogoElement=m_editingId;
+    else if (!semanticRole.isEmpty() && previousLogo == m_editingId) {
+        const auto *previousCamera = m_model->design.camera();
+        if (previousCamera && previousCamera->style["studio.sceneRole"].toString() == "main-logo")
+            m_lib->display.channelLogoElement.clear();
+    }
     if(!semanticPlaylist.isEmpty()&&!m_lib->elementPlaylists.contains(semanticPlaylist))m_lib->elementPlaylists.append(semanticPlaylist);
     QString error;
     if(!m_lib->saveChecked(&error)){
@@ -1672,7 +1699,12 @@ void BuildWorkspace::save() {
         say("Could not save screen element: "+error,true);
         return;
     }
+    if (!semanticRole.isEmpty()) {
+        if (auto *camera = m_model->design.camera()) camera->style["studio.sceneRole"] = semanticRole;
+        if (updated) m_name->setText(n);
+    }
     emit m_lib->elementsChanged();
+    if (previousLogo != m_lib->display.channelLogoElement) emit m_lib->displayChanged();
     m_savedJson=m_model->design.toJson();m_savedName=m_name->text();m_draftName=m_name->text();
     say("Saved to screen elements");
 }

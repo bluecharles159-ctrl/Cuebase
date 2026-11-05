@@ -165,9 +165,30 @@ private slots:
         const QString tag="{{element:main-logo|Primary identity}}";picker->lineEdit()->setText(tag);
         const auto destination=QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)+"/cuebase.json";QVERIFY(QFile::remove(destination));QVERIFY(QDir().mkpath(destination));
         QVERIFY(!workspace.saveForClose());QCOMPARE(changed.count(),0);QCOMPARE(library.elements.size(),1);QCOMPARE(library.elements.first().name,QString("Original"));QCOMPARE(library.elements.first().playlist,QString("Overlays"));QCOMPARE(library.display.channelLogoElement,QString("previous-logo"));QCOMPARE(picker->currentText(),tag);QVERIFY(workspace.hasUnsavedChanges());
+        auto *draft = workspace.findChild<BuildModel*>();
+        QVERIFY(draft && draft->design.camera());
+        QCOMPARE(draft->design.camera()->style.value("studio.sceneRole"),
+                 ElementDesign::fromJson(element.design).camera()->style.value("studio.sceneRole"));
         QVERIFY(QDir().rmdir(destination));QVERIFY(workspace.saveForClose());QCOMPARE(changed.count(),1);QCOMPARE(library.elements.first().name,QString("Primary identity"));QCOMPARE(library.elements.first().playlist,QString("Logos"));QCOMPARE(library.display.channelLogoElement,element.id);QVERIFY(!workspace.hasUnsavedChanges());
         Library reopened;reopened.load();QVERIFY(reopened.element(element.id));QCOMPARE(reopened.element(element.id)->name,QString("Primary identity"));QCOMPARE(reopened.display.channelLogoElement,element.id);QCOMPARE(ElementDesign::fromJson(reopened.element(element.id)->design).camera()->style["studio.sceneRole"].toString(),QString("main-logo"));
-        picker->lineEdit()->setText("{{element:break|Next program}}");QVERIFY(workspace.saveForClose());QCOMPARE(library.elements.first().playlist,QString("Break screens"));QCOMPARE(library.elements.first().name,QString("Next program"));QVERIFY(QFile::remove(destination));
+        QSignalSpy displayChanged(&library,&Library::displayChanged);
+        picker->lineEdit()->setText("{{element:break|Next program}}");
+        QVERIFY(workspace.saveForClose());
+        QCOMPARE(library.elements.first().playlist,QString("Break screens"));
+        QCOMPARE(library.elements.first().name,QString("Next program"));
+        QVERIFY(library.display.channelLogoElement.isEmpty());
+        QCOMPARE(displayChanged.count(),1);
+        reopened.load();
+        QVERIFY(reopened.display.channelLogoElement.isEmpty());
+        const auto previousDesign = library.elements.first().design;
+        for (const QString &invalid : {QString("{{element:break|}}"), QString("{{element:unknown|Test}}"), QString("{{element:break|Missing brace}")}) {
+            picker->lineEdit()->setText(invalid);
+            QVERIFY(!workspace.saveForClose());
+            QCOMPARE(picker->currentText(),invalid);
+            QCOMPARE(library.elements.first().design,previousDesign);
+            QCOMPARE(library.elements.first().name,QString("Next program"));
+        }
+        QVERIFY(QFile::remove(destination));
     }
     void portableCompositionMedia(){
         QTemporaryDir temporary;QVERIFY(temporary.isValid());QDir root(temporary.path());QVERIFY(root.mkdir("original"));QVERIFY(root.mkdir("export"));

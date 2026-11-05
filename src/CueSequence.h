@@ -1,6 +1,7 @@
 #pragma once
 #include "ElementDesign.h"
 struct Element;
+struct Placement;
 
 struct CueStep {
     QString entryId, cueId, name, design;
@@ -31,6 +32,7 @@ QJsonObject newCueBoardEntry(const QJsonObject &cue);
 QString cueTimingLabel(const QJsonObject &cue);
 
 QJsonObject bakeCueBoard(const Element &element);
+void updateBakedPlacement(Placement &placement, const Element &board, qint64 cycleMs);
 bool canEditCueBoard(const Element &before,const Element &after,qint64 start,qint64 now,bool live,QString *reason=nullptr);
 
 Element cueBoardContext(const Element &root,const QStringList &path);

@@ -123,6 +123,15 @@ QString cueTimingLabel(const QJsonObject &cue){
 }
 
 QJsonObject bakeCueBoard(const Element &element){auto design=ElementDesign::fromJson(element.design);for(int i=0;i<design.animationCues.size();++i){auto cue=design.animationCues[i].toObject();cue["trigger"]="Manual";cue.remove("triggerMs");design.animationCues[i]=cue;}auto settings=element.cueBoardSettings;settings.remove("_placementLength");settings.remove("_cycle");return {{"design",design.toJson()},{"cueBoard",element.cueBoard},{"settings",settings}};}
+void updateBakedPlacement(Placement &placement, const Element &board, qint64 cycleMs) {
+    const bool fullCycle = placement.offsetMs == 0 && placement.lengthMs() == placement.boardCycleMs;
+    if (fullCycle && cycleMs > 0) {
+        placement.durationMs = cycleMs;
+        placement.seconds = int((cycleMs + 999) / 1000);
+    }
+    placement.boardSnapshot = bakeCueBoard(board);
+    placement.boardCycleMs = cycleMs;
+}
 static qint64 unchangedPlayDuration(const ElementDesign &design, QJsonObject oldRow, QJsonObject newRow) {
     const QJsonArray oldBoard{oldRow}, newBoard{newRow};
     for (const auto &key : {QStringLiteral("sections"), QStringLiteral("plays")}) {

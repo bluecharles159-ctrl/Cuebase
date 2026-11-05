@@ -4,12 +4,15 @@
 #include <QTreeWidget>
 #include <QTreeWidgetItemIterator>
 #include <QToolButton>
+#include <QPushButton>
 #include <QDialogButtonBox>
 #include <QPainter>
 #include <QWheelEvent>
 #include <QPointer>
 #include <QPlainTextEdit>
 #include <QCheckBox>
+#include <QComboBox>
+#include <QLineEdit>
 #include <QMenu>
 #include "AnimationEditor.h"
 #include "BuildCanvas.h"
@@ -39,6 +42,89 @@ class CreativeWorkflowTests : public QObject {
         for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->data(0,Qt::UserRole+1).toString()==path)return *it;return nullptr;
     }
 private slots:
+    void buildBakedCueEditsKeepTheTimelineCut() {
+        auto design = scene();
+        design.durationMs = 4000;
+        const QJsonObject cue{{"id","title"},{"start",0},{"end",4000},{"hold",false}};
+        design.animationCues = {cue};
+        Element source;
+        source.type = "Custom";
+        source.id = "title-source";
+        source.design = design.toJson();
+        const auto entry = newCueBoardEntry(cue);
+        source.cueBoard = {entry};
+        Placement copy;
+        copy.id = "title-copy";
+        copy.refId = source.id;
+        copy.name = "Title copy";
+        copy.type = "Element";
+        copy.offsetMs = 2000;
+        copy.durationMs = copy.boardCycleMs = 4000;
+        copy.seconds = 4;
+        copy.boardSnapshot = bakeCueBoard(source);
+        Library library;
+        library.elements = {source};
+        library.placements = {copy};
+        BuildWorkspace workspace(&library);
+        workspace.editCuePath(source.id,copy.id,{entry["id"].toString(),"0"});
+        auto *model = workspace.findChild<BuildModel*>();
+        auto *save = workspace.findChild<QPushButton*>("buildSave");
+        QVERIFY(model && save);
+        model->design.durationMs = 3000;
+        save->click();
+        QCOMPARE(library.placement(copy.id)->boardCycleMs,qint64(3000));
+        QCOMPARE(library.placement(copy.id)->lengthMs(),qint64(4000));
+        QCOMPARE(library.placement(copy.id)->offsetMs,qint64(2000));
+        model->design.animationCues = {QJsonObject{{"id","hold"},{"start",0},{"end",1000},{"hold",true},{"holdManual",true}}};
+        save->click();
+        Library reopened;
+        reopened.load();
+        QVERIFY(reopened.placement(copy.id));
+        QCOMPARE(reopened.placement(copy.id)->boardCycleMs,qint64(-1));
+        QCOMPARE(reopened.placement(copy.id)->lengthMs(),qint64(4000));
+        QCOMPARE(reopened.placement(copy.id)->offsetMs,qint64(2000));
+        QCOMPARE(reopened.element(source.id)->cueBoard,source.cueBoard);
+    }
+    void sceneNamingCategoriesPersist() {
+        auto design = scene("Text");
+        const auto text = design.find("subject")->text;
+        Library library;
+        Element element;
+        element.id = "named-scene";
+        element.type = "Custom";
+        element.name = "Draft";
+        element.design = design.toJson();
+        library.elements = {element};
+        BuildWorkspace workspace(&library);
+        workspace.editElement(element.id);
+        auto *picker = workspace.findChild<QComboBox*>("buildElementPicker");
+        auto *save = workspace.findChild<QPushButton*>("buildSave");
+        QVERIFY(picker && picker->lineEdit() && save);
+        const QMap<QString,QString> categories{
+            {"logo","Logos"},{"main-logo","Logos"},{"overlay","Overlays"},{"lower-third","Overlays"},
+            {"title","Titles"},{"ticker","Overlays"},{"clock","Overlays"},{"break","Break screens"},
+            {"ident","Break screens"},{"replay","Effects"},{"effect","Effects"},{"credits","Titles"}
+        };
+        for (auto it = categories.cbegin(); it != categories.cend(); ++it) {
+            picker->lineEdit()->setText("{{element:"+it.key()+"|Evening}}");
+            save->click();
+            QCOMPARE(picker->currentText(),QString("Evening"));
+            QCOMPARE(library.elementPlaylists.count(it.value()),1);
+            Library reopened;
+            reopened.load();
+            const auto *saved = reopened.element(element.id);
+            QVERIFY(saved);
+            QCOMPARE(saved->playlist,it.value());
+            QCOMPARE(saved->name,QString("Evening"));
+            const auto loaded = ElementDesign::fromJson(saved->design);
+            QCOMPARE(loaded.camera()->style["studio.sceneRole"].toString(),it.key());
+            QCOMPARE(loaded.find("subject")->text,text);
+        }
+        picker->lineEdit()->setText("Late edition");
+        save->click();
+        QCOMPARE(library.element(element.id)->name,QString("Late edition"));
+        QCOMPARE(library.element(element.id)->playlist,QString("Titles"));
+    }
     void buildExtractsTheSelectedPlaysRange() {
         auto design = scene();
         design.durationMs = 4000;
