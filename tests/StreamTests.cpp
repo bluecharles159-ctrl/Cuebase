@@ -36,6 +36,7 @@
 #include "ElementLibrary.h"
 #include "StudioElements.h"
 #include "StudioCueBoard.h"
+#include "BuildModel.h"
 #include "StudioDashboard.h"
 #include "MainWindow.h"
 #include "ProductionBoard.h"
@@ -342,6 +343,81 @@ private slots:
         const auto left=QPoint(bounds.left(),bounds.center().y());QTest::mousePress(&timeline,Qt::LeftButton,Qt::NoModifier,left);QTest::mouseMove(&timeline,left+QPoint(14,0));QTest::mouseRelease(&timeline,Qt::LeftButton,Qt::NoModifier,left+QPoint(14,0));
         QVERIFY(qAbs(library.placement("overlay")->startMs-2000)<45);QVERIFY(qAbs(library.placement("overlay")->offsetMs-1000)<45);QVERIFY(qAbs(library.placement("overlay")->lengthMs()-6000)<45);
         QSettings().setValue("studio/timelineThumbnails",true);QSettings().setValue("studio/timelineWaveforms",true);
+    }
+    void nestedBoardNavigationEditsAndDelayedPlacement(){
+        auto design = elementPreset("News lower third");
+        const QJsonObject cue{{"id","headline"},{"name","Headline"},{"start",0},{"end",1000},{"hold",false}};
+        design.animationCues = {cue};
+        QString fieldId;
+        for (const auto &object : design.objects) {
+            if (object.type=="Text" && object.style["studio.editable"].toBool()) {
+                fieldId = object.id;
+                break;
+            }
+        }
+        QVERIFY(!fieldId.isEmpty());
+        BuildModel build;
+        build.reset(design);
+        build.select(fieldId);
+        QVERIFY(build.enterEdit());
+        QCOMPARE(build.active()->type, QString("Mesh"));
+
+        Element source;
+        source.id = "nested-edit";
+        source.type = "Custom";
+        source.design = design.toJson();
+        source.cueBoardSettings["zIndex"] = 8;
+        auto entry = newCueBoardEntry(cue);
+        entry["sections"] = QJsonArray{QJsonObject{{"design",build.design.toJson()}}};
+        auto sibling = entry;
+        sibling["id"] = "sibling";
+        source.cueBoard = {entry,sibling};
+        Library library;
+        library.elements = {source};
+        Playout playout(&library);
+        QScopedPointer<QWidget> page(studioCueBoard(&library,&playout,source.id));
+        page->show();
+        auto *list = page->findChild<QListWidget*>("cueBoardList");
+        auto *enter = page->findChild<QPushButton*>("openChildCues");
+        auto *back = page->findChild<QPushButton*>("parentCueBoard");
+        auto *fields = page->findChild<QComboBox*>("cueFieldSelector");
+        auto *editor = page->findChild<QPlainTextEdit*>("cueFieldValue");
+        auto *repeats = page->findChild<QSpinBox*>("wholeBoardRepeat");
+        auto *delay = page->findChild<QDoubleSpinBox*>("cueRenderDelay");
+        auto *render = page->findChild<QPushButton*>("renderCueBoard");
+        QVERIFY(list && enter && back && fields && editor && repeats && delay && render);
+        list->setCurrentRow(0);
+        QVERIFY(enter->isVisible());
+        enter->click();
+        QCOMPARE(list->count(),1);
+        QVERIFY(!page->property("dirty").toBool());
+        list->setCurrentRow(0);
+        QVERIFY(fields->findData(fieldId)>=0);
+        fields->setCurrentIndex(fields->findData(fieldId));
+        editor->setPlainText("Local child headline");
+        QVERIFY(page->property("dirty").toBool());
+        QCOMPARE(library.element(source.id)->cueBoard,source.cueBoard);
+        back->click();
+        repeats->setValue(2);
+        delay->setValue(3.25);
+        const auto expectedStart = playout.playheadMs() + 3250;
+        render->click();
+        QCOMPARE(library.placements.size(),1);
+        const auto &placement = library.placements.first();
+        QCOMPARE(placement.startMs,expectedStart);
+        QCOMPARE(placement.lengthMs(),qint64(4000));
+        const auto saved = library.placementElement(placement);
+        QCOMPARE(saved.cueBoardSettings["zIndex"].toInt(),8);
+        QCOMPARE(saved.cueBoard[1].toObject(),sibling);
+        const auto plan = compileCueBoard(ElementDesign::fromJson(saved.design),saved.cueBoard,saved.cueBoardSettings);
+        QVERIFY2(plan.error.isEmpty(),qPrintable(plan.error));
+        QCOMPARE(plan.steps.size(),4);
+        QCOMPARE(ElementDesign::fromJson(plan.steps[0].design).find(fieldId)->text,QString("Local child headline"));
+        QCOMPARE(ElementDesign::fromJson(plan.steps[1].design).find(fieldId)->text,design.find(fieldId)->text);
+        Library reopened;
+        reopened.load();
+        QVERIFY(reopened.placement(placement.id));
+        QCOMPARE(reopened.placement(placement.id)->boardSnapshot,placement.boardSnapshot);
     }
     void cueBoardLiveAndDrafts(){
         applyUiTheme("Studio Blue",false);
