@@ -46,7 +46,13 @@ Playout::GraphicPlayback Playout::graphicPlayback(const Element &element,qint64 
         if(plan==m_boardCache.end()||plan->first!=signature)plan=m_boardCache.insert(element.id,{signature,compileCueBoard(ElementDesign::fromJson(element.design),element.cueBoard,element.cueBoardSettings)});
         const int first=manual?command->first.mid(7).toInt():0;
         auto elapsed=manual?timelineTime-command->second:placementStart>=0?timelineTime-placementStart+offset:timelineTime;
-        const qint64 cycle=element.cueBoardSettings["_cycle"].toDouble(),length=element.cueBoardSettings["_placementLength"].toDouble();if(cycle>0&&length>cycle&&elapsed>=0)elapsed%=cycle;
+        const qint64 cycle = element.cueBoardSettings["_cycle"].toDouble();
+        const qint64 length = element.cueBoardSettings["_placementLength"].toDouble();
+        // Trimming the left handle shortens the visible span but keeps the
+        // source offset. Its tail can still be in a later repetition.
+        const qint64 sourceOffset = placementStart >= 0 && !manual ? offset : 0;
+        if (cycle > 0 && length > 0 && length > cycle - sourceOffset && elapsed >= 0)
+            elapsed %= cycle;
         const auto sample=plan->second.sample(elapsed,first);
         if(!sample.visible)return {false,true,0,{}};
         const auto &step=plan->second.steps[sample.step];return {true,true,sample.frame,step.cueId,sample.advancing,step.design,sample.step};

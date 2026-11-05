@@ -744,7 +744,36 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent *e) {
         else if (chosen == rm) emit placementRemoveRequested(id);
         else if(edit&&chosen==edit)emit m_lib->openCuePlacementRequested(id);
         else if(order&&chosen==order){if(auto *dialog=placementOrderDialog(m_lib,id,this))dialog->open();}
-        else if(duplicate&&chosen==duplicate&&placed){auto copy=*placed;int lane=-1;for(int candidate=1;candidate<=3;++candidate){bool occupied=false;for(const auto &other:m_lib->placements)if(other.layer==candidate&&copy.startMs<other.startMs+other.lengthMs()&&copy.startMs+copy.lengthMs()>other.startMs){occupied=true;break;}if(!occupied){lane=candidate;break;}}if(lane<0){QToolTip::showText(e->globalPos(),"No free layer for this overlap",this);return;}copy.id=Library::newId();copy.layer=lane;m_lib->placements.append(copy);QString error;if(!m_lib->saveChecked(&error)){m_lib->placements.removeLast();QToolTip::showText(e->globalPos(),error,this);}else emit m_lib->placementsChanged();}
+        else if (duplicate && chosen == duplicate) {
+            // The menu runs a nested event loop. Look up the placement again
+            // in case another editor changed the timeline while it was open.
+            const auto *current = m_lib->placement(id);
+            if (!current || current->boardSnapshot.isEmpty()) return;
+            auto copy = *current;
+            int lane = 1;
+            for (; lane <= 3; ++lane) {
+                const bool occupied = std::any_of(m_lib->placements.cbegin(), m_lib->placements.cend(),
+                    [&](const Placement &other) {
+                        return other.layer == lane && copy.startMs < other.startMs + other.lengthMs()
+                            && other.startMs < copy.startMs + copy.lengthMs();
+                    });
+                if (!occupied) break;
+            }
+            if (lane > 3) {
+                QToolTip::showText(e->globalPos(), "No free layer for this overlap", this);
+                return;
+            }
+            copy.id = Library::newId();
+            copy.layer = lane;
+            m_lib->placements.append(copy);
+            QString error;
+            if (!m_lib->saveChecked(&error)) {
+                m_lib->placements.removeLast();
+                QToolTip::showText(e->globalPos(), error, this);
+            } else {
+                emit m_lib->placementsChanged();
+            }
+        }
         return;
     }
     if (const Slot *s = hitSlot(pos)) {

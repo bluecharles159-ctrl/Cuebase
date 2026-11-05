@@ -44,6 +44,7 @@
 #include "PlanningCanvas.h"
 #include <QTextEdit>
 #include <QMenu>
+#include <QContextMenuEvent>
 #include <QDialogButtonBox>
 #include <QTimer>
 #include <QPointer>
@@ -343,6 +344,79 @@ private slots:
         const auto left=QPoint(bounds.left(),bounds.center().y());QTest::mousePress(&timeline,Qt::LeftButton,Qt::NoModifier,left);QTest::mouseMove(&timeline,left+QPoint(14,0));QTest::mouseRelease(&timeline,Qt::LeftButton,Qt::NoModifier,left+QPoint(14,0));
         QVERIFY(qAbs(library.placement("overlay")->startMs-2000)<45);QVERIFY(qAbs(library.placement("overlay")->offsetMs-1000)<45);QVERIFY(qAbs(library.placement("overlay")->lengthMs()-6000)<45);
         QSettings().setValue("studio/timelineThumbnails",true);QSettings().setValue("studio/timelineWaveforms",true);
+    }
+    void duplicateTrimAndExtendCuePlacement() {
+        QSettings().setValue("studio/timelineScale",14.);
+        Library library;
+        ProgramItem program;
+        program.id = "show";
+        program.seconds = 30;
+        library.programs = {program};
+        auto design = ElementDesign::defaultScene();
+        design.durationMs = 4000;
+        const QJsonObject cue{{"id","title"},{"start",0},{"end",4000},{"hold",false}};
+        design.animationCues = {cue};
+        Element source;
+        source.id = "source";
+        source.type = "Custom";
+        source.design = design.toJson();
+        source.cueBoard = {newCueBoardEntry(cue)};
+        library.elements = {source};
+        Placement original;
+        original.id = "first";
+        original.refId = source.id;
+        original.type = "Element";
+        original.layer = 1;
+        original.startMs = 1000;
+        original.durationMs = original.boardCycleMs = 4000;
+        original.boardSnapshot = bakeCueBoard(source);
+        library.placements = {original};
+        Playout play(&library);
+        TimelineWidget timeline(&play,&library);
+        timeline.resize(600,240);
+        timeline.show();
+        QTest::qWait(30);
+        const auto bounds = timeline.placementRect(original.id);
+        QVERIFY(!bounds.isEmpty());
+        QTimer::singleShot(0,&timeline,[&] {
+            auto *menu = timeline.findChild<QMenu*>();
+            if (!menu) return;
+            for (auto *action : menu->actions()) {
+                if (action->text() == "Duplicate on another layer") {
+                    QTest::mouseClick(menu,Qt::LeftButton,Qt::NoModifier,menu->actionGeometry(action).center());
+                    return;
+                }
+            }
+            menu->close();
+        });
+        QContextMenuEvent menuEvent(QContextMenuEvent::Mouse,bounds.center(),timeline.mapToGlobal(bounds.center()));
+        QApplication::sendEvent(&timeline,&menuEvent);
+        QCOMPARE(library.placements.size(),2);
+        const auto copyId = library.placements.last().id;
+        QVERIFY(copyId != original.id);
+        QCOMPARE(library.placement(copyId)->layer,2);
+        auto dragEdge = [&](bool right,int pixels) {
+            const auto rect = timeline.placementRect(copyId);
+            const QPoint from(right ? rect.right() : rect.left(),rect.center().y());
+            const auto to = from + QPoint(pixels,0);
+            QTest::mousePress(&timeline,Qt::LeftButton,Qt::NoModifier,from);
+            QTest::mouseMove(&timeline,to);
+            QTest::mouseRelease(&timeline,Qt::LeftButton,Qt::NoModifier,to);
+        };
+        dragEdge(true,28);
+        dragEdge(false,42);
+        const auto *copy = library.placement(copyId);
+        QVERIFY(qAbs(copy->offsetMs-3000)<100);
+        QVERIFY(qAbs(copy->lengthMs()-3000)<100);
+        const auto sample = play.graphicPlayback(library.placementElement(*copy),5500,copy->startMs,copy->offsetMs);
+        QVERIFY(sample.visible);
+        QCOMPARE(sample.time,qint64(500));
+        QCOMPARE(library.placement(original.id)->lengthMs(),qint64(4000));
+        Library reopened;
+        reopened.load();
+        QVERIFY(reopened.placement(copyId));
+        QCOMPARE(reopened.placement(copyId)->offsetMs,copy->offsetMs);
+        QCOMPARE(reopened.placement(copyId)->boardSnapshot,original.boardSnapshot);
     }
     void nestedBoardNavigationEditsAndDelayedPlacement(){
         auto design = elementPreset("News lower third");
