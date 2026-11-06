@@ -1,4 +1,5 @@
 #include "BuildCanvas.h"
+#include "OverlapLayers.h"
 #include "FormAnimation.h"
 #include "ColorManagement.h"
 #include "SceneEffects.h"
@@ -53,6 +54,11 @@ QVector3D axisOf(int a) { return a == 0 ? QVector3D(1, 0, 0) : a == 1 ? QVector3
 } // namespace
 
 BuildCanvas::BuildCanvas(BuildModel *m, Library *lib, QWidget *parent) : QWidget(parent), m_m(m), m_lib(lib) {
+    m_layerHold.setSingleShot(true);m_layerHold.setInterval(1000);
+    connect(&m_layerHold,&QTimer::timeout,this,[this]{
+        if(!m_modal.layerMove || !m_modal.boundary)return;
+        m_modal.newLayerReady=true;emit m_m->layerBoundaryChanged(m_modal.boundary,true);update();
+    });
     setMouseTracking(true);
     setAcceptDrops(true);
     setFocusPolicy(Qt::StrongFocus);
@@ -569,12 +575,18 @@ void BuildCanvas::drawHud(QPainter &p, const QRectF &r) {
              QColor(190, 200, 214, 200));
     }
 
+    if(a && a->isRenderable() && !m_m->editMode) {
+        const int z=a->style.value("zIndex").toInt();
+        text(r.adjusted(28,60,-14,0),Qt::AlignLeft|Qt::AlignTop,OverlapLayers::label(z),OverlapLayers::color(OverlapLayers::layer(z)));
+    }
     QString hint;
     if (m_modal.kind != Modal::None) {
         const char *names[] = {"", "Move", "Rotate", "Scale", "Inset"};
         const char *ax[] = {"free", "X", "Y", "Z", "normal"};
         hint = QString("%1   axis: %2   %3   ·   X Y Z constrain  ·  type a number  ·  Enter / click confirm  ·  Esc cancel")
                    .arg(names[m_modal.kind], ax[m_modal.axis + 1], m_modal.numeric.isEmpty() ? QString() : "value: " + m_modal.numeric);
+        if(m_modal.layerMove)hint=m_modal.newLayerReady?"Release to create the layer · Esc cancels":
+            m_modal.boundary?"Hold to create a layer · Esc cancels":"Layer order · drag up for front, down for back · Enter confirms";
     } else if (m_loopCut) {
         hint = QString("Loop Cut   cuts: %1   ·   wheel changes the number of cuts  ·  click to cut  ·  Esc cancel").arg(m_cuts);
     } else if (m_m->editMode) {
@@ -834,6 +846,16 @@ void BuildCanvas::startModal(Modal::Kind k, bool fromButton, bool skipUndo) {
             emit message("Select an object first");
             return;
         }
+        if(k==Modal::Move && !fromButton){
+            md.beforeObjectMove=m_m->design.objects;
+            int back=m_m->design.backLayer,front=m_m->design.frontLayer;
+            for(const auto &o:m_m->design.objects)if(o.isRenderable()){
+                const int z=qBound(-10000,o.style.value("zIndex").toInt(),10000);
+                back=qMin(back,OverlapLayers::layer(z));front=qMax(front,OverlapLayers::layer(z));
+                if(m_m->sel.contains(o.id) && !o.locked)md.startOrder.insert(o.id,z);
+            }
+            md.minOrder=qMax(-10000,3*back-1);md.maxOrder=qMin(10000,3*front+1);
+        }
         if (!skipUndo) m_m->pushUndo();
         QVector3D c;
         for (DObject *o : objs) {
@@ -918,6 +940,8 @@ void BuildCanvas::cancelModal() {
         return;
     }
     if (m_modal.kind == Modal::None) return;
+    m_layerHold.stop();
+    if(m_modal.layerMove)emit m_m->layerBoundaryChanged(0,false);
     m_modal = Modal();
     if(QWidget::mouseGrabber()==this)releaseMouse();
     m_m->cancelToUndo();
@@ -927,6 +951,18 @@ void BuildCanvas::cancelModal() {
 
 void BuildCanvas::confirmModal() {
     if (m_modal.kind == Modal::None) return;
+    m_layerHold.stop();
+    if(m_modal.layerMove){
+        if(m_modal.newLayerReady && m_modal.boundary){
+            for(auto it=m_modal.startOrder.cbegin();it!=m_modal.startOrder.cend();++it)if(auto *o=m_m->byId(it.key())){
+                const int z=o->style.value("zIndex").toInt()+m_modal.boundary;
+                o->style["zIndex"]=z;
+                m_m->design.frontLayer=qMax(m_m->design.frontLayer,OverlapLayers::layer(z));
+                m_m->design.backLayer=qMin(m_m->design.backLayer,OverlapLayers::layer(z));
+            }
+        }
+        emit m_m->layerBoundaryChanged(0,false);
+    }
     if(m_m->editMode)if(auto *object=m_m->active();object&&object->type=="Mesh"&&m_modal.origVerts.size()==object->mesh.v.size()){
         Mesh zero=object->mesh;zero.v=m_modal.origVerts;FormAnimation::capture(*object,zero,"Form "+QString::number(object->style["form.poses"].toArray().size()+1));
     }
@@ -936,7 +972,31 @@ void BuildCanvas::confirmModal() {
     update();
 }
 
+void BuildCanvas::applyLayerMove(QPointF mouse){
+    double number=0;
+    const double drag=(m_modal.startMouse.y()-mouse.y())/14.;
+    const int requested=int(qBound(-20000.,numericValue(&number)?number:drag,20000.));
+    int low=-20000,high=20000;
+    for(int initial:m_modal.startOrder){
+        low=qMax(low,m_modal.minOrder-initial);high=qMin(high,m_modal.maxOrder-initial);
+    }
+    const int delta=qBound(low,requested,high);
+    for(auto it=m_modal.startOrder.cbegin();it!=m_modal.startOrder.cend();++it){
+        if(auto *o=m_m->byId(it.key());o && o->style.value("zIndex").toInt()!=it.value()+delta)
+            o->style["zIndex"]=it.value()+delta;
+    }
+    const int side=requested>high && m_modal.maxOrder<10000?1:
+                   requested<low && m_modal.minOrder>-10000?-1:0;
+    if(side!=m_modal.boundary){
+        m_layerHold.stop();m_modal.boundary=side;m_modal.newLayerReady=false;
+        emit m_m->layerBoundaryChanged(side,false);
+        if(side)m_layerHold.start();
+    }
+    m_m->notify();update();
+}
+
 void BuildCanvas::applyModal(const QPointF &mouse) {
+    if(m_modal.layerMove){applyLayerMove(mouse);return;}
     QRectF r;
     const ViewCam cam = activeCam(&r);
     const QVector3D fwd = cam.forward();
@@ -1153,6 +1213,9 @@ void BuildCanvas::mousePressEvent(QMouseEvent *e) {
     }
 
     if (m_modal.kind != Modal::None) {  // click confirms, right click cancels
+        if(e->button()==Qt::LeftButton && m_modal.layerMove){
+            m_modal.fromMouseButton=true;return;
+        }
         if (e->button() == Qt::LeftButton) confirmModal();
         else if (e->button() == Qt::RightButton) cancelModal();
         m_pressed = false;
@@ -1347,6 +1410,12 @@ void BuildCanvas::keyPressEvent(QKeyEvent *e) {
         else if (k == Qt::Key_X || k == Qt::Key_Y || k == Qt::Key_Z) {
             const int a = k == Qt::Key_X ? 0 : k == Qt::Key_Y ? 1 : 2;
             m_modal.axis = m_modal.axis == a ? -1 : a;
+            const bool stack=m_modal.kind==Modal::Move && m_modal.axis==2 && !m_modal.startOrder.isEmpty();
+            if(stack!=m_modal.layerMove){
+                m_m->design.objects=m_modal.beforeObjectMove;
+                m_layerHold.stop();m_modal.boundary=0;m_modal.newLayerReady=false;
+                emit m_m->layerBoundaryChanged(0,false);m_modal.layerMove=stack;
+            }
             applyModal(m_hasHover ? m_hover : m_modal.startMouse);
         } else if (k == Qt::Key_Backspace) {
             m_modal.numeric.chop(1);

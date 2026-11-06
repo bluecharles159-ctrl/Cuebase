@@ -1,4 +1,5 @@
 #pragma once
+#include <QTimer>
 
 #include <QHash>
 #include <QPointF>
@@ -87,6 +88,10 @@ private:
         QPointF pivotScreen;
         QString numeric;
         QHash<QString, DProps> origProps;
+        QHash<QString,int> startOrder;
+        QVector<DObject> beforeObjectMove;
+        int minOrder=0,maxOrder=0,boundary=0;
+        bool layerMove=false,newLayerReady=false;
         QVector<QVector3D> origVerts;
         QVector<QVector3D> displayedVerts;
         QSet<int> editVerts;
@@ -146,6 +151,8 @@ private:
     QString m_viewName = "2D Composition";
 
     Modal m_modal;
+    QTimer m_layerHold;
+    void applyLayerMove(QPointF position);
     QPointF m_press, m_last;
     Qt::MouseButton m_btn = Qt::NoButton;
     bool m_pressed = false, m_boxing = false, m_shiftPress = false, m_pressedOnSelected = false, m_tweakPending = false;

@@ -242,7 +242,7 @@ QString ElementDesign::toJson() const {
                         {"ambientColor", world.ambientColor.name()}, {"fogColor", world.fogColor.name()}, {"gradient", world.gradient},
                         {"transparent", world.transparent}, {"ambient", world.ambient}, {"fog", world.fog}, {"gravity", world.gravity},
                         {"floor", world.floor}};
-    return QString::fromUtf8(QJsonDocument(QJsonObject{{"version", 6}, {"animationCues",animationCues}, {"cursor",vec(cursor)}, {"start",startMs}, {"duration", durationMs}, {"loop", loop}, {"world", w}, {"objects", arr}})
+    return QString::fromUtf8(QJsonDocument(QJsonObject{{"version", 6}, {"frontLayer",frontLayer},{"backLayer",backLayer},{"animationCues",animationCues}, {"cursor",vec(cursor)}, {"start",startMs}, {"duration", durationMs}, {"loop", loop}, {"world", w}, {"objects", arr}})
                                  .toJson(QJsonDocument::Compact));
 }
 
@@ -250,6 +250,8 @@ ElementDesign ElementDesign::fromJson(const QString &json) {
     ElementDesign d;
     const QJsonObject root = QJsonDocument::fromJson(json.toUtf8()).object();
     d.animationCues=root["animationCues"].toArray();
+    d.backLayer=qBound(-3333,root["backLayer"].toInt(),0);
+    d.frontLayer=qBound(0,root["frontLayer"].toInt(),3333);
     d.durationMs = root["duration"].toInt(5000);
     d.cursor=vecOf(root["cursor"]);
     d.startMs=qBound(0,root["start"].toInt(),qMax(0,d.durationMs-1));

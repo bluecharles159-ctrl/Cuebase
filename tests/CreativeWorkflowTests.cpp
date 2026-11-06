@@ -26,6 +26,7 @@
 #include "SurfacePaint.h"
 #include "SurfaceMasks.h"
 #include "DesignAssets.h"
+#include "LayerPanel.h"
 #include "AssetImport.h"
 #include "MediaFrames.h"
 #include "CueSequence.h"
@@ -50,6 +51,43 @@ class CreativeWorkflowTests : public QObject {
         for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->data(0,Qt::UserRole+1).toString()==path)return *it;return nullptr;
     }
 private slots:
+    void grabZCreatesSingleOverlapLayerOnRelease() {
+        Library library;BuildModel model;
+        auto d=scene();d.world.transparent=true;
+        auto *back=d.find("subject");back->style={};back->mat.color=Qt::blue;
+        auto front=*back;front.id="front";front.mat.color=Qt::red;d.objects.append(front);
+        model.reset(d);model.select("subject");
+        BuildCanvas canvas(&model,&library);canvas.resize(640,420);canvas.show();
+        LayerPanel panel(&model);panel.resize(250,240);panel.show();
+        QApplication::processEvents();const QPoint center(270,180);
+        const auto original=model.design.worldMatrix(*model.active(),0);
+        auto fromCenter=[&] {
+            QTest::mouseMove(&canvas,center);QTest::keyClick(&canvas,Qt::Key_G);
+            QTest::keyClick(&canvas,Qt::Key_Z);
+        };
+        auto order=[&]{return model.byId("subject")->style.value("zIndex").toInt();};
+        fromCenter();QTest::mouseMove(&canvas,center-QPoint(0,14));
+        QCOMPARE(order(),1);QCOMPARE(render(model.design).pixelColor(320,180),QColor(Qt::blue));
+        QTest::keyClick(&canvas,Qt::Key_Escape);QCOMPARE(order(),0);
+        for(const int direction:{1,-1}){
+            fromCenter();const QPoint beyond=center-QPoint(0,42*direction);
+            QTest::mouseMove(&canvas,beyond);
+            QCOMPARE(order(),direction);QCOMPARE(model.design.frontLayer,0);QCOMPARE(model.design.backLayer,0);
+            QTRY_VERIFY_WITH_TIMEOUT(panel.accessibleDescription().contains("ready"),2000);
+            if(direction>0)QVERIFY(panel.grab().save("artifacts/pending-overlap-layer.png"));
+            QTest::mouseClick(&canvas,Qt::LeftButton,{},beyond);QCOMPARE(order(),2*direction);
+            QVERIFY(!canvas.modalActive());QVERIFY(panel.accessibleDescription().isEmpty());
+            QCOMPARE(model.design.worldMatrix(*model.active(),0),original);
+            QCOMPARE(render(model.design).pixelColor(320,180),direction>0?QColor(Qt::blue):QColor(Qt::red));
+            const auto reopened=ElementDesign::fromJson(model.design.toJson());
+            QCOMPARE(reopened.frontLayer,direction>0?1:0);QCOMPARE(reopened.backLayer,direction<0?-1:0);
+            QCOMPARE(render(reopened),render(model.design));
+            QVERIFY(model.undo());QCOMPARE(order(),0);
+        }
+        fromCenter();QTest::mouseMove(&canvas,center-QPoint(0,42));
+        QTRY_VERIFY_WITH_TIMEOUT(panel.accessibleDescription().contains("ready"),2000);
+        QTest::keyClick(&canvas,Qt::Key_Escape);QCOMPARE(order(),0);QCOMPARE(model.design.frontLayer,0);
+    }
     void surfaceFinishesOnTypeAndLogo() {
         QTemporaryDir temp;
         QImage logo(244,128,QImage::Format_ARGB32_Premultiplied);logo.fill(Qt::transparent);

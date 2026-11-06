@@ -195,6 +195,7 @@ struct RenderSettings {  // how the display settings reach the 3D renderer
 };
 
 struct ElementDesign {
+    int backLayer=0,frontLayer=0;
     QJsonArray animationCues;
     QVector3D cursor;
     QVector<DObject> objects;

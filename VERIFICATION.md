@@ -2,6 +2,14 @@
 
 ## Latest verified checkpoint
 
+Build 49 rendered keyed light sweeps, bevels, painted extrusion sides and
+fading reflections on text and image logos. The tests checked edge colors,
+alpha, keyframe changes and the reopened scene's rendered frame.
+[Windows ZIP](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42083438416/artifacts/13442162669)
+and [test reports and render captures](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42083438416/artifacts/13442392051).
+
+## Build 48
+
 Build 48 exercised the Inspector's Add mask action and keyed mask placement.
 The renderer passed checks for shape, gradient, text, brush, alpha and luminance
 inputs, feathering, inversion, stack combinations, scene persistence and

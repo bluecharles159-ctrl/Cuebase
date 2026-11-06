@@ -1,4 +1,5 @@
 #include "LayerPanel.h"
+#include "OverlapLayers.h"
 #include "BuildModel.h"
 #include "UiControls.h"
 #include <QDropEvent>
@@ -20,6 +21,14 @@ public:
 }
 
 LayerPanel::LayerPanel(BuildModel *model,QWidget *parent):QTreeWidget(parent),m(model){
+    pulse.setDuration(500);pulse.setLoopCount(2);pulse.setStartValue(35);pulse.setKeyValueAt(.5,185);pulse.setEndValue(35);
+    connect(&pulse,&QVariantAnimation::valueChanged,this,[this]{viewport()->update();});
+    connect(m,&BuildModel::layerBoundaryChanged,this,[this](int direction,bool pending){
+        boundary=direction;ready=pending;pulse.stop();
+        if(direction && !pending)pulse.start();
+        setAccessibleDescription(!direction?QString():pending?"New layer ready on release":"Hold to create a layer");
+        viewport()->update();
+    });
     setColumnCount(4);setHeaderLabels({"Layers","", "", "Z"});setRootIsDecorated(true);setIndentation(13);
     setItemDelegateForColumn(3,new LayerOrderDelegate(this));setColumnWidth(3,48);headerItem()->setToolTip(3,"Overlap order · higher values appear in front without changing size or position. Double-click to edit.");
     setStyleSheet("QTreeWidget{background:palette(window);color:palette(text);border:0;font-size:10px;} QTreeWidget::item{height:23px;} QTreeWidget::item:selected{background:palette(highlight);color:palette(highlighted-text);} QHeaderView::section{background:palette(button);color:palette(button-text);border:0;padding:4px;font-size:10px;}");
@@ -63,6 +72,11 @@ void LayerPanel::refresh(){
             item->setFlags(item->flags()|Qt::ItemIsEditable|Qt::ItemIsDragEnabled|Qt::ItemIsDropEnabled);
             item->setData(3,Qt::EditRole,o.style["zIndex"].toInt());item->setToolTip(3,"Higher Z draws in front · double-click to edit · undo supported");
             item->setData(3,Qt::UserRole,o.locked||!o.isRenderable());
+            if(o.isRenderable()){
+                const int z=o.style.value("zIndex").toInt();
+                item->setForeground(3,OverlapLayers::color(OverlapLayers::layer(z)));
+                item->setToolTip(3,OverlapLayers::label(z)+" · G then Z to change overlap");
+            }
             const bool component=!o.style["component.id"].toString().isEmpty();item->setIcon(0,uiIcon(component?"component":o.type));item->setIcon(1,uiIcon(o.visible?"eye":"hidden",o.visible));item->setIcon(2,uiIcon(o.locked?"lock":"unlock",o.locked));
             item->setToolTip(0,o.type+" · F2 to rename · Ctrl+P to parent to the active layer");item->setToolTip(1,o.visible?"Hide layer":"Show layer");item->setToolTip(2,o.locked?"Unlock layer":"Lock layer");
             if(component)item->setToolTip(0,o.style["component.role"].toString()+" · "+o.type+" · / opens Components");
@@ -75,6 +89,19 @@ void LayerPanel::refresh(){
     }
     for(QTreeWidgetItemIterator it(this);*it;++it){auto *item=*it;const auto id=item->data(0,Qt::UserRole).toString();item->setSelected(m->sel.contains(id));if(id==m->activeId)setCurrentItem(item,0,QItemSelectionModel::NoUpdate);}
     syncing=false;
+}
+void LayerPanel::paintEvent(QPaintEvent *event){
+    QTreeWidget::paintEvent(event);
+    if(!boundary)return;
+    QPainter p(viewport());p.setRenderHint(QPainter::Antialiasing);
+    QRect box=viewport()->rect().adjusted(3,3,-3,-3);
+    if(boundary>0)box.setHeight(26);else box.setTop(qMax(box.top(),box.bottom()-26));
+    QColor accent=palette().highlight().color();
+    if(!ready)accent.setAlpha(pulse.currentValue().toInt());
+    QPen outline(accent,2,ready?Qt::DashLine:Qt::SolidLine);p.setPen(outline);
+    p.setBrush(palette().window());p.drawRoundedRect(box,4,4);
+    p.setPen(palette().text().color());p.drawText(box,Qt::AlignCenter,ready?
+        (boundary>0?"NEW · Front layer":"NEW · Back layer"):"Hold to add layer");
 }
 void LayerPanel::dropEvent(QDropEvent *event){
     if(auto *target=itemAt(event->position().toPoint());target&&dropIndicatorPosition()==QAbstractItemView::OnItem){
