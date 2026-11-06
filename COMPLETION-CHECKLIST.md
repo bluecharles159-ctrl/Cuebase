@@ -1,6 +1,6 @@
 # Cuebase completion counter
 
-Updated 2026-11-06. **48 of 84 tasks completed — 36 remaining.**
+Updated 2026-11-06. **49 of 84 tasks completed — 35 remaining.**
 
 The Claude transcript adds four distinct acceptance groups (81–84). Row 06 remains
 open: converted surfaces now retain their Inspector controls and unchanged
@@ -66,7 +66,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 - [x] 38. Control-panel tool navigation and wheel-adjusted volume controls with useful meters (Build 60).
 - [ ] 39. Audio workspace: multiple sources, trim/split, pan, fades/crossfades, duplicate and automation.
 - [ ] 40. Sample-clock mixing, buses, synchronization, metering and high-quality audio export.
-- [ ] 41. Reorderable/bypassable DSP chains: EQ, dynamics, filters, spatial/time/modulation effects.
+- [x] 41. Reorderable/bypassable DSP chains: EQ, dynamics, filters, spatial/time/modulation effects (Build 61, stored asset chains, audition and processed-copy rendering).
 - [ ] 42. Pitch/time processing, stereo imaging, sidechain, presets and processor automation.
 - [ ] 43. RTMP/SRT sustained output, health/errors, recovery and public-destination validation.
 - [ ] 44. Audience metrics with real provider data and dashboard verification.

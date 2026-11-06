@@ -78,6 +78,31 @@
 class StreamTests:public QObject{
     Q_OBJECT
 private slots:
+    void renderedPitchTempoSidechainAndKeys(){
+        QTemporaryDir temp;const auto voice=temp.filePath("voice.wav"),trigger=temp.filePath("trigger.wav");
+        auto ffmpeg=[&](QStringList args){QProcess p;p.start(NetworkOutput::findEncoder(),QStringList{"-hide_banner","-loglevel","error"}+args);
+            if(!p.waitForFinished(15000)||p.exitCode()!=0){qWarning()<<p.readAllStandardError();return QByteArray{};}return p.readAllStandardOutput();};
+        ffmpeg({"-f","lavfi","-i","sine=f=440:s=8000:d=2",voice});
+        ffmpeg({"-f","lavfi","-i",R"(aevalsrc=if(lt(t\,0.6)\,0\,0.9*sin(2*PI*200*t)):s=8000:d=1.4)",trigger});
+        QVERIFY(QFileInfo(voice).size()>100);QVERIFY(QFileInfo(trigger).size()>100);
+        auto samples=[&](QJsonObject effect){QString error;
+            auto args=AudioDsp::processingArgs(voice,{effect},[&](QString id){return id=="trigger"?trigger:QString();},&error);
+            if(args.isEmpty())return QByteArray{};return ffmpeg(args+QStringList{"-ar","8000","-ac","1","-c:a","pcm_f32le","-f","f32le","pipe:1"});};
+        auto sample=[](const QByteArray &pcm,int i){float v=0;memcpy(&v,pcm.constData()+sizeof(float)*i,sizeof(float));return v;};
+        auto frequency=[&](const QByteArray &pcm){int n=0;for(int i=1200;i<5200;++i)n+=sample(pcm,i)<=0 && sample(pcm,i+1)>0;return n*2;};
+        auto energy=[&](const QByteArray &pcm,int i){double e=0;for(int j=i;j<i+800;++j)e+=std::abs(sample(pcm,j));return e;};
+        const auto pitch=samples({{"type","Pitch"},{"semitones",12}});
+        QVERIFY(pitch.size()>58000 && pitch.size()<68000);QVERIFY(qAbs(frequency(pitch)-880)<12);
+        auto tempo=samples({{"type","Tempo"},{"ratio",2}});
+        QVERIFY(tempo.size()>29400 && tempo.size()<34500);QVERIFY(qAbs(frequency(tempo)-440)<12);
+        QJsonArray keys{QJsonObject{{"field","gainDb"},{"ms",600},{"value",-20}}};
+        const auto keyed=samples({{"type","Gain"},{"automation",keys}});
+        QVERIFY(keyed.size()>=64000);QVERIFY(energy(keyed,8000)<.15*energy(keyed,1600));
+        const auto ducked=samples({{"type","Sidechain compressor"},{"trigger","trigger"},{"threshold",.04},{"ratio",16},{"attackMs",3},{"releaseMs",100}});
+        QVERIFY(ducked.size()>=63800);QVERIFY(energy(ducked,8000)<.4*energy(ducked,1600));
+        QString error;QVERIFY(AudioDsp::processingArgs(voice,{QJsonObject{{"type","Sidechain compressor"},{"trigger","gone"}}},
+            [](QString){return QString();},&error).isEmpty());QVERIFY(!error.isEmpty());
+    }
     void auditionAndReopenAudioEffectChain(){
         const auto previous=qApp->applicationName();qApp->setApplicationName(previous+"-dsp");
         auto reset=qScopeGuard([&]{qApp->setApplicationName(previous);});
@@ -96,6 +121,18 @@ private slots:
         for(const auto &type:effects){types->setCurrentText(type);dialog->findChild<QPushButton*>("dspAdd")->click();}
         QCOMPARE(list->count(),effects.size());list->item(1)->setCheckState(Qt::Unchecked);
         dialog->findChild<QPushButton*>("dspEarlier")->click();QCOMPARE(list->item(6)->text(),QString("Flanger"));
+        list->setCurrentRow(2);
+        QTimer::singleShot(0,qApp,[]{
+            auto *d=qobject_cast<QDialog*>(qApp->activeModalWidget());if(!d)return;QTimer::singleShot(3000,d,&QDialog::reject);
+            d->findChild<QDoubleSpinBox*>("automationTime")->setValue(.3);d->findChild<QDoubleSpinBox*>("automationValue")->setValue(250);
+            d->findChild<QPushButton*>("setAudioKey")->click();d->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Save)->click();
+        });
+        dialog->findChild<QPushButton*>("processorAutomation")->click();
+        QCOMPARE(list->item(2)->data(Qt::UserRole).toJsonObject().value("automation").toArray().size(),1);
+        dialog->findChild<QComboBox*>("dspPresetName")->setEditText("Dialogue");
+        dialog->findChild<QPushButton*>("dspSavePreset")->click();
+        list->item(1)->setCheckState(Qt::Checked);dialog->findChild<QPushButton*>("dspLoadPreset")->click();
+        QCOMPARE(list->item(1)->checkState(),Qt::Unchecked);
         dialog->findChild<QPushButton*>("dspAudition")->click();
         auto *player=dialog->findChild<QMediaPlayer*>();QVERIFY(player);
         QTRY_VERIFY_WITH_TIMEOUT(player->source().isLocalFile(),10000);
@@ -104,6 +141,7 @@ private slots:
         dialog->findChild<QPushButton*>("saveDspChain")->click();
         QCOMPARE(checksum(source),original);
         Library reopened;reopened.load();const auto chain=AudioLibrary::asset(reopened,"voice").value("dspChain").toArray();
+        QCOMPARE(reopened.production.value("audioDspPresets").toObject().value("Dialogue").toArray(),chain);
         QCOMPARE(chain.size(),8);QCOMPARE(chain[6].toObject().value("type").toString(),QString("Flanger"));
         QVERIFY(!chain[1].toObject().value("enabled").toBool());
         dialog=open();QVERIFY(dialog);list=dialog->findChild<QListWidget*>("dspChain");

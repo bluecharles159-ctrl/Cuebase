@@ -74,7 +74,7 @@ AudioLibraryPanel::AudioLibraryPanel(Library *library,BuildModel *model,QWidget 
         const auto id=m_assetId,source=AudioLibrary::asset(*m_library,id)["file"].toString();
         if(!QFileInfo(source).isFile()){ToastHost::notify(this,"audio","Select an available stored audio file first");return;}
         const auto initial=AudioLibrary::asset(*m_library,id)["dspChain"].toArray();stopPreview();
-        showAudioDsp(this,source,initial,[this,id,initial](const QJsonArray &chain,QString *error){
+        showAudioDsp(this,m_library,source,initial,[this,id,initial](const QJsonArray &chain,QString *error){
             const auto before=m_library->production;auto assets=before.value("audioLibrary").toArray();
             for(int i=0;i<assets.size();++i){auto asset=assets.at(i).toObject();if(asset.value("id").toString()!=id)continue;
                 if(asset.value("dspChain").toArray()!=initial){*error="The effect chain changed. Reopen it to use the latest version.";return false;}

@@ -2,6 +2,15 @@
 
 ## Latest verified checkpoint
 
+Build 61 auditioned a chain on an imported stereo asset, reordered its effects,
+bypassed the EQ and reopened the saved chain. The eight-processor render included
+stereo width, tremolo, vibrato and flanger. A checksum comparison verified that
+the source file remained intact.
+[Windows ZIP](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42256385062/artifacts/13522728297)
+and [test reports and screenshots](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42256385062/artifacts/13523312189).
+
+## Build 60
+
 Build 60 exercised the Studio control rail, the volume wheel and independently
 measured left/right PCM levels. The Build editor test cut text with a moving,
 hidden graphic, changed the operation, compared reopened frames, and duplicated
