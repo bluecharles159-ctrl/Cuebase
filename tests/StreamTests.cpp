@@ -73,10 +73,42 @@
 #include <QWheelEvent>
 
 #include "AudioDsp.h"
+#include "AudioLibrary.h"
 #include <cstring>
 class StreamTests:public QObject{
     Q_OBJECT
 private slots:
+    void auditionAndReopenAudioEffectChain(){
+        const auto previous=qApp->applicationName();qApp->setApplicationName(previous+"-dsp");
+        auto reset=qScopeGuard([&]{qApp->setApplicationName(previous);});
+        QTemporaryDir tmp;const auto source=tmp.filePath("original.wav");
+        QProcess encoder;encoder.start(NetworkOutput::findEncoder(),{"-hide_banner","-loglevel","error","-f","lavfi","-i","sine=f=440:d=3","-ac","2","-ar","48000",source});
+        QVERIFY(encoder.waitForFinished(30000));QCOMPARE(encoder.exitCode(),0);
+        auto checksum=[](const QString &path){QFile file(path);if(!file.open(QIODevice::ReadOnly))return QByteArray{};return QCryptographicHash::hash(file.readAll(),QCryptographicHash::Sha256);};
+        const auto original=checksum(source);
+        Library lib;lib.production["audioLibrary"]=QJsonArray{QJsonObject{{"id","voice"},{"name","Voice"},{"file",source}}};
+        AudioLibraryPanel panel(&lib);panel.resize(480,640);panel.show();
+        panel.findChild<QListWidget*>("audioStored")->setCurrentRow(0);
+        auto open=[&]{panel.findChild<QPushButton*>("audioEffects")->click();return qobject_cast<QDialog*>(qApp->activeModalWidget());};
+        auto *dialog=open();QVERIFY(dialog);
+        auto *types=dialog->findChild<QComboBox*>("dspTypes");auto *list=dialog->findChild<QListWidget*>("dspChain");
+        const QStringList effects{"Echo","Equalizer","High pass","Compressor","Stereo width","Vibrato","Tremolo","Flanger"};
+        for(const auto &type:effects){types->setCurrentText(type);dialog->findChild<QPushButton*>("dspAdd")->click();}
+        QCOMPARE(list->count(),effects.size());list->item(1)->setCheckState(Qt::Unchecked);
+        dialog->findChild<QPushButton*>("dspEarlier")->click();QCOMPARE(list->item(6)->text(),QString("Flanger"));
+        dialog->findChild<QPushButton*>("dspAudition")->click();
+        auto *player=dialog->findChild<QMediaPlayer*>();QVERIFY(player);
+        QTRY_VERIFY_WITH_TIMEOUT(player->source().isLocalFile(),10000);
+        QVERIFY(QFileInfo(player->source().toLocalFile()).size()>44000);
+        QVERIFY(dialog->grab().save("artifacts/studio-effect-chain.png"));
+        dialog->findChild<QPushButton*>("saveDspChain")->click();
+        QCOMPARE(checksum(source),original);
+        Library reopened;reopened.load();const auto chain=AudioLibrary::asset(reopened,"voice").value("dspChain").toArray();
+        QCOMPARE(chain.size(),8);QCOMPARE(chain[6].toObject().value("type").toString(),QString("Flanger"));
+        QVERIFY(!chain[1].toObject().value("enabled").toBool());
+        dialog=open();QVERIFY(dialog);list=dialog->findChild<QListWidget*>("dspChain");
+        QCOMPARE(list->item(1)->checkState(),Qt::Unchecked);QCOMPARE(list->item(6)->text(),QString("Flanger"));dialog->reject();
+    }
     void studioAudioMeterAndWheelFader(){
         QTemporaryDir tmp;
         const auto file=tmp.filePath("stereo.wav");

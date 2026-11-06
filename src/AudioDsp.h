@@ -7,6 +7,10 @@
 // Ordered, bypassable offline processing. Only generated numeric filter arguments
 // are accepted; project documents cannot inject arbitrary FFmpeg filter graphs.
 namespace AudioDsp {
+inline QStringList types(){
+    return {"Echo","Equalizer","High pass","Low pass","Compressor","Limiter","Gain",
+            "Stereo width","Tremolo","Vibrato","Flanger"};
+}
 inline QString filterGraph(const QJsonArray &chain,QString *error=nullptr){
     if(error)error->clear();
     QStringList filters;
@@ -37,6 +41,16 @@ inline QString filterGraph(const QJsonArray &chain,QString *error=nullptr){
             filter="alimiter=level=false:limit="+number("limit",.95,.0625,1);
         }else if(type=="Gain"){
             filter="volume="+number("gainDb",0,-60,24)+"dB";
+        }else if(type=="Stereo width"){
+            filter="aformat=channel_layouts=stereo,stereowiden=delay="+number("delayMs",20,1,100)
+                +":feedback="+number("feedback",.3,0,.9)+":crossfeed="+number("crossfeed",.3,0,.8)
+                +":drymix="+number("dryMix",.8,0,1);
+        }else if(type=="Tremolo" || type=="Vibrato"){
+            filter=type.toLower()+"=f="+number("rate",5,.1,20000)+":d="+number("depth",.5,0,1);
+        }else if(type=="Flanger"){
+            filter="flanger=delay="+number("delayMs",0,0,30)+":depth="+number("sweepMs",2,0,10)
+                +":regen="+number("feedback",0,-95,95)+":width="+number("wet",71,0,100)
+                +":speed="+number("rate",.5,.1,10);
         }else return fail("Unknown audio effect: "+type);
         if(!valid)return fail("Invalid or out-of-range parameters for "+type+".");
         filters.append(filter);

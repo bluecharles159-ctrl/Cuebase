@@ -2,6 +2,15 @@
 
 ## Latest verified checkpoint
 
+Build 60 exercised the Studio control rail, the volume wheel and independently
+measured left/right PCM levels. The Build editor test cut text with a moving,
+hidden graphic, changed the operation, compared reopened frames, and duplicated
+both objects while retaining their relationship.
+[Windows ZIP](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42253967016/artifacts/13521768931)
+and [test reports and editor captures](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42253967016/artifacts/13523355205).
+
+## Build 58
+
 Build 58 ran the private monitor and continuity cases on native Windows.
 Scrubbing during a commercial selected the preceding program, stopped on its
 last frame, and restarted privately without moving the broadcast clock. The
