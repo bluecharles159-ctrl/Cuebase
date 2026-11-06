@@ -20,6 +20,7 @@
 #include "Data.h"
 #include "Playout.h"
 #include "NetworkOutputPanel.h"
+#include "WorkspaceSetup.h"
 
 namespace {
 QLabel *caption(const QString &t) {
@@ -48,6 +49,7 @@ ControlPanel::ControlPanel(Library *lib, Playout *play, QWidget *parent, Network
 
     l->addWidget(caption("CONTROL"));
     m_chip = new QLabel;
+    connect(lib,&Library::productionChanged,this,[this]{refresh();});
     l->addWidget(m_chip);
 
     l->addWidget(caption("NOW"));
@@ -200,7 +202,8 @@ void ControlPanel::rebuildElements() {
 void ControlPanel::refresh() {
     const bool live = m_play->isLive();
     const bool paused = m_play->state() == Playout::Paused;
-    m_chip->setText(paused ? "● PAUSED" : live ? "● ON AIR" : "● OFF AIR");
+    const bool editing=WorkspaceSetup::editingOnly(*m_lib);
+    m_chip->setText(paused ? "● PAUSED" : editing ? (live?"● PREVIEWING":"● PREVIEW") : live ? "● ON AIR" : "● OFF AIR");
     m_chip->setStyleSheet(paused ? "color:#f59e0b; font-weight:700; font-size:10px;"
                           : live ? "color:#ef4444; font-weight:700; font-size:11px;"
                                  : "color:#64748b; font-weight:700; font-size:11px;");
@@ -232,7 +235,7 @@ void ControlPanel::refresh() {
     m_info->setText(QString("%1 · %2 · %3 fps · %4 Mbps")
                         .arg(d.channel, d.resolution, QString::number(d.fps), QString::number(d.bitrate, 'f', 1)));
 
-    m_start->setText(live ? "Stop playout" : "Start playout");m_start->setIcon(uiIcon(live?"stop":"play"));
+    m_start->setText(editing?(live?"Stop preview":"Preview timeline"):(live?"Stop playout":"Start playout"));m_start->setIcon(uiIcon(live?"stop":"play"));
     m_start->setProperty("live", live);
     m_start->style()->unpolish(m_start);
     m_start->style()->polish(m_start);

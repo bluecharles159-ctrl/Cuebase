@@ -28,6 +28,7 @@ class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
     explicit MainWindow(QWidget *parent = nullptr);
+    void enterWorkspace();
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -35,6 +36,7 @@ protected:
 
 private:
     void buildMenus();
+    void openWorkspaceSetup();
     void importFiles(const QStringList &paths);
     void importVideo(const QString &path);
     QWidget *m_fileOverlay = nullptr;

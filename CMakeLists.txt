@@ -16,6 +16,7 @@ add_library(CuebaseBuildCore STATIC
     src/ElementLibrary.h src/ElementLibrary.cpp
     src/SceneEffects.h src/SceneEffects.cpp
     src/UiControls.h src/UiControls.cpp
+    src/WorkspaceSetup.h src/WorkspaceSetup.cpp
     src/Toast.h src/Toast.cpp
     src/AudioLibrary.h src/AudioLibrary.cpp
     src/UiIcons.cpp src/UiTheme.h src/UiTheme.cpp assets/icons.qrc

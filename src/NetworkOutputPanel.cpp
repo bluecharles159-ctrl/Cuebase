@@ -1,5 +1,6 @@
 #include "NetworkOutputPanel.h"
 #include "NetworkOutput.h"
+#include "WorkspaceSetup.h"
 #include "Data.h"
 #include "Playout.h"
 #include "UiControls.h"
@@ -18,7 +19,14 @@ NetworkOutputPanel::NetworkOutputPanel(NetworkOutput *output,Library *library,Pl
     auto *status=new QLabel(output->status());status->setWordWrap(true);status->setTextFormat(Qt::PlainText);layout->addWidget(status);
     auto *button=new QPushButton("Configure / start stream");button->setIcon(uiIcon("play"));button->setToolTip("Send the clean program picture and mixed audio to an RTMP/RTMPS or SRT destination");layout->addWidget(button);
     auto settings=std::make_shared<StreamSettings>();QSettings saved;settings->executable=saved.value("stream/encoder",NetworkOutput::findEncoder()).toString();settings->videoKbps=saved.value("stream/videoKbps",6000).toInt();settings->audioKbps=saved.value("stream/audioKbps",160).toInt();
-    connect(output,&NetworkOutput::statusChanged,this,[=](const QString &text,bool live){status->setText(text);status->setStyleSheet(live?"color:#63d4a4;":"color:#a5b3c6;");button->setText(output->active()?"Stop network stream":"Configure / start stream");button->setIcon(uiIcon(output->active()?"pause":"play"));});
+    button->setObjectName("configureNetworkOutput");
+    auto applyMode=[=]{
+        const bool editing=WorkspaceSetup::editingOnly(*library);
+        button->setEnabled(!editing || output->active());
+        status->setText(editing?"Network output is available in TV production mode.":output->status());
+    };
+    connect(library,&Library::productionChanged,this,applyMode);applyMode();
+    connect(output,&NetworkOutput::statusChanged,this,[=](const QString &text,bool live){status->setText(text);status->setStyleSheet(live?"color:#63d4a4;":"color:#a5b3c6;");button->setText(output->active()?"Stop network stream":"Configure / start stream");button->setIcon(uiIcon(output->active()?"pause":"play"));applyMode();});
     connect(playout,&Playout::stateChanged,this,[=]{if(!playout->isLive()&&output->active())output->stop();});
     connect(button,&QPushButton::clicked,this,[=,this]{
         if(output->active()){output->stop();return;}
@@ -33,6 +41,7 @@ NetworkOutputPanel::NetworkOutputPanel(NetworkOutput *output,Library *library,Pl
         auto *error=new QLabel;error->setWordWrap(true);error->setStyleSheet("color:#f4b184;");box->addWidget(error);auto *buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);buttons->button(QDialogButtonBox::Ok)->setText("Start stream");box->addWidget(buttons);
         connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::reject);
         connect(buttons,&QDialogButtonBox::accepted,dialog,[=]{
+            if(WorkspaceSetup::editingOnly(*library)){error->setText("Switch to TV production in Settings to start network output.");return;}
             if(!playout->isLive()){error->setText("Start playout first so there is a program on air.");return;}
             StreamSettings next=*settings;next.executable=encoder->text().trimmed();next.endpoint=endpoint->text().trimmed();if(!key->text().isEmpty()&&QUrl(next.endpoint).scheme().startsWith("rtmp")){while(next.endpoint.endsWith('/'))next.endpoint.chop(1);next.endpoint+="/"+key->text();}
             next.size={library->display.resX(),library->display.resY()};next.fps=library->display.fps/library->display.fpsBase;next.videoKbps=video->value();next.audioKbps=audio->value();

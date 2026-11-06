@@ -88,12 +88,17 @@ QCheckBox { spacing:4px; }
     for(auto *widget:qApp->allWidgets())widget->update();
 }
 
-void showUiSettings(QWidget *parent){
+void showUiSettings(QWidget *parent,const std::function<void()> &workspaceSetup){
     auto *dialog=roundedModal(parent,"Settings");dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->resize(560,340);
     auto *outer=new QVBoxLayout(dialog);outer->setContentsMargins(16,16,16,16);auto *heading=new QLabel("Settings");heading->setStyleSheet("font-size:14px;font-weight:600;");outer->addWidget(heading);
     auto *row=new QHBoxLayout;auto *categories=new QListWidget;categories->setObjectName("settingsSections");categories->addItems({"General","Theme","Timeline"});categories->setFixedWidth(125);row->addWidget(categories);
     auto *pages=new QStackedWidget;auto *general=new QWidget;auto *generalLayout=new QVBoxLayout(general);auto *intro=new QLabel("Workspace appearance is saved on this computer.\nBroadcast content and exported graphics keep their own colors.");intro->setWordWrap(true);generalLayout->addWidget(intro);generalLayout->addStretch();pages->addWidget(general);
     auto *appearance=new QWidget;auto *form=new QFormLayout(appearance);form->setContentsMargins(18,4,4,4);auto *themes=new QComboBox;themes->setObjectName("applicationTheme");themes->addItems({"Studio Blue","Current","Darker","Light"});themes->setCurrentText(currentUiTheme());form->addRow("Theme",themes);auto *hint=new QLabel("Changes apply immediately to both workspaces.");hint->setWordWrap(true);form->addRow(hint);pages->addWidget(appearance);row->addWidget(pages,1);outer->addLayout(row,1);
+    if(workspaceSetup){
+        auto *setup=new QPushButton("Production / editing workspace…");setup->setObjectName("settingsWorkspaceSetup");
+        generalLayout->insertWidget(0,setup);
+        QObject::connect(setup,&QPushButton::clicked,dialog,[dialog,workspaceSetup]{dialog->accept();workspaceSetup();});
+    }
     auto *timeline=new QWidget;auto *timelineForm=new QFormLayout(timeline);timelineForm->setContentsMargins(18,4,4,4);
     auto preference=[&](const QString &label,const QString &key,const QString &name){auto *check=new QCheckBox(label);check->setObjectName(name);check->setChecked(QSettings().value(key,true).toBool());timelineForm->addRow(check);QObject::connect(check,&QCheckBox::toggled,dialog,[key](bool enabled){QSettings().setValue(key,enabled);for(auto *widget:qApp->allWidgets())if(widget->inherits("TimelineWidget"))QMetaObject::invokeMethod(widget,"reloadPreferences",Qt::DirectConnection);});};
     preference("Keep the playhead centered","studio/fixedPlayhead","timelineFixedPlayhead");

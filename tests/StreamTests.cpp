@@ -26,6 +26,7 @@
 #include "TimelineMedia.h"
 #include <QCheckBox>
 #include <QSettings>
+#include <QScopeGuard>
 #include <QStandardPaths>
 #include <QUuid>
 #include <QListWidget>
@@ -39,6 +40,7 @@
 #include "BuildModel.h"
 #include "StudioDashboard.h"
 #include "MainWindow.h"
+#include "WorkspaceSetup.h"
 #include "ProductionBoard.h"
 #include "PlanHandoff.h"
 #include "PlanningCanvas.h"
@@ -67,6 +69,38 @@
 class StreamTests:public QObject{
     Q_OBJECT
 private slots:
+    void chooseWorkspaceAtFirstLaunchAndSwitchInSettings(){
+        Library original;original.load();
+        auto restore=qScopeGuard([&]{original.save();});
+        Library seed;seed.load();seed.production.remove("workspaceProfile");QVERIFY(seed.saveChecked());
+        MainWindow window;window.show();window.enterWorkspace();
+        auto *setup=window.findChild<QDialog*>("workspaceSetup");QVERIFY(setup && setup->isVisible());
+        QVERIFY(setup->findChild<QPushButton*>("setupStudio")->isChecked());
+        auto *name=setup->findChild<QLineEdit*>("setupChannelName");
+        const QString channel=name->text();name->clear();
+        setup->findChild<QPushButton*>("saveWorkspaceSetup")->click();
+        QVERIFY(setup->findChild<QLabel*>("setupError")->isVisible());
+        setup->findChild<QPushButton*>("setupEditing")->click();QVERIFY(!name->isVisible());
+        setup->findChild<QPushButton*>("saveWorkspaceSetup")->click();
+        QCOMPARE(window.windowTitle(),QString("Cuebase — Build"));
+        auto *network=window.findChild<QPushButton*>("configureNetworkOutput");QVERIFY(network && !network->isEnabled());
+        Library reloaded;reloaded.load();QVERIFY(WorkspaceSetup::editingOnly(reloaded));
+        QCOMPARE(reloaded.display.channel,channel);
+        MainWindow next;next.show();next.enterWorkspace();QCOMPARE(next.windowTitle(),QString("Cuebase — Build"));
+        QVERIFY(!next.findChild<QDialog*>("workspaceSetup"));
+        next.findChild<QToolButton*>("windowSettings")->click();
+        auto *change=next.findChild<QPushButton*>("settingsWorkspaceSetup");QVERIFY(change);change->click();
+        setup=next.findChild<QDialog*>("workspaceSetup");QVERIFY(setup);
+        setup->findChild<QPushButton*>("setupStudio")->click();
+        setup->findChild<QLineEdit*>("setupChannelName")->setText("Cuebase News");
+        setup->findChild<QComboBox*>("setupFormat")->setCurrentText("1280x720");
+        setup->findChild<QComboBox*>("setupFrameRate")->setCurrentText("30 fps");
+        QVERIFY(setup->grab().save("artifacts/workspace-setup.png"));
+        setup->findChild<QPushButton*>("saveWorkspaceSetup")->click();
+        reloaded.load();QVERIFY(!WorkspaceSetup::editingOnly(reloaded));QCOMPARE(reloaded.display.channel,QString("Cuebase News"));
+        QCOMPARE(reloaded.display.fps,30);QCOMPARE(reloaded.display.resolution,QString("1280x720"));
+        QVERIFY(next.findChild<QPushButton*>("configureNetworkOutput")->isEnabled());
+    }
     void echoProducesDelayedAudio(){
         QString error;const auto graph=AudioDsp::filterGraph(QJsonArray{QJsonObject{{"type","Echo"},{"delayMs",250},{"decay",.5}}},&error);QVERIFY(error.isEmpty());
         QProcess process;process.start(NetworkOutput::findEncoder(),{"-hide_banner","-loglevel","error","-f","lavfi","-i",R"(aevalsrc=if(eq(n\,0)\,0.5\,0):s=8000:d=0.1)","-af",graph,"-ac","1","-ar","8000","-f","f32le","pipe:1"});

@@ -8,6 +8,7 @@
 #include <QDialogButtonBox>
 #include <QPainter>
 #include <QWheelEvent>
+#include <QHBoxLayout>
 #include <QPointer>
 #include <QPlainTextEdit>
 #include <QCheckBox>
@@ -57,22 +58,26 @@ private slots:
         auto *back=d.find("subject");back->style={};back->mat.color=Qt::blue;
         auto front=*back;front.id="front";front.mat.color=Qt::red;d.objects.append(front);
         model.reset(d);model.select("subject");
-        BuildCanvas canvas(&model,&library);canvas.resize(640,420);canvas.show();
-        LayerPanel panel(&model);panel.resize(250,240);panel.show();
-        QApplication::processEvents();const QPoint center(270,180);
+        QWidget host;
+        QHBoxLayout layout(&host);
+        BuildCanvas canvas(&model,&library);LayerPanel panel(&model);
+        layout.addWidget(&canvas,1);layout.addWidget(&panel);
+        host.resize(900,440);host.show();host.activateWindow();
+        QVERIFY(QTest::qWaitForWindowExposed(&host));
+        const QPoint center(270,180);
         const auto original=model.design.worldMatrix(*model.active(),0);
         auto fromCenter=[&] {
-            QTest::mouseMove(&canvas,center);QTest::keyClick(&canvas,Qt::Key_G);
+            QTest::mouseMove(&canvas,center);QTest::qWait(40);QTest::keyClick(&canvas,Qt::Key_G);
             QTest::keyClick(&canvas,Qt::Key_Z);
         };
         auto order=[&]{return model.byId("subject")->style.value("zIndex").toInt();};
         fromCenter();QTest::mouseMove(&canvas,center-QPoint(0,14));
-        QCOMPARE(order(),1);QCOMPARE(render(model.design).pixelColor(320,180),QColor(Qt::blue));
+        QTRY_COMPARE(order(),1);QCOMPARE(render(model.design).pixelColor(320,180),QColor(Qt::blue));
         QTest::keyClick(&canvas,Qt::Key_Escape);QCOMPARE(order(),0);
         for(const int direction:{1,-1}){
             fromCenter();const QPoint beyond=center-QPoint(0,42*direction);
             QTest::mouseMove(&canvas,beyond);
-            QCOMPARE(order(),direction);QCOMPARE(model.design.frontLayer,0);QCOMPARE(model.design.backLayer,0);
+            QTRY_COMPARE(order(),direction);QCOMPARE(model.design.frontLayer,0);QCOMPARE(model.design.backLayer,0);
             QTRY_VERIFY_WITH_TIMEOUT(panel.accessibleDescription().contains("ready"),2000);
             if(direction>0)QVERIFY(panel.grab().save("artifacts/pending-overlap-layer.png"));
             QTest::mouseClick(&canvas,Qt::LeftButton,{},beyond);QCOMPARE(order(),2*direction);

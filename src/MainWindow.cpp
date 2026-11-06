@@ -86,6 +86,7 @@
 #include "Replay.h"
 #include "ViewportWidget.h"
 #include "NetworkOutput.h"
+#include "WorkspaceSetup.h"
 
 class CueBoardDialog final:public QDialog {
 public:using QDialog::QDialog;
@@ -177,6 +178,18 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
 
 // --------------------------------------------------------------- header
 
+void MainWindow::enterWorkspace(){
+    if(WorkspaceSetup::editingOnly(*m_lib))showBuild({},false);
+    else if(!m_lib->production.contains("workspaceProfile"))openWorkspaceSetup();
+}
+void MainWindow::openWorkspaceSetup(){
+    if(auto *existing=findChild<QDialog*>("workspaceSetup")){existing->raise();return;}
+    if(m_network->active()){report("Stop the network stream before changing workspace settings.");return;}
+    auto *dialog=WorkspaceSetup::dialog(this,m_lib);dialog->setAttribute(Qt::WA_DeleteOnClose);
+    connect(dialog,&QDialog::accepted,this,[this]{if(WorkspaceSetup::editingOnly(*m_lib))showBuild({},false);else showStudio();});
+    dialog->open();
+}
+
 void MainWindow::buildMenus() {
     auto *header = new WindowHeader;
     header->setObjectName("header");
@@ -186,6 +199,7 @@ void MainWindow::buildMenus() {
 
     auto *logo = new QToolButton;logo->setObjectName("channelProfile");logo->setIcon(QIcon(makeLogo(26)));logo->setIconSize({26,26});logo->setStyleSheet("QToolButton{border-radius:17px;padding:4px;background:palette(window);}");logo->setToolTip("Channel profile");
     auto refreshLogo=[this,logo]{QPixmap image(m_lib->display.channelLogo);if(const auto *element=m_lib->element(m_lib->display.channelLogoElement))image=QPixmap::fromImage(elementThumbnail(*element));logo->setIcon(QIcon(channelLogoPreview(image,26)));logo->setToolTip(m_lib->display.channel+" / Channel profile");};refreshLogo();connect(m_lib,&Library::elementsChanged,logo,refreshLogo);
+    connect(m_lib,&Library::displayChanged,logo,refreshLogo);
     connect(logo,&QToolButton::clicked,this,[this,refreshLogo]{
         std::unique_ptr<QDialog> profile(roundedModal(this,"Channel profile"));auto &dialog=*profile;dialog.setObjectName("channelProfileDialog");dialog.setMinimumWidth(390);dialog.setStyleSheet("QDialog{background:palette(window);border-radius:12px;}QLabel{font-size:10px;}QLineEdit,QPlainTextEdit,QComboBox{border-radius:5px;padding:5px;}");auto *form=new QFormLayout(&dialog);form->setContentsMargins(18,18,18,18);
         auto *heading=new QLabel("Channel profile");heading->setStyleSheet("font-size:14px;font-weight:600;padding-bottom:6px;");form->addRow(heading);
@@ -208,7 +222,7 @@ void MainWindow::buildMenus() {
     hl->addStretch();
     auto control=[&](QString name,QString icon,QString label){auto *button=new QToolButton;button->setObjectName(name);button->setIcon(uiIcon(icon));button->setIconSize({13,13});button->setFixedSize(30,26);button->setToolTip(label);button->setAccessibleName(label);hl->addWidget(button);return button;};
     auto *planner=control("windowPlanner","workflow","Production plan");connect(planner,&QToolButton::clicked,this,[this]{auto *board=findChild<ProductionBoard*>("productionBoard",Qt::FindDirectChildrenOnly);if(!board){board=new ProductionBoard(m_lib,this);board->setBroadcastPlayout(m_play);}board->show();board->raise();board->activateWindow();});
-    auto *settings=control("windowSettings","settings","Settings");connect(settings,&QToolButton::clicked,this,[this]{showUiSettings(this);});
+    auto *settings=control("windowSettings","settings","Settings");connect(settings,&QToolButton::clicked,this,[this]{showUiSettings(this,[this]{openWorkspaceSetup();});});
     auto *minimize=control("windowMinimize","remove","Minimize");minimize->setIcon(style()->standardIcon(QStyle::SP_TitleBarMinButton));connect(minimize,&QToolButton::clicked,this,&QWidget::showMinimized);
     auto *maximize=control("windowMaximize","square","Maximize / restore");connect(maximize,&QToolButton::clicked,this,[this]{isMaximized()?showNormal():showMaximized();});
     auto *closeButton=control("windowClose","close","Close");connect(closeButton,&QToolButton::clicked,this,&QWidget::close);
@@ -252,7 +266,7 @@ void MainWindow::buildMenus() {
     auto *edit = newMenu("Edit");
     add(edit, "Undo", QKeySequence("Ctrl+Z"), [this, focusCall] { if (m_build && m_stack->currentWidget() == m_build) m_build->undoEdit(); else if(qobject_cast<QLineEdit*>(QApplication::focusWidget())||qobject_cast<QPlainTextEdit*>(QApplication::focusWidget()))focusCall("undo")();else if(m_lib->undoProgramCut())report("Program cut undone"); });
     add(edit, "Redo", QKeySequence("Ctrl+Shift+Z"), [this, focusCall] { if (m_build && m_stack->currentWidget() == m_build) m_build->redoEdit(); else if(qobject_cast<QLineEdit*>(QApplication::focusWidget())||qobject_cast<QPlainTextEdit*>(QApplication::focusWidget()))focusCall("redo")();else if(m_lib->redoProgramCut())report("Program cut restored"); });
-    add(edit, "Settings…", QKeySequence("Ctrl+,"), [this] { showUiSettings(this); });
+    add(edit, "Settings…", QKeySequence("Ctrl+,"), [this] { showUiSettings(this,[this]{openWorkspaceSetup();}); });
     edit->addSeparator();
     add(edit, "Cut", QKeySequence("Ctrl+X"), focusCall("cut"));
     add(edit, "Copy", QKeySequence("Ctrl+C"), focusCall("copy"));
