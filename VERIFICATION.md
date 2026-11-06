@@ -2,6 +2,16 @@
 
 ## Latest verified checkpoint
 
+Build 52 passed the Windows workflow. In the native editor, Grab then Z stepped
+through both boundaries with a one-second hold. Releasing committed the layer,
+Escape cancelled it, and undo restored it. The output tests compared overlap
+and transformation matrices. The setup test switched between Studio and Editing,
+checked the saved channel and output format, and verified the Network Output control.
+[Windows ZIP](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42146792139/artifacts/13469584860)
+and [test reports and editor captures](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42146792139/artifacts/13469474971).
+
+## Build 49
+
 Build 49 rendered keyed light sweeps, bevels, painted extrusion sides and
 fading reflections on text and image logos. The tests checked edge colors,
 alpha, keyframe changes and the reopened scene's rendered frame.

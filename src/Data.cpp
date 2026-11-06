@@ -242,6 +242,8 @@ void Library::load() {
         p.breakIn = j["breakIn"].toString();
         p.breakOut = j["breakOut"].toString();
         p.replayInEffect=j["replayInEffect"].toString("preset:Fade");p.replayOutEffect=j["replayOutEffect"].toString("preset:Fade");
+        p.splitShots=j["splitShots"].toArray();
+        p.splitClockOrigin=j["splitClockOrigin"].toInt(-1);
         p.seconds = j["seconds"].toInt(60);
         p.durationMs=qint64(qBound(0.,j["durationMs"].toDouble(),2147483647.));p.elementId=j["elementId"].toString();
         p.offsetMs = j["offsetMs"].toInt(0);
@@ -342,6 +344,8 @@ bool Library::saveChecked(QString *error) const {
         pa.append(QJsonObject{{"id", p.id}, {"title", p.title}, {"kind", p.kind}, {"file", p.file},
                               {"adId", p.adId}, {"breakIn", p.breakIn}, {"breakOut", p.breakOut},
                               {"replayInEffect",p.replayInEffect},{"replayOutEffect",p.replayOutEffect},
+                              {"splitShots",p.splitShots},
+                              {"splitClockOrigin",p.splitClockOrigin},
                               {"seconds", p.seconds}, {"durationMs",double(p.durationMs)}, {"elementId",p.elementId}, {"offsetMs", p.offsetMs}, {"slotAfter", p.slotAfter},
                               {"description", p.description}, {"image", p.image}, {"fx", fxToJson(p.fx)}});
     for (const Ad &a : ads)

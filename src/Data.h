@@ -93,6 +93,8 @@ struct ProgramItem {
 
     // kind "Ad" is a standalone ad spot placed on the timeline (its adId points at the ad)
     QString replayInEffect="preset:Fade",replayOutEffect="preset:Fade";
+    QJsonArray splitShots;
+    int splitClockOrigin=-1;
     bool isAdSpot() const { return kind == QLatin1String("Ad"); }
     qint64 durationMs = 0; // Optional exact duration; zero keeps legacy seconds.
     QString elementId;    // A screen element occupying its own main-track slot.
@@ -217,6 +219,7 @@ public:
 
 signals:
     void programsChanged();
+    void splitLayoutsChanged();
     void adsChanged();
     void elementsChanged();
     void elementLiveChanged();

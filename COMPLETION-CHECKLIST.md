@@ -1,6 +1,6 @@
 # Cuebase completion counter
 
-Updated 2026-11-06. **37 of 84 tasks completed — 47 remaining.**
+Updated 2026-11-06. **39 of 84 tasks completed — 45 remaining.**
 
 The Claude transcript adds four distinct acceptance groups (81–84). Row 06 remains
 open: converted surfaces now retain their Inspector controls and unchanged
@@ -100,7 +100,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 
 ## Accounts, research and delivery
 
-- [ ] 66. Studio-default onboarding, editing-only mode and production/channel details.
+- [x] 66. Studio-default onboarding, editing-only mode and production/channel details (Build 52, local profile; hosted authentication is row 67).
 - [ ] 67. Google/GitHub/email accounts and real cross-device login — Supabase deferred by user.
 - [ ] 68. One default channel, isolated channel data, multiple windows and optional shared settings.
 - [ ] 69. Secure device pairing, revocation, permissions and device-management interface.
@@ -119,7 +119,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 ## Additional Claude transcript requirements — 2026-10-25
 
 - [x] 81. Non-destructive curve noise, selected-key/channel entry points, per-curve controls, persistence, undo and shared-renderer output. GitHub run 40193557415 passes the interaction suite in offscreen and native Windows modes, plus packaged-runtime checks. ANIMATION-NOISE.md documents the single-modifier scope and time units.
-- [ ] 82. Front/middle/back sub-layers, G/Z steps, delayed NEW-layer boundaries, cancellation, layer colors and overlap-only broadcast stacking.
+- [x] 82. Front/middle/back sub-layers, G/Z steps, delayed NEW-layer boundaries, cancellation, layer colors and overlap-only broadcast stacking (Build 52).
 - [x] 83. Dual-camera layout, side-view toggle and final-camera aspect presets. Independent Front/Right/Top views leave saved camera data and Final pixels unchanged; output preset Cancel and Save/reopen pass in run 41591759703. Native dual-viewport capture reviewed.
 - [ ] 84. Boolean effects for text with preserved appearance and editable controls.
 

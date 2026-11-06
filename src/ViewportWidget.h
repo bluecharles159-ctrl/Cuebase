@@ -9,6 +9,8 @@
 
 #include "Data.h"
 #include "ElementDesign.h"
+#include "SplitCameras.h"
+class QToolButton;
 
 class Playout;
 class QMediaPlayer;
@@ -57,6 +59,9 @@ private:
     View makeView() const;
     bool barVisible() const { return m_hover || m_detached || m_scrub; }
     void drawScreen(QPainter &p, const QRect &r, const View &v, bool guides = true);
+    bool drawSplitLayout(QPainter &p,const QRect &r,const View &view);
+    SplitCameras m_splitCameras;
+    QToolButton *m_layoutButton=nullptr;
     void drawElement(QPainter &p, const QRect &r, const Element &e, qint64 tMs,bool controlled=false);
     const ElementDesign &designFor(const Element &e);
     struct Range { int a = -1, b = -1; };

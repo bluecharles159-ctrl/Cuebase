@@ -41,6 +41,7 @@
 #include "StudioDashboard.h"
 #include "MainWindow.h"
 #include "WorkspaceSetup.h"
+#include "SplitLayout.h"
 #include "ProductionBoard.h"
 #include "PlanHandoff.h"
 #include "PlanningCanvas.h"
@@ -69,6 +70,53 @@
 class StreamTests:public QObject{
     Q_OBJECT
 private slots:
+    void scheduleAndBroadcastSplitLayouts(){
+        Library original;original.load();auto restore=qScopeGuard([&]{original.save();});
+        Library lib;lib.display.watermarkOn=false;
+        for(const auto &ink:QStringList{"red","blue","green"}){
+            auto design=ElementDesign::defaultScene();
+            DObject o;o.id=ink;o.type="Shape";o.base.rot={90,0,0};o.w=25;o.h=15;o.mat.shadeless=true;o.mat.color=QColor(ink);
+            design.objects.append(o);Element scene;scene.id=ink;scene.type="Custom";scene.name=ink;scene.design=design.toJson();lib.elements.append(scene);
+        }
+        ProgramItem show;show.id="interview";show.title="Interview";show.seconds=30;lib.programs={show};
+        Playout play(&lib);ViewportWidget viewport(&lib,&play);viewport.resize(620,360);viewport.show();
+        play.start(0,2000);play.togglePause();
+        auto *menu=viewport.findChild<QToolButton*>("splitLayoutButton")->menu();
+        emit menu->aboutToShow();QVERIFY(!menu->actions().isEmpty());
+        QTimer::singleShot(0,qApp,[&]{
+            auto *dlg=qobject_cast<QDialog*>(qApp->activeModalWidget());if(!dlg)return;
+            QTimer::singleShot(12000,dlg,&QDialog::reject);
+            dlg->findChild<QPushButton*>("splitAdd")->click();
+            dlg->findChild<QDoubleSpinBox*>("splitStart")->setValue(0.);
+            dlg->findChild<QDoubleSpinBox*>("splitEnd")->setValue(10.);
+            auto choose=[&](int pane,const QString &source){auto *box=dlg->findChild<QComboBox*>("splitPane"+QString::number(pane));box->setCurrentIndex(box->findData("element:"+source));};
+            choose(1,"red");choose(2,"blue");
+            dlg->findChild<QPushButton*>("splitAdd")->click();
+            dlg->findChild<QDoubleSpinBox*>("splitStart")->setValue(12.);
+            dlg->findChild<QComboBox*>("splitLayout")->setCurrentText("Host and guests");
+            choose(1,"blue");choose(2,"green");choose(3,"red");
+            QVERIFY(dlg->grab().save("artifacts/split-schedule.png"));
+            dlg->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Save)->click();
+        });
+        menu->actions().first()->trigger();
+        QCOMPARE(lib.programs.first().splitShots.size(),2);QCOMPARE(play.state(),Playout::Paused);
+        const auto two=viewport.programFrame({320,180});
+        QCOMPARE(two.pixelColor(80,90),QColor("red"));QCOMPARE(two.pixelColor(240,90),QColor("blue"));
+        play.start(0,11000);play.togglePause();QVERIFY(viewport.programFrame({320,180})!=two);
+        play.start(0,14000);play.togglePause();const auto three=viewport.programFrame({320,180});
+        QCOMPARE(three.pixelColor(80,90),QColor("blue"));QCOMPARE(three.pixelColor(260,45),QColor("green"));
+        QCOMPARE(three.pixelColor(260,135),QColor("red"));QVERIFY(three.save("artifacts/split-program-output.png"));
+        Library reopened;reopened.load();QCOMPARE(reopened.programs.first().splitShots,lib.programs.first().splitShots);
+        for(const auto &preset:SplitLayout::transitions()){
+            auto shot=lib.programs.first().splitShots.first().toObject();shot["transition"]=preset;shot["fade"]=1000;
+            QImage mid(100,100,QImage::Format_RGB32);mid.fill(Qt::black);QPainter p(&mid);
+            QVERIFY(SplitLayout::draw(p,mid.rect(),{shot},500,[](const QString &source,QSize size){
+                QImage frame(size,QImage::Format_RGB32);frame.fill(source=="program"?Qt::green:Qt::red);return frame;}));
+            p.end();int green=0,red=0;for(int x=0;x<100;x+=5)for(int y=0;y<100;y+=5){
+                const auto color=mid.pixelColor(x,y);green+=color.green()>50;red+=color.red()>50;}
+            QVERIFY2(red>0 && green>0,qPrintable(preset));
+        }
+    }
     void chooseWorkspaceAtFirstLaunchAndSwitchInSettings(){
         Library original;original.load();
         auto restore=qScopeGuard([&]{original.save();});

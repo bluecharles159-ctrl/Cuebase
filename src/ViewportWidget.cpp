@@ -1,4 +1,9 @@
 #include "ViewportWidget.h"
+#include "SplitLayout.h"
+#include "MediaFrames.h"
+#include "UiControls.h"
+#include <QMenu>
+#include <QToolButton>
 #include <algorithm>
 #include "Continuity.h"
 #include "Replay.h"
@@ -63,6 +68,24 @@ QColor segColor(const Segment &s) {
 ViewportWidget::ViewportWidget(Library *lib, Playout *play, QWidget *parent)
     : QWidget(parent), m_lib(lib), m_play(play) {
     setMouseTracking(true);
+    m_layoutButton=new QToolButton(this);m_layoutButton->setObjectName("splitLayoutButton");
+    m_layoutButton->setIcon(uiIcon("composition"));m_layoutButton->setToolTip("Schedule split screens");
+    m_layoutButton->setAccessibleName("Schedule split screens");m_layoutButton->setFixedSize(30,28);
+    m_layoutButton->setPopupMode(QToolButton::InstantPopup);
+    auto *layouts=new QMenu(m_layoutButton);m_layoutButton->setMenu(layouts);
+    connect(layouts,&QMenu::aboutToShow,this,[this,layouts]{
+        layouts->clear();
+        const auto v=makeView();
+        for(const auto &program:m_lib->programs)if(!program.isAdSpot()){
+            auto *action=layouts->addAction(program.title);
+            const bool current=v.seg && v.seg->programId==program.id && v.seg->type==Segment::Program;
+            if(current)layouts->setDefaultAction(action);
+            const qint64 time=current?v.seg->offsetMs+v.segElapsed:program.offsetMs;
+            connect(action,&QAction::triggered,this,[this,id=program.id,time]{SplitLayout::edit(this,m_lib,id,time);});
+        }
+        if(layouts->isEmpty())layouts->addAction("Add a program to schedule a layout")->setEnabled(false);
+    });
+    connect(m_lib,&Library::splitLayoutsChanged,this,qOverload<>(&ViewportWidget::update));
 
     auto refresh = [this] { update(); };
     connect(play->replay(),&Replay::changed,this,[this,play]{if(play->replay()->active()&&play->replay()->elapsed==0)goCurrent();update();});
@@ -348,6 +371,7 @@ void ViewportWidget::paintEvent(QPaintEvent *) {
     p.fillRect(rect(), QColor("#050912"));
 
     const Geo g = viewGeo();
+    m_layoutButton->move(g.screen.right()-m_layoutButton->width()-5,g.screen.top()+6);
     const View v = makeView();
 
     p.save();
@@ -416,6 +440,29 @@ QImage ViewportWidget::programFrame(QSize size){
     if(d.regionOn){QPainter crop(&image);QPainterPath all,keep;all.addRect(image.rect());keep.addRect(QRectF(size.width()*d.rx0,size.height()*d.ry0,size.width()*(d.rx1-d.rx0),size.height()*(d.ry1-d.ry0)));crop.fillPath(all.subtracted(keep),Qt::black);}
     return image;
 }
+bool ViewportWidget::drawSplitLayout(QPainter &p,const QRect &r,const View &view){
+    if(!view.seg || view.seg->type!=Segment::Program)return false;
+    const auto *program=m_lib->program(view.seg->programId);
+    if(!program || program->splitShots.isEmpty())return false;
+    const qint64 time=view.seg->offsetMs+view.segElapsed;
+    return SplitLayout::draw(p,r,program->splitShots,time,[&](const QString &source,QSize size)->QImage{
+        if(source.startsWith("camera:"))return m_splitCameras.frame(QByteArray::fromBase64(source.mid(7).toLatin1()));
+        auto *clip=source=="program"?program:source.startsWith("clip:")?m_lib->program(source.mid(5)):nullptr;
+        if(clip==program && view.frame && !view.frame->isNull() && !program->file.isEmpty())return *view.frame;
+        const auto origin=program->splitClockOrigin<0?program->offsetMs:program->splitClockOrigin;
+        const qint64 elapsed=qMax<qint64>(0,time-origin);
+        const qint64 position=clip==program?time:clip?clip->offsetMs+elapsed:elapsed;
+        if(clip && !clip->file.isEmpty())return MediaFrames::frame(clip->file,position,"split:"+clip->id);
+        const auto *element=m_lib->element(clip?clip->elementId:source.startsWith("element:")?source.mid(8):QString());
+        if(!element)return {};
+        // Match the program camera aspect before cropping to the pane.
+        const double aspect=m_lib->display.aspect();
+        const int width=qBound(16,qMax(size.width(),qCeil(size.height()*aspect)),4096);
+        QImage image(width,qBound(16,qRound(width/aspect),4096),QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);
+        QPainter painter(&image);painter.setRenderHint(QPainter::Antialiasing);
+        drawElement(painter,image.rect(),*element,qMax<qint64>(0,position));painter.end();return image;
+    });
+}
 void ViewportWidget::drawScreen(QPainter &p, const QRect &r, const View &v, bool guides) {
     const Segment *seg = v.seg;
     const int H = r.height();
@@ -425,7 +472,10 @@ void ViewportWidget::drawScreen(QPainter &p, const QRect &r, const View &v, bool
     if(!seg&&!guides)return;
     p.save();
     if (seg && seg->type != Segment::Break) applyFx(p, r, transitionAt(seg->fx, v.segElapsed, seg->ms));
-    if (!seg) {
+    const bool split=drawSplitLayout(p,r,v);
+    if (split) {
+        // Panes replace the program picture. The channel graphics below stay full-screen.
+    } else if (!seg) {
         QLinearGradient g(r.topLeft(), r.bottomRight());
         g.setColorAt(0, QColor("#0b1220"));
         g.setColorAt(1, QColor("#020617"));
@@ -479,7 +529,7 @@ void ViewportWidget::drawScreen(QPainter &p, const QRect &r, const View &v, bool
     // ---- on-screen elements: switched-on ones, plus ones placed on the extra timelines for this moment ----
     struct GraphicLayer{Element element;qint64 time=0,elapsed=0,length=0;bool controlled=false,placed=false;};
     QVector<GraphicLayer> graphics;QSet<QString> drawn;const qint64 clock=v.posMs;
-    if(seg&&seg->type!=Segment::Break)if(const auto *item=m_lib->program(seg->programId);item&&!item->elementId.isEmpty())if(const auto *e=m_lib->element(item->elementId)){
+    if(!split&&seg&&seg->type!=Segment::Break)if(const auto *item=m_lib->program(seg->programId);item&&!item->elementId.isEmpty())if(const auto *e=m_lib->element(item->elementId)){
         Element instance=*e;instance.id="program:"+item->id;const auto playback=m_play->graphicPlayback(instance,clock,clock-v.segElapsed,item->offsetMs);
         drawn.insert(e->id);if(playback.visible)graphics.append({playback.resolved(instance),playback.time,v.segElapsed,seg->ms,playback.controlled,true});
     }
