@@ -301,6 +301,32 @@ void PropertyInspector::rebuild(){
         }
         auto *effects=section("EFFECTS",false);
         maskControls();
+        auto *boolean=section("SURFACE BOOLEAN");
+        choice(boolean,"Operation","boolean.operation",{"Off","Difference","Intersect","Union"},"Off");
+        auto *operand=new QComboBox;operand->setObjectName("surfaceBooleanSource");operand->setAccessibleName("Boolean source");
+        operand->setToolTip("Use the text, image or shape of another object. Hide the source to show just the result.");
+        boolean->addRow("Source",operand);
+        connect(operand,&QComboBox::activated,this,[this,operand](int index){
+            if(auto *o=m->active();o && !o->locked)apply([&]{o->style["boolean.source"]=operand->itemData(index).toString();});
+        });
+        sync.append([this,operand]{
+            const auto *object=m->active();if(!object)return;
+            QList<QPair<QString,QString>> choices{{"Choose an object",{}}};
+            for(const auto &candidate:m->design.objects){
+                if(!candidate.hasSurface() || candidate.id==object->id)continue;
+                QSet<QString> visited{object->id};const DObject *node=&candidate;
+                while(node && !visited.contains(node->id)){
+                    visited.insert(node->id);node=m->design.find(node->style.value("boolean.source").toString());
+                }
+                if(!node)choices.append({candidate.name,candidate.id});
+            }
+            QSignalBlocker block(operand);
+            bool changed=operand->count()!=choices.size();
+            for(int i=0;!changed && i<choices.size();++i)changed=operand->itemData(i)!=choices[i].second || operand->itemText(i)!=choices[i].first;
+            if(changed){operand->clear();for(const auto &[name,id]:choices)operand->addItem(name,id);}
+            operand->setCurrentIndex(qMax(0,operand->findData(object->style.value("boolean.source").toString())));
+            operand->setEnabled(!object->locked && object->style.value("boolean.operation").toString("Off")!="Off");
+        });
         auto *finish=section("SURFACE FINISH");
         choice(finish,"Light sweep","finish.sweep",{"Off","On"},"Off");
         number(finish,"Sweep position","finish.position",-.5,1.5,.01);

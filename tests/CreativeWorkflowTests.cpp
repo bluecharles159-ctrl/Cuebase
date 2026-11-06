@@ -52,6 +52,35 @@ class CreativeWorkflowTests : public QObject {
         for(QTreeWidgetItemIterator it(tree);*it;++it)if((*it)->data(0,Qt::UserRole+1).toString()==path)return *it;return nullptr;
     }
 private slots:
+    void editableTextBooleanUsesAnimatedSource(){
+        BuildModel model;auto design=scene("Text");auto *text=design.find("subject");
+        text->style={};text->text="LIVE";text->fontPx=110;text->w=4.;text->h=2.;text->mat.color=Qt::white;
+        DObject cutter;cutter.type="Shape";cutter.id="cutter";cutter.name="Wipe";cutter.w=2.;cutter.h=3.;
+        cutter.base.rot={90,0,0};cutter.mat.color=Qt::red;cutter.mat.shadeless=true;cutter.visible=false;
+        cutter.keyChannel("position.x",0,-1.);cutter.keyChannel("position.x",1000,4.);
+        design.objects.append(cutter);model.reset(design);model.select("subject");
+        const auto original=render(model.design);
+        Library lib;PropertyInspector inspector(&model,&lib);
+        auto *op=inspector.findChild<QComboBox*>("property_boolean.operation"),*source=inspector.findChild<QComboBox*>("surfaceBooleanSource");
+        QVERIFY(op && source);op->setCurrentText("Difference");emit op->activated(op->currentIndex());
+        const int index=source->findData("cutter");QVERIFY(index>0);source->setCurrentIndex(index);emit source->activated(index);
+        const auto difference=render(model.design);QVERIFY(difference!=original);
+        QCOMPARE(render(model.design,1000),original);
+        op->setCurrentText("Intersect");emit op->activated(op->currentIndex());const auto intersection=render(model.design);
+        QVERIFY(intersection!=original && intersection!=difference);
+        int left=0,right=0;for(int y=0;y<360;++y)for(int x=0;x<640;++x){
+            left+=intersection.pixelColor(x,y).alpha()>220;
+            right+=difference.pixelColor(x,y).alpha()>220;
+        }
+        QVERIFY(left>100 && right>100);
+        op->setCurrentText("Union");emit op->activated(op->currentIndex());const auto united=render(model.design,1000);
+        int red=0;for(int y=0;y<360;++y)for(int x=0;x<640;++x){auto c=united.pixelColor(x,y);red+=c.red()>180&&c.green()<80;}
+        QVERIFY(red>100);QCOMPARE(model.active()->type,QString("Text"));QCOMPARE(model.active()->text,QString("LIVE"));
+        const auto restored=ElementDesign::fromJson(model.design.toJson());QCOMPARE(render(restored,1000),united);
+        model.setSelection({"subject","cutter"},"subject");const auto ids=model.duplicateSelected();
+        QCOMPARE(ids.size(),2);QVERIFY(ids.contains(model.active()->style["boolean.source"].toString()));
+        QVERIFY(united.save("artifacts/text-boolean-union.png"));
+    }
     void grabZCreatesSingleOverlapLayerOnRelease() {
         Library library;BuildModel model;
         auto d=scene();d.world.transparent=true;

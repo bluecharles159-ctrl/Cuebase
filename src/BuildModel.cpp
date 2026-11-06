@@ -255,7 +255,12 @@ QStringList BuildModel::duplicateSelected() {
         c.name = uniqueName(s->name);
         copies.append(c);
     }
-    for(auto &copy:copies){if(remap.contains(copy.parentId))copy.parentId=remap.value(copy.parentId);for(auto &modifier:copy.mods)if(remap.contains(modifier.target))modifier.target=remap.value(modifier.target);}
+    for(auto &copy:copies){
+        if(remap.contains(copy.parentId))copy.parentId=remap.value(copy.parentId);
+        for(auto &modifier:copy.mods)if(remap.contains(modifier.target))modifier.target=remap.value(modifier.target);
+        const auto cutter=copy.style.value("boolean.source").toString();
+        if(remap.contains(cutter))copy.style["boolean.source"]=remap.value(cutter);
+    }
     const auto copiedActive=remap.value(activeId);
     sel.clear();
     for (const DObject &c : copies) {
@@ -284,9 +289,11 @@ void BuildModel::deleteSelected() {
                 design.objects.removeAt(i);
                 break;
             }
-    for (DObject &o : design.objects)  // a boolean that cut with it no longer has a tool
+    for (DObject &o : design.objects) { // Clear references to deleted cutters. Undo restores the original links.
+        if(kill.contains(o.style.value("boolean.source").toString()))o.style.remove("boolean.source");
         for (Modifier &m : o.mods)
             if (kill.contains(m.target)) m.target.clear();
+    }
     sel.clear();
     if(kill.contains(activeId))activeId=design.objects.isEmpty()?QString():design.objects.last().id;
     editMode = false;

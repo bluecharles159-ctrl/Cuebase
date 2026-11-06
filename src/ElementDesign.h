@@ -224,7 +224,7 @@ struct ElementDesign {
     QPainterPath overflowClip(const DObject &o, qint64 ms, const ViewCam &cam, const QRectF &rect, const QRectF &viewport = {}) const;
     const Mesh &evalMesh(const DObject &o, qint64 ms) const;  // modifiers applied
     ViewCam sceneCamera(qint64 ms, double aspect) const;
-    QImage textureFor(const DObject &o) const;
+    QImage textureFor(const DObject &o,qint64 ms=0) const;
 
     // Draws the scene seen from cam into rect.
     void paint(QPainter &p, const QRectF &rect, const ViewCam &cam, qint64 ms, const PaintOpts &opts) const;
@@ -237,6 +237,8 @@ struct ElementDesign {
     mutable int m_evalDepth = 0;
 
 private:
+    QImage baseTexture(const DObject &object) const;
+    QImage booleanTexture(const DObject &object,qint64 ms,QSet<QString> &visiting) const;
     void ensurePhysics(qint64 ms) const;
     quint64 physicsSignature() const;
 };

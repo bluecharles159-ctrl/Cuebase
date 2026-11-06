@@ -89,7 +89,7 @@ private slots:
         auto *pages=panel.findChild<QStackedWidget*>("studioControlPages");QCOMPARE(pages->currentIndex(),0);
         panel.findChild<QToolButton*>("controlAudio")->click();QCOMPARE(pages->currentIndex(),1);
         auto *volume=panel.findChild<QSlider*>("masterVolume");QVERIFY(volume->isVisible());const auto old=volume->value();
-        QWheelEvent wheel(QPointF(10,5),volume->mapToGlobal({10,5}),{},QPoint(0,120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
+        QWheelEvent wheel(QPointF(10,5),volume->mapToGlobal(QPoint(10,5)),{},QPoint(0,120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
         QApplication::sendEvent(volume,&wheel);QCOMPARE(volume->value(),old+3);
         auto *left=panel.findChild<QProgressBar*>("studioMeterL"),*right=panel.findChild<QProgressBar*>("studioMeterR");
         QSignalSpy peaks(&output,&NetworkOutput::stereoPeak);play.start();

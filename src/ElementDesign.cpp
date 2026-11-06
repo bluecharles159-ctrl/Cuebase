@@ -675,7 +675,7 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
             }
             const bool cull = !o.twoSided && o.shade != PaintOpts::Wire && m.isClosed();
             const QImage surface = obj.hasSurface() && o.shade != PaintOpts::Wire && o.shade != PaintOpts::Solid
-                ? textureFor(obj) : QImage{};
+                ? textureFor(obj,ms) : QImage{};
             const double padX = qMax(0, surface.width()-qBound(1,qRound(obj.w*kPxPerUnit),4096))/2.;
             const double padY = qMax(0, surface.height()-qBound(1,qRound(obj.h*kPxPerUnit),4096))/2.;
             for (const QVector<int> &L0 : m.f) {
@@ -795,7 +795,7 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
                 preview.image.clear();
                 preview.id+="/work-preview";
             }
-            const QImage tex = textureFor(preview);
+            const QImage tex = textureFor(preview,ms);
             const double paddingX = qMax(0, tex.width() - qBound(1, qRound(obj.w*kPxPerUnit), 4096)) / (2*kPxPerUnit);
             const double paddingY = qMax(0, tex.height() - qBound(1, qRound(obj.h*kPxPerUnit), 4096)) / (2*kPxPerUnit);
             const double hw = obj.w / 2 + paddingX, hh = obj.h / 2 + paddingY;

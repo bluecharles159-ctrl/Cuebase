@@ -79,7 +79,7 @@ void DObject::fitTextLayout(){
     if(style.value("text.autoFitY").toBool(true))height=qBound(1.,qCeil(doc.size().height()+2*inset)*1.,4096.)/kPxPerUnit;
     resizeSurface(width,height);
 }
-QImage ElementDesign::textureFor(const DObject &source) const {
+QImage ElementDesign::baseTexture(const DObject &source) const {
     DObject o=source;if(o.type=="Mesh"&&o.hasSurface())o.type=o.surfaceType();o.fitTextLayout();
     const QFileInfo media(o.image),surfaceFile(o.style["texture.file"].toString());
     const QString signature=SurfaceMasks::fileSignature(o)+QString::fromUtf8(QJsonDocument(o.style).toJson(QJsonDocument::Compact))+
