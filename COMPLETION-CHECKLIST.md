@@ -1,6 +1,6 @@
 # Cuebase completion counter
 
-Updated 2026-11-06. **44 of 84 tasks completed — 40 remaining.**
+Updated 2026-11-06. **46 of 84 tasks completed — 38 remaining.**
 
 The Claude transcript adds four distinct acceptance groups (81–84). Row 06 remains
 open: converted surfaces now retain their Inspector controls and unchanged
@@ -59,9 +59,9 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 - [ ] 31. Main-track delete/expand, cut icon, trim/split/ripple, snapping, transitions and validation.
 - [ ] 32. Fixed-center Studio playhead, moving timeline, frame stepping and navigation; native audit.
 - [x] 33. Source-aligned thumbnail strips/waveforms and persistent Timeline settings. Verified by `resumed-preview-handoff-results.txt` (9 passing focused cases, including both trim modes); native/performance release gates remain separate.
-- [ ] 34. Current-program scrubber, private preview and continuously visible live picture-in-picture.
+- [x] 34. Current-program scrubber, private preview and continuously visible live picture-in-picture (Build 58).
 - [ ] 35. Return-to-live overlay/animation and independent replay controls; live-camera replay gap.
-- [ ] 36. Black-screen override, looping alternate content, logo presets and editable/error messages.
+- [x] 36. Black-screen override, looping alternate content, logo presets and editable/error messages (Build 58).
 - [x] 37. Timed multi-source split screens and five smooth transition presets (Build 55, multiple Build scenes verified; physical camera inputs require hardware validation).
 - [ ] 38. Control-panel tool navigation and wheel-adjusted volume controls with useful meters.
 - [ ] 39. Audio workspace: multiple sources, trim/split, pan, fades/crossfades, duplicate and automation.

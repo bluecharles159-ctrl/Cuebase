@@ -35,6 +35,16 @@ NetworkOutput::NetworkOutput(QObject *parent):QObject(parent){
     state("Network output stopped");
 }
 NetworkOutput::~NetworkOutput(){blockSignals(true);stop();}
+namespace {
+std::pair<double,double> peakLevels(const uchar *pcm,int frames,double gain=1.){
+    int left=0,right=0;
+    for(int i=0;i<frames;++i){
+        left=qMax(left,qAbs(int(qFromLittleEndian<qint16>(pcm+4*i))));
+        right=qMax(right,qAbs(int(qFromLittleEndian<qint16>(pcm+4*i+2))));
+    }
+    return {left*gain/32768.,right*gain/32768.};
+}
+}
 void NetworkOutput::state(const QString &text,bool live){if(live)setProperty("lastError",QVariant{});m_status=text;m_streaming=live;emit statusChanged(text,live);}
 void NetworkOutput::attachPlayer(QMediaPlayer *player,QAudioOutput *audio){
     if(!player)return;
@@ -42,9 +52,16 @@ void NetworkOutput::attachPlayer(QMediaPlayer *player,QAudioOutput *audio){
     for(const auto &s:m_sources)if(s.player==player)return;
     m_sources.append({player,audio,{}});QAudioFormat format;format.setSampleRate(48000);format.setChannelCount(2);format.setSampleFormat(QAudioFormat::Int16);
     auto *tap=new QAudioBufferOutput(format,player);player->setAudioBufferOutput(tap);
-    connect(tap,&QAudioBufferOutput::audioBufferReceived,this,[this,player](const QAudioBuffer &buffer){if(!m_active)return;
+    connect(tap,&QAudioBufferOutput::audioBufferReceived,this,[this,player](const QAudioBuffer &buffer){
+        if(!m_active && player!=m_meterProgram)return;
         for(auto &source:m_sources)if(source.player==player){if(!buffer.isValid()){return;}const auto format=buffer.format();
-            if(format.sampleRate()!=48000||format.channelCount()!=2||format.sampleFormat()!=QAudioFormat::Int16){fail("The audio decoder did not supply 48 kHz stereo PCM. Check the selected Qt multimedia backend.");return;}
+            if(format.sampleRate()!=48000||format.channelCount()!=2||format.sampleFormat()!=QAudioFormat::Int16){if(m_active)fail("The audio decoder did not supply 48 kHz stereo PCM. Check the selected Qt multimedia backend.");return;}
+            if(player==m_meterProgram && player->playbackState()==QMediaPlayer::PlayingState){
+                const double gain=source.output?(source.output->isMuted()?0.:source.output->volume()):1.;
+                const auto [left,right]=peakLevels(buffer.constData<uchar>(),buffer.frameCount(),gain);
+                emit stereoPeak(false,left,right);
+            }
+            if(!m_active)return;
             source.data.append(buffer.constData<char>(),buffer.byteCount());if(source.data.size()>192000)source.data.remove(0,source.data.size()-192000);return;}
     });
     auto clear=[this,player]{for(auto &source:m_sources)if(source.player==player)source.data.clear();};
@@ -84,7 +101,9 @@ QByteArray NetworkOutput::mix(int frames){
         double gain=source.output?(source.output->isMuted()?0:source.output->volume()):1;int samples=qMin(frames*2,int(source.data.size()/2));const auto *data=reinterpret_cast<const uchar*>(source.data.constData());
         for(int i=0;i<samples;++i)sum[i]+=qFromLittleEndian<qint16>(data+i*2)*gain;source.data.remove(0,samples*2);
     }
-    for(int i=0;i<sum.size();++i)out[i]=qToLittleEndian(qint16(qBound(-32768,qRound(sum[i]),32767)));return result;
+    for(int i=0;i<sum.size();++i)out[i]=qToLittleEndian(qint16(qBound(-32768,qRound(sum[i]),32767)));
+    const auto [left,right]=peakLevels(reinterpret_cast<const uchar*>(result.constData()),frames);
+    emit stereoPeak(true,left,right);return result;
 }
 bool NetworkOutput::sendFrame(){
     if(!m_video)return false;

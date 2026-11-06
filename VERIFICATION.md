@@ -2,6 +2,16 @@
 
 ## Latest verified checkpoint
 
+Build 58 ran the private monitor and continuity cases on native Windows.
+Scrubbing during a commercial selected the preceding program, stopped on its
+last frame, and restarted privately without moving the broadcast clock. The
+standby tests edited an error message, suppressed a destination credential,
+played a looping video and returned to the original program picture.
+[Windows ZIP](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42202389526/artifacts/13495366550)
+and [test reports and monitor captures](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42202389526/artifacts/13495640895).
+
+## Build 55
+
 Windows Build 55 tested timed two- and three-pane layouts through the viewport
 menu and sampled the outgoing program picture. All five transition presets
 produced intermediate frames. Physical camera capture still needs a device test.

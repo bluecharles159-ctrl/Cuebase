@@ -25,6 +25,7 @@ public:
     ~NetworkOutput() override;
     void setFrameProvider(std::function<QImage(QSize)> provider){m_provider=std::move(provider);}
     void attachPlayer(QMediaPlayer *player,QAudioOutput *audio=nullptr);
+    void setMeterProgram(QMediaPlayer *player){m_meterProgram=player;}
     bool start(const StreamSettings &settings);
     void stop();
     bool active()const{return m_active;}
@@ -34,9 +35,11 @@ public:
     static QString validate(const StreamSettings &settings);
 signals:
     void statusChanged(const QString &status,bool streaming);
+    void stereoPeak(bool networkMix,double left,double right);
 private:
     struct Source{QPointer<QMediaPlayer> player;QPointer<QAudioOutput> output;QByteArray data;};
     QVector<Source> m_sources;
+    QPointer<QMediaPlayer> m_meterProgram;
     StreamSettings m_settings;
     QProcess m_process;
     QTcpServer m_videoServer,m_audioServer;

@@ -20,9 +20,54 @@
 #include "Data.h"
 #include "Playout.h"
 #include "NetworkOutputPanel.h"
+#include "NetworkOutput.h"
+#include <QButtonGroup>
+#include <QComboBox>
+#include <QProgressBar>
+#include <QStackedWidget>
+#include <QWheelEvent>
 #include "WorkspaceSetup.h"
 
 namespace {
+class VolumeFader final:public QSlider {
+    double remainder=0.;
+public:
+    VolumeFader():QSlider(Qt::Horizontal){setSingleStep(1);setFocusPolicy(Qt::StrongFocus);}
+protected:
+    void wheelEvent(QWheelEvent *e) override {
+        const double change=e->pixelDelta().y()!=0?e->pixelDelta().y()/10.:e->angleDelta().y()/120.;
+        if(change==0){e->ignore();return;}
+        remainder+=change*(e->modifiers()&Qt::ShiftModifier?1.:3.);
+        const int steps=int(remainder);remainder-=steps;setValue(value()+steps);e->accept();
+    }
+};
+
+QWidget *stereoMeter(NetworkOutput *network){
+    auto *body=new QWidget;auto *layout=new QVBoxLayout(body);layout->setContentsMargins(0,0,0,0);
+    auto *source=new QComboBox;source->addItems({"Program audio","Network mix"});source->setAccessibleName("Meter source");
+    layout->addWidget(source);
+    struct Channel {QProgressBar *bar;QLabel *level;};
+    auto channel=[&](const QString &name){
+        auto *row=new QHBoxLayout;auto *bar=new QProgressBar;auto *level=new QLabel("−∞");level->setFixedWidth(35);
+        bar->setRange(-600,0);bar->setTextVisible(false);bar->setValue(-600);bar->setFixedHeight(8);
+        bar->setAccessibleName(name+" peak level");bar->setObjectName("studioMeter"+name);
+        bar->setStyleSheet("QProgressBar{border:0;border-radius:3px;background:palette(mid);}QProgressBar::chunk{background:#48b889;border-radius:3px;}");
+        row->addWidget(new QLabel(name));row->addWidget(bar,1);row->addWidget(level);layout->addLayout(row);return Channel{bar,level};
+    };
+    const auto left=channel("L"),right=channel("R");source->setToolTip("Stereo sample peaks in dBFS, after volume and mute.");
+    auto display=[](Channel c,double linear){
+        const double db=qBound(-60.,20.*std::log10(qMax(linear,.001)),0.);
+        c.bar->setValue(qRound(db*10));c.level->setText(db<=-60?"−∞":QString::number(db,'f',1));
+    };
+    auto reset=[=]{display(left,0);display(right,0);};
+    auto *idle=new QTimer(body);idle->setSingleShot(true);idle->setInterval(250);
+    QObject::connect(idle,&QTimer::timeout,body,reset);QObject::connect(source,&QComboBox::currentIndexChanged,body,reset);
+    QObject::connect(network,&NetworkOutput::stereoPeak,body,[=](bool mix,double l,double r){
+        if(mix!=(source->currentIndex()==1))return;
+        display(left,l);display(right,r);idle->start();
+    });
+    return body;
+}
 QLabel *caption(const QString &t) {
     auto *l = new QLabel(t);
     l->setStyleSheet("color:palette(placeholder-text); font-weight:700; font-size:10px;");
@@ -34,8 +79,10 @@ ControlPanel::ControlPanel(Library *lib, Playout *play, QWidget *parent, Network
     : QFrame(parent), m_lib(lib), m_play(play) {
     setObjectName("panel");
     setMinimumWidth(220);
-    auto *outer = new QVBoxLayout(this);
+    auto *outer = new QHBoxLayout(this);
     outer->setContentsMargins(0, 0, 0, 0);
+    outer->setSpacing(2);
+    auto *rail=new QVBoxLayout;rail->setContentsMargins(2,5,0,0);rail->setSpacing(4);outer->addLayout(rail);
     auto *sa = new QScrollArea;
     sa->setWidgetResizable(true);
     sa->setFrameShape(QFrame::NoFrame);
@@ -43,9 +90,18 @@ ControlPanel::ControlPanel(Library *lib, Playout *play, QWidget *parent, Network
     auto *inner = new QWidget;
     sa->setWidget(inner);
     outer->addWidget(sa);
-    auto *l = new QVBoxLayout(inner);
-    l->setContentsMargins(9, 9, 9, 9);
-    l->setSpacing(5);
+    auto *pages=new QStackedWidget;pages->setObjectName("studioControlPages");
+    auto *innerLayout=new QVBoxLayout(inner);innerLayout->setContentsMargins(0,0,0,0);innerLayout->addWidget(pages);
+    auto *buttons=new QButtonGroup(this);
+    auto page=[&](QString title,QString icon,QString name){
+        auto *widget=new QWidget;auto *layout=new QVBoxLayout(widget);layout->setContentsMargins(6,8,6,8);layout->setSpacing(5);
+        const int index=pages->addWidget(widget);auto *b=new QToolButton;b->setObjectName(name);b->setAccessibleName(title);
+        b->setIcon(uiIcon(icon));b->setToolTip(title);b->setCheckable(true);b->setFixedSize(28,26);buttons->addButton(b);
+        rail->addWidget(b);b->setChecked(index==0);
+        connect(b,&QToolButton::clicked,pages,[pages,index]{pages->setCurrentIndex(index);});
+        return layout;
+    };
+    auto *l=page("Broadcast","broadcast","controlBroadcast");
 
     l->addWidget(caption("CONTROL"));
     m_chip = new QLabel;
@@ -81,17 +137,19 @@ ControlPanel::ControlPanel(Library *lib, Playout *play, QWidget *parent, Network
     l->addWidget(m_skip);
     l->addWidget(m_break);
     l->addWidget(continuityControls(lib,play,output));
-
-    l->addSpacing(6);
+    if(output)l->addWidget(new NetworkOutputPanel(output,lib,play));
+    l->addStretch();l=page("Audio controls","audio","controlAudio");
+    if(output){
+        output->setMeterProgram(play->primaryPlayer());l->addWidget(caption("LEVELS · dBFS"));l->addWidget(stereoMeter(output));
+    }
     l->addWidget(caption("VOLUME"));
-    auto *volume = new QSlider(Qt::Horizontal);
+    auto *volume = new VolumeFader;
     volume->setRange(0, 100);volume->setSingleStep(1);volume->setPageStep(5);volume->setObjectName("masterVolume");volume->setToolTip("Broadcast volume · Scroll vertically to adjust");
     volume->setValue(80);
     auto *mute = new QCheckBox("Mute");
     l->addWidget(volume);
     l->addWidget(mute);
     play->setVolume(0.8);
-    if(output)l->addWidget(new NetworkOutputPanel(output,lib,play));
 
     // ---- one set of controls per timeline: the main one is always shown and broadcast; the others can be
     // muted, turned down or hidden while they keep running
@@ -120,7 +178,7 @@ ControlPanel::ControlPanel(Library *lib, Playout *play, QWidget *parent, Network
             show->setChecked(lib->layers[k].visible);
             top->addWidget(show);
         }
-        auto *vol = new QSlider(Qt::Horizontal);
+        auto *vol = new VolumeFader;
         vol->setRange(0, 100);
         vol->setValue(lib->layers[k].volume);
         bl->addLayout(top);
@@ -144,6 +202,7 @@ ControlPanel::ControlPanel(Library *lib, Playout *play, QWidget *parent, Network
     }
 
     l->addSpacing(6);
+    l->addStretch();l=page("On-screen elements","composition","controlGraphics");rail->addStretch();
     l->addWidget(caption("ON SCREEN"));
     auto *host = new QWidget;
     m_elementsLay = new QVBoxLayout(host);

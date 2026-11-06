@@ -45,6 +45,9 @@
 #include "StudioDashboard.h"
 #include "MainWindow.h"
 #include "WorkspaceSetup.h"
+#include "ControlPanel.h"
+#include <QProgressBar>
+#include <QStackedWidget>
 #include "SplitLayout.h"
 #include "ProductionBoard.h"
 #include "PlanHandoff.h"
@@ -74,6 +77,28 @@
 class StreamTests:public QObject{
     Q_OBJECT
 private slots:
+    void studioAudioMeterAndWheelFader(){
+        QTemporaryDir tmp;
+        const auto file=tmp.filePath("stereo.wav");
+        QProcess ffmpeg;ffmpeg.start(NetworkOutput::findEncoder(),{"-hide_banner","-loglevel","error","-f","lavfi","-i",
+            "aevalsrc=0.5*sin(2*PI*400*t)|0.1*sin(2*PI*200*t):s=48000:d=4","-c:a","pcm_s16le",file});
+        QVERIFY(ffmpeg.waitForFinished(30000));QCOMPARE(ffmpeg.exitCode(),0);
+        Library lib;ProgramItem program;program.id="stereo";program.file=file;program.seconds=4;lib.programs={program};
+        Playout play(&lib);NetworkOutput output;output.attachPlayer(play.primaryPlayer(),play.audio());
+        ControlPanel panel(&lib,&play,nullptr,&output);panel.resize(305,620);panel.show();
+        auto *pages=panel.findChild<QStackedWidget*>("studioControlPages");QCOMPARE(pages->currentIndex(),0);
+        panel.findChild<QToolButton*>("controlAudio")->click();QCOMPARE(pages->currentIndex(),1);
+        auto *volume=panel.findChild<QSlider*>("masterVolume");QVERIFY(volume->isVisible());const auto old=volume->value();
+        QWheelEvent wheel(QPointF(10,5),volume->mapToGlobal({10,5}),{},QPoint(0,120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
+        QApplication::sendEvent(volume,&wheel);QCOMPARE(volume->value(),old+3);
+        auto *left=panel.findChild<QProgressBar*>("studioMeterL"),*right=panel.findChild<QProgressBar*>("studioMeterR");
+        QSignalSpy peaks(&output,&NetworkOutput::stereoPeak);play.start();
+        QTRY_VERIFY_WITH_TIMEOUT(peaks.size()>2 && left->value()>-180 && right->value()<-150,5000);
+        QVERIFY(left->value()>right->value()+80);QVERIFY(panel.grab().save("artifacts/studio-audio-controls.png"));
+        play.stop();QTRY_COMPARE(left->value(),-600);
+        panel.findChild<QToolButton*>("controlGraphics")->click();QCOMPARE(pages->currentIndex(),2);
+        panel.findChild<QToolButton*>("controlBroadcast")->click();QCOMPARE(pages->currentIndex(),0);
+    }
     void plannerCardFormattingAndSharedConnections(){
         Library library;ProgramItem p;p.id="opening";p.seconds=15;library.programs={p};
         ProductionBoard board(&library);board.show();QTest::qWait(220);
