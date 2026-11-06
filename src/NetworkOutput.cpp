@@ -34,7 +34,7 @@ NetworkOutput::NetworkOutput(QObject *parent):QObject(parent){
     connect(&m_process,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),this,[this](int code,QProcess::ExitStatus){if(m_active&&!m_stopping)fail(QString("Encoder stopped (%1). %2").arg(code).arg(m_errors.trimmed().right(1200)));});
     state("Network output stopped");
 }
-NetworkOutput::~NetworkOutput(){stop();}
+NetworkOutput::~NetworkOutput(){blockSignals(true);stop();}
 void NetworkOutput::state(const QString &text,bool live){if(live)setProperty("lastError",QVariant{});m_status=text;m_streaming=live;emit statusChanged(text,live);}
 void NetworkOutput::attachPlayer(QMediaPlayer *player,QAudioOutput *audio){
     if(!player)return;
