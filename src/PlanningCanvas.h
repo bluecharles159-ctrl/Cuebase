@@ -18,6 +18,7 @@ public:
     void setPlayhead(qint64 milliseconds);
     void setTimelineScale(double scale);
     void finishEditing();
+    bool importCardImage(const QString &cardId,const QString &file,QString *error=nullptr);
     std::function<PlanItemPresentation(const PlanEntry&)> presentation;
 signals:
     void documentEdited(const ProductionPlan &document);
@@ -25,6 +26,7 @@ signals:
     void seekRequested(qint64 milliseconds);
     void addRequested(const QPoint &globalPosition);
     void entryMenuRequested(const QString &id,const QPoint &globalPosition);
+    void importFailed(const QString &message);
 protected:
     void drawBackground(QPainter *,const QRectF &)override;
     void mousePressEvent(QMouseEvent *)override;

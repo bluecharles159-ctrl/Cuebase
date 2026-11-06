@@ -64,7 +64,7 @@ bool SplitLayout::draw(QPainter &p,const QRect &rect,const QJsonArray &shots,qin
         if(s.value("end").toInteger()==start)previous=s;
         if(s.value("start").toInteger()==end)adjacentNext=true;
     }
-    const qint64 fade=qMin((end-start)/2,qBound<qint64>(0,active.value("fade").toInteger(350),3000));
+    const qint64 fade=qMin((end-start)/2,qBound(qint64(0),active.value("fade").toInteger(350),qint64(3000)));
     const bool leaving=!adjacentNext && fade>0 && end-time<fade;
     const bool entering=fade>0 && time-start<fade;
     const auto frame=picture(active,rect.size(),source);

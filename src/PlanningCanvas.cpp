@@ -11,6 +11,10 @@
 #include <QGraphicsScene>
 #include <QHBoxLayout>
 #include <QImageReader>
+#include <QCryptographicHash>
+#include <QDir>
+#include <QStandardPaths>
+#include <QTemporaryFile>
 #include <QJsonDocument>
 #include <QKeyEvent>
 #include <QMenu>
@@ -73,7 +77,7 @@ struct PlanningCanvas::Impl {
         proxy=q->scene()->addWidget(box);proxy->setZValue(100);proxy->setGeometry(c->rect.adjusted(3,3,-3,-3));editor->setFocus();q->viewport()->update();
     }
     void menu(const QString &id,QPoint global){q->finishEditing();auto *c=card(id);if(!c)return;QMenu menu(q);auto *text=menu.addAction(uiIcon("text"),"Edit text");auto *picture=menu.addAction(uiIcon("image"),"Choose image…");auto *background=menu.addAction("Background colour…");auto *lock=menu.addAction(uiIcon(c->locked?"unlock":"lock"),c->locked?"Unlock card":"Lock position");menu.addSeparator();auto *clearImage=menu.addAction("Remove image");clearImage->setEnabled(!c->image.isEmpty());auto *remove=menu.addAction(uiIcon("delete"),"Delete card");remove->setEnabled(!c->locked);auto *chosen=menu.exec(global);if(!chosen)return;if(chosen==text){edit(id);return;}c=card(id);if(!c)return;
-        if(chosen==picture){const auto path=QFileDialog::getOpenFileName(q,"Note image",{},"Images (*.png *.jpg *.jpeg *.webp *.bmp)");if(path.isEmpty())return;c->image=path;}
+        if(chosen==picture){const auto path=QFileDialog::getOpenFileName(q,"Note image",{},"Images (*.png *.jpg *.jpeg *.webp *.bmp)");if(!path.isEmpty()){QString error;if(!q->importCardImage(id,path,&error))emit q->importFailed(error);}return;}
         if(chosen==background){const auto value=QColorDialog::getColor(c->background,q,"Card background",QColorDialog::ShowAlphaChannel);if(!value.isValid())return;c->background=value;}
         if(chosen==lock)c->locked=!c->locked;if(chosen==clearImage)c->image.clear();if(chosen==remove)doc.removeCard(id);publish();
     }
@@ -85,6 +89,35 @@ PlanningCanvas::PlanningCanvas(QWidget *parent):QGraphicsView(parent),d(std::mak
 PlanningCanvas::~PlanningCanvas()=default;
 void PlanningCanvas::setDocument(const ProductionPlan &doc){if(d->proxy){delete d->proxy;d->proxy=nullptr;d->editor=nullptr;d->editingId.clear();}d->doc=doc;d->gesture=Impl::None;d->geometry();}
 void PlanningCanvas::setPlayhead(qint64 ms){d->playhead=ms;viewport()->update();}
+bool PlanningCanvas::importCardImage(const QString &id,const QString &path,QString *error){
+    const auto fail=[&](const QString &message){if(error)*error=message;return false;};
+    if(!d->card(id))return fail("This note is no longer on the board.");
+    QFile input(path);
+    if(!input.open(QIODevice::ReadOnly))return fail(input.errorString());
+    const QDir directory(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)+"/planner-images");
+    if(!QDir().mkpath(directory.absolutePath()))return fail("Could not create storage for note images.");
+    QTemporaryFile stage(directory.filePath(".import-XXXXXX"));
+    if(!stage.open())return fail(stage.errorString());
+    QCryptographicHash digest(QCryptographicHash::Sha256);
+    while(!input.atEnd()){
+        const auto chunk=input.read(1024*1024);
+        if(input.error()!=QFileDevice::NoError)return fail(input.errorString());
+        if(stage.write(chunk)!=chunk.size())return fail(stage.errorString());
+        digest.addData(chunk);
+    }
+    if(!stage.flush())return fail(stage.errorString());
+    stage.close();
+    QImageReader probe(stage.fileName());const auto format=probe.format();
+    probe.setScaledSize({64,64});
+    if(format.isEmpty() || probe.read().isNull())return fail("Choose a readable image for this note.");
+    const auto stored=directory.filePath(QString::fromLatin1(digest.result().toHex())+"."+QString::fromLatin1(format));
+    if(!QFile::exists(stored)){
+        if(stage.rename(stored))stage.setAutoRemove(false);
+        else if(!QFile::exists(stored))return fail(stage.errorString());
+    }
+    d->card(id)->image=stored;d->publish();
+    if(error)error->clear();return true;
+}
 void PlanningCanvas::setTimelineScale(double value){d->timelineScale=qBound(.2,value,4.);d->geometry();}
 void PlanningCanvas::finishEditing(){if(!d->editor)return;const auto id=d->editingId;const auto html=d->editor->toPlainText().trimmed().isEmpty()?QString():d->editor->toHtml();delete d->proxy;d->proxy=nullptr;d->editor=nullptr;d->editingId.clear();if(auto *card=d->card(id);card&&card->html!=html){card->html=html;d->publish();}viewport()->update();}
 

@@ -27,6 +27,10 @@
 #include <QCheckBox>
 #include <QSettings>
 #include <QScopeGuard>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
+#include <QTabBar>
 #include <QStandardPaths>
 #include <QUuid>
 #include <QListWidget>
@@ -70,6 +74,80 @@
 class StreamTests:public QObject{
     Q_OBJECT
 private slots:
+    void plannerSourceGesturesKeepPlayingEntry(){
+        const QString old=qApp->applicationName();qApp->setApplicationName(old+"-planner-gestures");auto reset=qScopeGuard([&]{qApp->setApplicationName(old);});
+        Library lib;ProgramItem show;show.id="show";show.title="Interview";show.seconds=15;lib.programs={show};
+        Ad ad;ad.id="spot";ad.name="Promo";ad.seconds=10;lib.ads={ad};
+        Element e;e.id="ident";e.name="Channel ID";e.type="Custom";e.design=elementPreset("News lower third").toJson();lib.elements={e};
+        ProductionBoard board(&lib);board.show();QVERIFY(QTest::qWaitForWindowExposed(&board));
+        auto *canvas=board.findChild<PlanningCanvas*>();auto *list=board.findChild<QListWidget*>("planSources");
+        auto *sequence=board.findChild<QListWidget*>("planSequence");auto *tabs=board.findChild<QTabBar*>("planSourceFilter");
+        auto *search=board.findChild<QLineEdit*>();QVERIFY(search && tabs && list && canvas && sequence);
+        search->setText("absent");QCOMPARE(list->count(),0);search->clear();
+        for(int i=0;i<3;++i){
+            tabs->setCurrentIndex(i);QCOMPARE(list->count(),1);
+            std::unique_ptr<QMimeData> mime(list->model()->mimeData({list->model()->index(0,0)}));
+            QVERIFY(mime && mime->hasFormat("application/x-cuebase-plan-source"));
+            const QPoint pos=canvas->mapFromScene(QPointF(430,70));
+            QDragEnterEvent enter(pos,Qt::CopyAction,mime.get(),Qt::LeftButton,{});QApplication::sendEvent(canvas->viewport(),&enter);
+            QVERIFY(enter.isAccepted());
+            QDropEvent drop(pos,Qt::CopyAction,mime.get(),Qt::LeftButton,{});QApplication::sendEvent(canvas->viewport(),&drop);
+            QVERIFY(drop.isAccepted());QCOMPARE(board.document().entries.size(),i+1);
+        }
+        const auto adEntry=board.document().entries[1].id;
+        board.previewAt(15700,true);
+        const auto scroll=canvas->horizontalScrollBar()->value();
+        QVERIFY(sequence->model()->moveRow({},1,{},0));
+        QTRY_COMPARE(board.document().entries.first().id,adEntry);
+        QCOMPARE(board.previewPlayout()->state(),Playout::Playing);
+        QCOMPARE(board.previewPlayout()->current()->programId,adEntry);
+        const auto start=board.previewPlayout()->timelinePosMs();
+        QVERIFY(start>=700 && start<3000);QTRY_VERIFY(board.previewPlayout()->timelinePosMs()>start);
+        QCOMPARE(canvas->horizontalScrollBar()->value(),scroll);
+        QCOMPARE(lib.programs.size(),1);QCOMPARE(lib.placements.size(),0);
+    }
+    void plannerMediaRecoveryAndPreview(){
+        const auto oldName=qApp->applicationName();qApp->setApplicationName(oldName+"-planner-recovery-media");
+        auto reset=qScopeGuard([&]{qApp->setApplicationName(oldName);});
+        QTemporaryDir media;QVERIFY(media.isValid());
+        auto clip=[&](const QString &color){
+            const auto file=media.filePath(color+".mkv");
+            QProcess encoder;
+            encoder.start(NetworkOutput::findEncoder(),{"-hide_banner","-loglevel","error","-f","lavfi","-i",
+                "color=c="+color+":s=160x90:r=10:d=6","-f","lavfi","-i","sine=f=400:d=6","-c:v","ffv1","-c:a","pcm_s16le","-threads","1",file});
+            return encoder.waitForFinished(30000)&&encoder.exitCode()==0?file:QString();
+        };
+        Library library;ProgramItem show;show.id="episode";show.file=clip("red");show.title="Studio";show.seconds=6;
+        Ad ad;ad.id="spot";ad.file=clip("blue");ad.name="Break";ad.seconds=6;
+        QVERIFY(!show.file.isEmpty() && !ad.file.isEmpty());library.programs={show};library.ads={ad};
+        Playout broadcast(&library);broadcast.start();broadcast.togglePause();const auto liveTime=broadcast.timelinePosMs();
+        const auto blocked=QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)+"/cuebase.json";
+        QVERIFY(QDir().mkpath(blocked));
+        ProductionBoard board(&library);board.show();
+        QVERIFY(board.appendSource("Program",show.id));QVERIFY(board.appendSource("Ad",ad.id));
+        auto plan=board.document();PlanCard card;card.id="storyboard";card.html="<b>Blue scene</b>";plan.cards.append(card);QVERIFY(board.applyDocument(plan));
+        auto *canvas=board.findChild<PlanningCanvas*>();QVERIFY(canvas);QString error;
+        QImage art(64,40,QImage::Format_RGB32);art.fill(Qt::cyan);const auto original=media.filePath("note.png");QVERIFY(art.save(original));
+        QVERIFY2(canvas->importCardImage(card.id,original,&error),qPrintable(error));
+        const auto managed=board.document().cards.first().image;QVERIFY(managed!=original);QVERIFY(QFile::remove(original));
+        board.undoPlan();QVERIFY(board.document().cards.first().image.isEmpty());
+        board.redoPlan();QCOMPARE(board.document().cards.first().image,managed);
+        auto *monitor=board.findChild<ViewportWidget*>();QVERIFY(monitor);
+        board.previewAt(700,true);
+        auto red=[&]{const auto c=monitor->programFrame({160,90}).pixelColor(80,45);return c.red()>190 && c.blue()<55;};
+        QTRY_VERIFY_WITH_TIMEOUT(red(),8000);
+        board.previewAt(6700,true);
+        auto blue=[&]{const auto c=monitor->programFrame({160,90}).pixelColor(80,45);return c.blue()>190 && c.red()<55;};
+        QTRY_VERIFY_WITH_TIMEOUT(blue(),8000);
+        QCOMPARE(broadcast.state(),Playout::Paused);QCOMPARE(broadcast.timelinePosMs(),liveTime);
+        QCOMPARE(library.placements.size(),0);QCOMPARE(library.programs.size(),1);
+        QVERIFY(!board.savePlan(&error));QVERIFY(!error.isEmpty());
+        QVERIFY(!library.production.contains("planningBoard"));QVERIFY(QDir().rmdir(blocked));
+        QVERIFY2(board.savePlan(&error),qPrintable(error));board.done(QDialog::Accepted);
+        Library reopened;reopened.load();ProductionBoard restore(&reopened);
+        QCOMPARE(restore.document().toJson(),board.document().toJson());
+        QCOMPARE(QImage(restore.document().cards.first().image).pixelColor(10,10),QColor(Qt::cyan));
+    }
     void scheduleAndBroadcastSplitLayouts(){
         Library original;original.load();auto restore=qScopeGuard([&]{original.save();});
         Library lib;lib.display.watermarkOn=false;
