@@ -74,6 +74,52 @@
 class StreamTests:public QObject{
     Q_OBJECT
 private slots:
+    void plannerCardFormattingAndSharedConnections(){
+        Library library;ProgramItem p;p.id="opening";p.seconds=15;library.programs={p};
+        ProductionBoard board(&library);board.show();QTest::qWait(220);
+        auto *expand=board.findChild<QToolButton*>("planFullscreen");expand->click();QTRY_VERIFY(board.isFullScreen());
+        expand->click();QTRY_VERIFY(!board.isFullScreen());
+        PlanningCanvas canvas;canvas.resize(930,560);canvas.show();canvas.activateWindow();QVERIFY(QTest::qWaitForWindowExposed(&canvas));
+        ProductionPlan doc;doc.entries={{"first","Program","opening",5000},{"second","Program","closing",5000}};
+        PlanCard a;a.id="a";a.html="Opening";a.rect={80,200,240,140};PlanCard b;b.id="b";b.rect={480,200,195,145};
+        doc.cards={a,b};canvas.setDocument(doc);
+        connect(&canvas,&PlanningCanvas::documentEdited,&canvas,[&](const ProductionPlan &draft){doc=draft;});
+        auto drag=[&](QPointF from,QPointF to){
+            const auto start=canvas.mapFromScene(from),end=canvas.mapFromScene(to);
+            QTest::mousePress(canvas.viewport(),Qt::LeftButton,{},start);
+            QTest::mouseMove(canvas.viewport(),end);QTest::qWait(40);
+            QTest::mouseRelease(canvas.viewport(),Qt::LeftButton,{},end);
+        };
+        const auto bold=canvas.mapFromScene({132,212});
+        QTest::mouseMove(canvas.viewport(),bold);QTest::qWait(30);QTest::mouseClick(canvas.viewport(),Qt::LeftButton,{},bold);
+        canvas.finishEditing();QTextDocument text;text.setHtml(doc.cards.first().html);
+        QTextCursor cursor(&text);cursor.movePosition(QTextCursor::NextCharacter);
+        QVERIFY(cursor.charFormat().fontWeight()>=QFont::Bold);
+        drag({316,337},{350,370});QVERIFY(doc.cards.first().rect.width()>255);
+        const auto bounds=doc.cards.first().rect;
+        const QPointF port(bounds.right(),bounds.center().y());
+        drag(port,{480,272.5});drag(port,{78,116});QCOMPARE(doc.links.size(),2);
+        QCOMPARE(doc.links.first().from,doc.links.last().from);
+        auto menuAt=[&](QPointF point,const std::function<void(QMenu*)> &choose){
+            QTimer::singleShot(0,&canvas,[choose]{if(auto *menu=qobject_cast<QMenu*>(qApp->activePopupWidget())){choose(menu);menu->close();}});
+            const auto pos=canvas.mapFromScene(point);
+            QContextMenuEvent event(QContextMenuEvent::Mouse,pos,canvas.viewport()->mapToGlobal(pos));
+            QApplication::sendEvent(canvas.viewport(),&event);
+        };
+        menuAt(port,[&](QMenu *menu){
+            for(auto *a:menu->actions())if(a->menu())for(auto *item:a->menu()->actions())if(item->text()=="Dotted"){item->trigger();return;}
+        });
+        int dotted=0;for(const auto &link:doc.links)dotted+=link.style=="Dotted";QCOMPARE(dotted,1);
+        doc.cards[0].locked=true;canvas.setDocument(doc);
+        drag(bounds.topLeft()+QPointF(20,50),bounds.topLeft()+QPointF(70,80));QCOMPARE(doc.cards.first().rect,bounds);
+        drag({78,62},{200,62});QCOMPARE(doc.entries.last().id,QString("first"));
+        const QPointF relocated(198,116);
+        drag(relocated,{577.5,200});QCOMPARE(doc.links.size(),3);
+        QCOMPARE(doc.links.last().from.id,QString("first"));
+        QVERIFY(canvas.grab().save("artifacts/planner-shared-ports.png"));
+        ProductionPlan restored;QString error;QVERIFY2(ProductionPlan::fromJson(doc.toJson(),&restored,&error),qPrintable(error));
+        QCOMPARE(restored.toJson(),doc.toJson());
+    }
     void plannerSourceGesturesKeepPlayingEntry(){
         const QString old=qApp->applicationName();qApp->setApplicationName(old+"-planner-gestures");auto reset=qScopeGuard([&]{qApp->setApplicationName(old);});
         Library lib;ProgramItem show;show.id="show";show.title="Interview";show.seconds=15;lib.programs={show};

@@ -34,6 +34,16 @@ namespace {
 QString newPlanId(){return QUuid::createUuid().toString(QUuid::WithoutBraces);}
 QString timeLabel(qint64 ms){return QString("%1:%2").arg(ms/60000).arg(ms/1000%60,2,10,QChar('0'));}
 QString portKey(const PlanEndpoint &e){return e.id+":"+QString::number(e.port);}
+QVector<QPair<QRectF,QString>> noteTools(const PlanCard &card){
+    QVector<QPair<QRectF,QString>> tools;
+    if(card.html.isEmpty())return tools;
+    double x=card.rect.left()+42;
+    for(const QString action:QStringList{"Bold","Italic","Underline","Text colour","Font and size"}){
+        if(x+20>card.rect.right()-30)break;
+        tools.append({QRectF(x,card.rect.top()+3,20,20),action});x+=21;
+    }
+    return tools;
+}
 QPointF direction(int port){return port==0?QPointF(-1,0):port==1?QPointF(0,-1):port==2?QPointF(1,0):QPointF(0,1);}
 QPainterPath connection(QPointF a,int ap,QPointF b,int bp){const double reach=qBound(35.,QLineF(a,b).length()*.45,220.);QPainterPath p(a);p.cubicTo(a+direction(ap)*reach,b+direction(bp)*reach,b);return p;}
 constexpr auto sourceMime="application/x-cuebase-plan-source";
@@ -67,10 +77,14 @@ struct PlanningCanvas::Impl {
     double xAt(qint64 ms)const{qint64 start=0;for(int i=0;i<doc.entries.size();++i){const auto duration=doc.entries[i].durationMs;if(ms<start+duration)return timeline[i].left()+timeline[i].width()*qBound(0.,double(ms-start)/duration,1.);start+=duration;}return timeline.isEmpty()?20:timeline.last().right();}
     void publish(){geometry();emit q->documentEdited(doc);}
     void edit(const QString &id){q->finishEditing();auto *c=card(id);if(!c)return;selected=id;editingId=id;auto *box=new QWidget;box->setObjectName("planNoteEditor");box->setAutoFillBackground(true);auto *layout=new QVBoxLayout(box);layout->setContentsMargins(5,5,5,5);layout->setSpacing(3);auto *bar=new QHBoxLayout;bar->setSpacing(2);layout->addLayout(bar);editor=new QTextEdit;editor->setObjectName("planNoteText");editor->setAcceptRichText(true);editor->setFrameShape(QFrame::NoFrame);editor->setHtml(c->html);layout->addWidget(editor);
-        auto button=[&](QString text,QString tip){auto *b=new QToolButton;b->setText(text);b->setToolTip(tip);b->setFixedSize(22,22);bar->addWidget(b);return b;};
+        auto button=[&](QString text,QString tip){auto *b=new QToolButton;b->setText(text);b->setToolTip(tip);b->setAccessibleName(tip);b->setObjectName("noteTool"+tip);b->setFixedSize(22,22);bar->addWidget(b);return b;};
         auto *bold=button("B","Bold");bold->setCheckable(true);QObject::connect(bold,&QToolButton::clicked,q,[this](bool on){if(editor){editor->setFontWeight(on?QFont::Bold:QFont::Normal);editor->setFocus();}});
         auto *italic=button("I","Italic");italic->setCheckable(true);QObject::connect(italic,&QToolButton::clicked,q,[this](bool on){if(editor){editor->setFontItalic(on);editor->setFocus();}});
         auto *underline=button("U","Underline");underline->setCheckable(true);QObject::connect(underline,&QToolButton::clicked,q,[this](bool on){if(editor){editor->setFontUnderline(on);editor->setFocus();}});
+        auto syncFormat=[bold,italic,underline](const QTextCharFormat &format){
+            bold->setChecked(format.fontWeight()>=QFont::Bold);italic->setChecked(format.fontItalic());underline->setChecked(format.fontUnderline());
+        };
+        QObject::connect(editor,&QTextEdit::currentCharFormatChanged,box,syncFormat);syncFormat(editor->currentCharFormat());
         auto *color=button("A","Text colour");QObject::connect(color,&QToolButton::clicked,q,[this]{if(!editor)return;const auto chosen=QColorDialog::getColor(editor->textColor(),q,"Text colour");if(chosen.isValid()&&editor){editor->setTextColor(chosen);editor->setFocus();}});
         auto *font=button("…","Font and size");QObject::connect(font,&QToolButton::clicked,q,[this]{if(!editor)return;bool ok=false;const auto chosen=QFontDialog::getFont(&ok,editor->currentFont(),q,"Note typography");if(ok&&editor){editor->setCurrentFont(chosen);editor->setFocus();}});
         bar->addStretch();auto *done=button("","Finish editing · Ctrl+Enter");done->setIcon(uiIcon("apply"));QObject::connect(done,&QToolButton::clicked,q,[this]{QTimer::singleShot(0,q,[this]{q->finishEditing();});});
@@ -107,9 +121,12 @@ bool PlanningCanvas::importCardImage(const QString &id,const QString &path,QStri
     }
     if(!stage.flush())return fail(stage.errorString());
     stage.close();
-    QImageReader probe(stage.fileName());const auto format=probe.format();
-    probe.setScaledSize({64,64});
-    if(format.isEmpty() || probe.read().isNull())return fail("Choose a readable image for this note.");
+    QByteArray format;
+    {
+        QImageReader probe(stage.fileName());
+        format=probe.format();probe.setScaledSize({64,64});
+        if(format.isEmpty() || probe.read().isNull())return fail("Choose a readable image for this note.");
+    }
     const auto stored=directory.filePath(QString::fromLatin1(digest.result().toHex())+"."+QString::fromLatin1(format));
     if(!QFile::exists(stored)){
         if(stage.rename(stored))stage.setAutoRemove(false);
@@ -157,7 +174,20 @@ void PlanningCanvas::drawBackground(QPainter *p,const QRectF &visible){
         }
         if(!card.html.isEmpty()){QTextDocument text;text.setDefaultFont(font());text.setDefaultStyleSheet("body{color:"+palette().color(QPalette::Text).name()+";}");text.setHtml(card.html);text.setTextWidth(card.rect.width()-24);p->translate(card.rect.topLeft()+QPointF(12,32));text.drawContents(p,QRectF(0,0,card.rect.width()-24,card.rect.height()-42));}
         else if(empty){p->setPen(palette().color(QPalette::PlaceholderText));uiIcon("add").paint(p,QRectF(card.rect.center()-QPointF(10,18),QSizeF(20,20)).toRect());p->drawText(card.rect.adjusted(8,20,-8,-8),Qt::AlignCenter,"Type a note or add an image");}p->restore();
-        if(card.id==d->hover||card.id==d->selected){p->setPen(Qt::NoPen);p->setBrush(QColor(0,0,0,110));p->drawRoundedRect(QRectF(card.rect.left()+1,card.rect.top()+1,card.rect.width()-2,25),8,8);p->setPen(Qt::white);p->drawText(card.rect.adjusted(10,3,-35,-card.rect.height()+24),Qt::AlignVCenter,card.locked?"Locked":"Drag to move");uiIcon("ellipsis").paint(p,QRectF(card.rect.right()-26,card.rect.top()+4,18,18).toRect());}
+        if(card.id==d->hover||card.id==d->selected){
+            p->save();p->setPen(Qt::NoPen);p->setBrush(QColor(0,0,0,135));
+            p->drawRoundedRect(QRectF(card.rect.left()+1,card.rect.top()+1,card.rect.width()-2,25),8,8);
+            p->setPen(Qt::white);
+            if(card.html.isEmpty())p->drawText(card.rect.adjusted(10,3,-35,-card.rect.height()+24),Qt::AlignVCenter,card.locked?"Locked":"Drag to move");
+            else {
+                uiIcon(card.locked?"lock":"move").paint(p,QRectF(card.rect.left()+10,card.rect.top()+5,16,16).toRect());
+                for(const auto &[rect,action]:noteTools(card)){
+                    auto glyph=font();glyph.setBold(action=="Bold");glyph.setItalic(action=="Italic");glyph.setUnderline(action=="Underline");
+                    p->setFont(glyph);p->drawText(rect,Qt::AlignCenter,action=="Font and size"?"Aa":action=="Text colour"?"A":action.left(1));
+                }
+            }
+            uiIcon("ellipsis").paint(p,QRectF(card.rect.right()-26,card.rect.top()+4,18,18).toRect());p->restore();
+        }
     }
     auto dot=[&](const PlanEndpoint &e,bool show){if(!show||(d->gesture==Impl::Link&&e==d->origin))return;p->setPen(QPen(palette().color(QPalette::Base),1.5));p->setBrush(palette().color(QPalette::Highlight));p->drawEllipse(d->port(e),4.5,4.5);};
     for(const auto &card:d->doc.cards)for(int n=0;n<4;++n){PlanEndpoint e{card.id,n};dot(e,card.id==d->hover||card.id==d->selected||connected.contains(portKey(e)));}
@@ -174,6 +204,13 @@ void PlanningCanvas::mousePressEvent(QMouseEvent *event){
     if(d->plus.contains(d->press)){emit addRequested(event->globalPosition().toPoint());return;}
     const auto port=d->hitPort(d->press);if(!port.id.isEmpty()){d->origin=port;d->gesture=Impl::Link;viewport()->update();return;}
     const int entry=d->entryAt(d->press);if(entry>=0){d->gesture=Impl::Entry;d->dragId=d->doc.entries[entry].id;return;}
+    if(auto *card=d->card(d->cardAt(d->press))){
+        for(const auto &[region,action]:noteTools(*card))if(region.contains(d->press)){
+            d->edit(card->id);
+            if(d->editor){d->editor->selectAll();if(auto *b=d->proxy->widget()->findChild<QToolButton*>("noteTool"+action))b->click();}
+            event->accept();return;
+        }
+    }
     d->selected=d->cardAt(d->press);if(auto *card=d->card(d->selected)){d->dragId=card->id;if(card->html.isEmpty()&&card->image.isEmpty()&&QRectF(card->rect.center()-QPointF(16,24),QSizeF(32,32)).contains(d->press)){d->menu(card->id,event->globalPosition().toPoint());return;}if(d->press.x()>card->rect.right()-30&&d->press.y()<card->rect.top()+27){d->menu(card->id,event->globalPosition().toPoint());return;}if(card->locked)return;d->original=card->rect;d->edges=(qAbs(d->press.x()-card->rect.left())<7?1:0)|(qAbs(d->press.x()-card->rect.right())<7?2:0)|(qAbs(d->press.y()-card->rect.top())<7?4:0)|(qAbs(d->press.y()-card->rect.bottom())<7?8:0);d->gesture=d->edges?Impl::Resize:Impl::Move;setCursor(d->edges?Qt::SizeAllCursor:Qt::ClosedHandCursor);}
     else if(d->press.y()>=ProductionPlan::cardTop){d->gesture=Impl::Create;d->rubber=QRectF(d->press,d->press);}viewport()->update();event->accept();
 }
@@ -196,7 +233,60 @@ void PlanningCanvas::mouseReleaseEvent(QMouseEvent *event){
 }
 void PlanningCanvas::mouseDoubleClickEvent(QMouseEvent *event){if(d->proxy&&itemAt(event->pos())){QGraphicsView::mouseDoubleClickEvent(event);return;}const auto id=d->cardAt(mapToScene(event->pos()));if(!id.isEmpty()){d->gesture=Impl::None;d->edit(id);return;}QGraphicsView::mouseDoubleClickEvent(event);}
 void PlanningCanvas::keyPressEvent(QKeyEvent *event){if(d->editor){if(event->key()==Qt::Key_Return&&(event->modifiers()&Qt::ControlModifier)){finishEditing();return;}QGraphicsView::keyPressEvent(event);return;}if(event->key()==Qt::Key_Escape&&d->gesture!=Impl::None){if(d->gesture!=Impl::Pan)d->doc=d->before;d->gesture=Impl::None;setCursor(Qt::ArrowCursor);d->geometry();return;}if(event->key()==Qt::Key_Delete&&!d->selected.isEmpty()){if(d->doc.removeCard(d->selected))d->publish();return;}if(!event->text().isEmpty()&&!event->modifiers()&&!d->selected.isEmpty()){d->edit(d->selected);if(d->editor)d->editor->insertPlainText(event->text());return;}QGraphicsView::keyPressEvent(event);}
-void PlanningCanvas::contextMenuEvent(QContextMenuEvent *event){if(d->proxy&&itemAt(event->pos())){QGraphicsView::contextMenuEvent(event);return;}const auto point=mapToScene(event->pos());const auto port=d->hitPort(point);if(!port.id.isEmpty()){QMenu menu(this);for(const auto &style:{"Solid","Dashed","Dotted"}){auto *action=menu.addAction(style);connect(action,&QAction::triggered,this,[this,port,style]{for(auto &link:d->doc.links)if(link.from==port||link.to==port)link.style=style;d->publish();});}menu.addSeparator();auto *remove=menu.addAction("Disconnect all");connect(remove,&QAction::triggered,this,[this,port]{d->doc.links.removeIf([&](const PlanLink &l){return l.from==port||l.to==port;});d->publish();});menu.exec(event->globalPos());return;}const auto id=d->cardAt(point);if(!id.isEmpty()){d->menu(id,event->globalPos());return;}const auto entry=d->entryAt(point);if(entry>=0){emit entryMenuRequested(d->doc.entries[entry].id,event->globalPos());return;}QGraphicsView::contextMenuEvent(event);}
+void PlanningCanvas::contextMenuEvent(QContextMenuEvent *event){
+    if(d->proxy&&itemAt(event->pos())){QGraphicsView::contextMenuEvent(event);return;}
+    const auto point=mapToScene(event->pos());
+    const auto port=d->hitPort(point);
+    auto lineActions=[this](QMenu *menu,const QStringList &ids){
+        for(const QString style:QStringList{"Solid","Dashed","Dotted"}){
+            menu->addAction(style,this,[this,ids,style]{
+                bool changed=false;
+                for(auto &link:d->doc.links)if(ids.contains(link.id) && link.style!=style){link.style=style;changed=true;}
+                if(changed)d->publish();
+            });
+        }
+        menu->addSeparator();
+        menu->addAction(ids.size()==1?"Disconnect":"Disconnect all",this,[this,ids]{
+            if(d->doc.links.removeIf([&](const PlanLink &link){return ids.contains(link.id);}))d->publish();
+        });
+    };
+    if(!port.id.isEmpty()){
+        QMenu menu(this);QStringList ids;
+        for(const auto &link:d->doc.links)if(link.from==port||link.to==port)ids.append(link.id);
+        if(ids.isEmpty()){menu.addAction("Drag this port to connect it")->setEnabled(false);}
+        else {
+            lineActions(&menu,ids);
+            if(ids.size()>1){
+                menu.addSeparator();
+                for(const auto &link:d->doc.links)if(ids.contains(link.id)){
+                    const auto target=link.from==port?link.to:link.from;
+                    QString label;
+                    if(const auto *card=d->card(target.id)){
+                        QTextDocument text;text.setHtml(card->html);label=text.toPlainText().simplified().left(30);
+                        if(label.isEmpty())label=QString("Note at %1, %2").arg(qRound(card->rect.x())).arg(qRound(card->rect.y()));
+                    }else for(const auto &entry:d->doc.entries)if(entry.id==target.id){
+                        label=presentation?presentation(entry).title:entry.kind;break;
+                    }
+                    const auto side=QStringList{"Left","Top","Right","Bottom"}.value(target.port);
+                    lineActions(menu.addMenu(label+" · "+side),{link.id});
+                }
+            }
+        }
+        menu.exec(event->globalPos());return;
+    }
+    const auto id=d->cardAt(point);
+    if(!id.isEmpty()){d->menu(id,event->globalPos());return;}
+    const auto entry=d->entryAt(point);
+    if(entry>=0){emit entryMenuRequested(d->doc.entries[entry].id,event->globalPos());return;}
+    QPainterPathStroker pick;pick.setWidth(10/qMax(.1,transform().m11()));
+    for(auto it=d->doc.links.crbegin();it!=d->doc.links.crend();++it){
+        const auto path=connection(d->port(it->from),it->from.port,d->port(it->to),it->to.port);
+        if(pick.createStroke(path).contains(point)){
+            QMenu menu(this);lineActions(&menu,{it->id});menu.exec(event->globalPos());return;
+        }
+    }
+    QGraphicsView::contextMenuEvent(event);
+}
 void PlanningCanvas::dragEnterEvent(QDragEnterEvent *event){if(event->mimeData()->hasFormat(sourceMime))event->acceptProposedAction();else event->ignore();}
 void PlanningCanvas::dragMoveEvent(QDragMoveEvent *event){if(event->mimeData()->hasFormat(sourceMime)&&mapToScene(event->position().toPoint()).y()<130)event->acceptProposedAction();else event->ignore();}
 void PlanningCanvas::dropEvent(QDropEvent *event){if(!event->mimeData()->hasFormat(sourceMime))return;const auto point=mapToScene(event->position().toPoint());if(point.y()>=130)return;const auto json=QJsonDocument::fromJson(event->mimeData()->data(sourceMime)).object();const int at=d->entryAt(point);emit sourceDropped(json["kind"].toString(),json["id"].toString(),at<0?d->doc.entries.size():at);event->acceptProposedAction();}

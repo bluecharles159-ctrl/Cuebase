@@ -82,7 +82,7 @@ jobs:
           build-cloud/CuebaseEditorInteractionTests.exe -platform windows -o native-editor-results.txt,txt || test_status=$?
           build-cloud/CuebaseCreativeWorkflowTests.exe -platform windows -o native-creative-results.txt,txt || test_status=$?
           build-cloud/CuebaseStreamTests.exe -platform windows duplicateTrimAndExtendCuePlacement nestedBoardNavigationEditsAndDelayedPlacement livePlacementEditorProtectsIndividualPlays chooseWorkspaceAtFirstLaunchAndSwitchInSettings scheduleAndBroadcastSplitLayouts -o native-cue-board-results.txt,txt || test_status=$?
-          build-cloud/CuebaseStreamTests.exe -platform windows plannerMediaRecoveryAndPreview plannerSourceGesturesKeepPlayingEntry planningPreviewIsolation planningSurvivesCrewEdit planningRecoveryPreservesOriginal -o native-planner-results.txt,txt || test_status=$?
+          build-cloud/CuebaseStreamTests.exe -platform windows plannerCardFormattingAndSharedConnections plannerMediaRecoveryAndPreview plannerSourceGesturesKeepPlayingEntry planningPreviewIsolation planningSurvivesCrewEdit planningRecoveryPreservesOriginal -o native-planner-results.txt,txt || test_status=$?
           exit "$test_status"
       - name: Stage and verify the portable runtime
         env:
