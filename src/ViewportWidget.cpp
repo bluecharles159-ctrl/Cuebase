@@ -330,7 +330,7 @@ void ViewportWidget::mousePressEvent(QMouseEvent *e) {
     if (e->button() != Qt::LeftButton) return;
     const QPoint pos = e->position().toPoint();
     const Geo g = viewGeo();
-    if (!barVisible()) return;
+    m_hover=true;m_hoverPt=pos;
     if (m_detached && g.currentBtn.contains(pos)) {
         goCurrent();
         return;

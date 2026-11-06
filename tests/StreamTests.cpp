@@ -504,7 +504,7 @@ private slots:
     }
     void privatePreviewPreservesLivePicture(){
         Library lib;lib.display.watermarkOn=false;ProgramItem program;program.id="preview-show";program.title="Preview program";program.seconds=60;lib.programs={program};Playout play(&lib);ViewportWidget monitor(&lib,&play);monitor.resize(640,420);monitor.show();play.start(0,10000);play.togglePause();const auto onAir=monitor.programFrame({320,180});const auto position=play.playheadMs();
-        QTest::mouseMove(&monitor,{200,354});QTest::mousePress(&monitor,Qt::LeftButton,Qt::NoModifier,{200,354});QTest::mouseMove(&monitor,{350,354});QTest::mouseRelease(&monitor,Qt::LeftButton,Qt::NoModifier,{350,354});QVERIFY(monitor.detached());QVERIFY(monitor.viewMs()!=position);QTest::qWait(350);QCOMPARE(play.playheadMs(),position);QCOMPARE(monitor.programFrame({320,180}),onAir);QVERIFY(monitor.grab().save("artifacts/live-preview-picture-in-picture.png"));
+        QVERIFY(QTest::qWaitForWindowExposed(&monitor));QTest::mouseMove(&monitor,{200,354});QTest::mousePress(&monitor,Qt::LeftButton,Qt::NoModifier,{200,354});QTest::mouseMove(&monitor,{350,354});QTest::mouseRelease(&monitor,Qt::LeftButton,Qt::NoModifier,{350,354});QVERIFY(monitor.detached());QVERIFY(monitor.viewMs()!=position);QTest::qWait(350);QCOMPARE(play.playheadMs(),position);QCOMPARE(monitor.programFrame({320,180}),onAir);QVERIFY(monitor.grab().save("artifacts/live-preview-picture-in-picture.png"));
         QTest::mouseClick(&monitor,Qt::LeftButton,Qt::NoModifier,{580,354});QVERIFY(!monitor.detached());QTest::qWait(450);QCOMPARE(play.playheadMs(),position);QCOMPARE(monitor.programFrame({320,180}),onAir);play.stop();
     }
     void scrubDuringAnAdKeepsTheProgramInPrivatePreview(){
