@@ -130,7 +130,7 @@ ViewportWidget::ViewportWidget(Library *lib, Playout *play, QWidget *parent)
             const auto range=scrubRange();
             if(range.a<0){goCurrent();return;}
             const auto &segment=m_play->segments()[range.a];
-            m_previewOffset=qBound<qint64>(0,m_previewOffset,segment.ms-1);
+            m_previewOffset=qBound(qint64(0),m_previewOffset,qint64(segment.ms)-1);
             m_viewMs=m_play->segmentStartMs(range.a)+m_previewOffset;
             m_viewSeg=-1;syncViewer(true);
         }
@@ -220,7 +220,7 @@ void ViewportWidget::detachAt(qint64 ms) {
     const auto &program=m_play->segments()[range.a];
     const qint64 start=m_play->segmentStartMs(range.a);
     m_previewProgram=program.programId;
-    m_previewOffset=qBound<qint64>(0,ms-start,program.ms-1);
+    m_previewOffset=qBound(qint64(0),ms-start,qint64(program.ms)-1);
     const bool was = m_detached;
     m_detached = true;
     m_viewMs=start+m_previewOffset;

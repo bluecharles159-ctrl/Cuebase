@@ -24,8 +24,24 @@
 #include <QToolButton>
 #include <QRegularExpression>
 #include <QVariant>
+#include <QAbstractItemView>
 
 namespace {
+QString audienceError(QString reason){
+    reason.replace(QRegularExpression("(?:rtmps?|srt|https?)://[^\\s]+",QRegularExpression::CaseInsensitiveOption),"[destination]");
+    return reason;
+}
+void drawStandbyCaption(QPainter &p,QSize size,const QString &message){
+    const auto text=message.trimmed();
+    if(text.isEmpty())return;
+    p.save();QFont font=p.font();font.setPixelSize(qMax(12,size.height()/19));font.setWeight(QFont::DemiBold);p.setFont(font);
+    const QRect bounds(size.width()/12,size.height()/2,size.width()*5/6,size.height()*2/5);
+    const int margin=qMax(6,size.height()/65);
+    const int height=qMin(bounds.height(),p.fontMetrics().boundingRect(bounds.adjusted(margin,0,-margin,0),Qt::TextWordWrap,text).height()+2*margin);
+    const QRect panel(bounds.left(),bounds.bottom()-height+1,bounds.width(),height);
+    p.setPen(Qt::NoPen);p.setBrush(QColor(0,0,0,190));p.drawRoundedRect(panel,margin,margin);
+    p.setPen(Qt::white);p.drawText(panel.adjusted(margin,0,-margin,0),Qt::AlignCenter|Qt::TextWordWrap,text);p.restore();
+}
 struct ContinuityScene {ElementDesign design;qint64 time=0;bool advancing=true;QString error;};
 ContinuityScene continuityScene(const Element &element,qint64 elapsed){
     auto design=ElementDesign::fromJson(element.design);const auto plan=compileCueBoard(design,element.cueBoard,element.cueBoardSettings);
@@ -46,7 +62,7 @@ bool ContinuityOutput::configure(QString mode,QString ref,QString file,QString c
 void ContinuityOutput::setAudio(double level,bool mute){volume=level;muted=mute;audio->setVolume(level);audio->setMuted(mute||!enabled);syncAudio();}
 QString ContinuityOutput::mediaError()const{const auto error=player->errorString();if(!error.isEmpty())return error;const auto designError=property("designError").toString();return designError.isEmpty()?property("configurationError").toString():designError;}
 void ContinuityOutput::syncAudio(){QList<DesignAudioCue> cues;if(enabled&&kind=="Element"){const auto e=selectedElement();if(!e.design.isEmpty()){const auto scene=continuityScene(e,clock.elapsed());if(scene.error.isEmpty())cues=designAudioCues(scene.design,scene.time,scene.advancing,"continuity/",muted?0:volume,false);else setProperty("designError",scene.error);}}designAudio->sync(cues);}
-QImage ContinuityOutput::frame(QSize size){QImage result(size,QImage::Format_ARGB32_Premultiplied);result.fill(Qt::black);if(!enabled||kind=="Black")return result;QPainter painter(&result);painter.setRenderHint(QPainter::Antialiasing);painter.setRenderHint(QPainter::SmoothPixmapTransform);if(kind=="Video"||kind=="Ad"){if(!video.isNull())painter.drawImage(result.rect(),video);return result;}const auto element=selectedElement();if(kind=="Element"){painter.drawImage(result.rect(),renderContinuityElement(element,clock.elapsed(),size));return result;}
+QImage ContinuityOutput::frame(QSize size){QImage result(size,QImage::Format_ARGB32_Premultiplied);result.fill(Qt::black);if(!enabled||kind=="Black")return result;QPainter painter(&result);painter.setRenderHint(QPainter::Antialiasing);painter.setRenderHint(QPainter::SmoothPixmapTransform);if(kind=="Video"||kind=="Ad"){if(!video.isNull())painter.drawImage(result.rect(),video);drawStandbyCaption(painter,size,message);return result;}const auto element=selectedElement();if(kind=="Element"){painter.drawImage(result.rect(),renderContinuityElement(element,clock.elapsed(),size));drawStandbyCaption(painter,size,message);return result;}
     QImage logo;if(!element.id.isEmpty())logo=renderContinuityElement(element,clock.elapsed(),{640,360});else if(!lib->display.channelLogo.isEmpty())logo=QImage(lib->display.channelLogo);
     QLinearGradient backdrop(0,0,size.width(),size.height());backdrop.setColorAt(0,QColor("#172e46"));backdrop.setColorAt(1,QColor("#060c18"));painter.fillRect(result.rect(),backdrop);
     if(!logo.isNull()){auto full=logo.scaled(size,Qt::KeepAspectRatioByExpanding,Qt::SmoothTransformation);full=backdropImage(full,16,.65);painter.setOpacity(.38);painter.drawImage(QPoint((size.width()-full.width())/2,(size.height()-full.height())/2),full);painter.setOpacity(1);auto mark=logo.scaled(QSize(size.width()/4,size.height()/6),Qt::KeepAspectRatio,Qt::SmoothTransformation);painter.drawImage(QPoint((size.width()-mark.width())/2,size.height()-mark.height()-size.height()/14),mark);}
@@ -54,4 +70,35 @@ QImage ContinuityOutput::frame(QSize size){QImage result(size,QImage::Format_ARG
 }
 QWidget *continuityControls(Library *library,Playout *play,NetworkOutput *output){auto *page=new QWidget;page->setObjectName("continuityControls");auto *layout=new QVBoxLayout(page);layout->setContentsMargins(0,0,0,0);auto *take=new QPushButton(uiIcon("broadcast"),"Black / standby");take->setObjectName("emergencyOutput");take->setCheckable(true);take->setToolTip("Override outgoing picture and audio immediately; return restores the current program.");layout->addWidget(take);auto *options=new QWidget;auto *form=new QFormLayout(options);form->setContentsMargins(4,0,4,0);auto *mode=new QComboBox;mode->addItems({"Black","Logo","Standby","Technical","Element","Ad","Video"});auto *source=new QComboBox;auto *file=new QLineEdit;auto *browse=new QPushButton(uiIcon("image"),"Choose media");auto *message=new QPlainTextEdit;message->setMaximumHeight(65);message->setPlaceholderText("Editable on-screen message");auto *errors=new QComboBox;errors->addItem("Use an active error message…");auto *errorStatus=new QLabel;errorStatus->setWordWrap(true);form->addRow("Quick content",mode);form->addRow("Source",source);form->addRow(file);form->addRow(browse);form->addRow(message);form->addRow(errors);form->addRow(errorStatus);auto *settings=new QToolButton;settings->setText("Standby settings");settings->setCheckable(true);settings->setArrowType(Qt::RightArrow);settings->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);layout->addWidget(settings);layout->addWidget(options);options->hide();QObject::connect(settings,&QToolButton::toggled,page,[=](bool expanded){settings->setArrowType(expanded?Qt::DownArrow:Qt::RightArrow);options->setVisible(expanded);});
     auto fill=[=]{QSignalBlocker block(source);source->clear();if(mode->currentText()=="Ad")for(const auto &ad:library->ads)source->addItem(ad.name,ad.id);else for(const auto &e:library->elements)source->addItem(e.name,e.id);source->setVisible(mode->currentText()=="Ad"||mode->currentText()=="Element");file->setVisible(mode->currentText()=="Video");browse->setVisible(mode->currentText()=="Video");};
-    auto configure=[=]()->bool{QString selectedFile=file->text();if(mode->currentText()=="Ad")if(const auto *ad=library->ad(source->currentData().toString()))selectedFile=ad->file;QString error;const bool ok=play->continuity()->configure(mode->currentText(),source->currentData().toString(),selectedFile,message->toPlainText(),&error);errorStatus->setText(error);if(!ok)settings->setChecked(true);return ok;};QObject::connect(take,&QPushButton::toggled,page,[=](bool on){if(on&&!configure()){QSignalBlocker block(take);take->setChecked(false);return;}play->continuity()->setActive(on);take->setText(on?"Return to program":"Black / standby");});QObject::connect(mode,&QComboBox::currentTextChanged,page,[=](QString){fill();if(take->isChecked())configure();});QObject::connect(source,&QComboBox::currentIndexChanged,page,[=]{if(take->isChecked())configure();});QObject::connect(message,&QPlainTextEdit::textChanged,page,[=]{if(take->isChecked())configure();});QObject::connect(browse,&QPushButton::clicked,page,[=]{auto chosen=QFileDialog::getOpenFileName(page,"Loop standby video",{},"Video (*.mp4 *.mov *.mkv *.webm *.avi)");if(!chosen.isEmpty()){file->setText(chosen);if(take->isChecked())configure();}});auto refreshErrors=[=]{QSignalBlocker block(errors);errors->clear();errors->addItem("Use an active error message…");const auto main=play->primaryPlayer()->errorString();if(!main.isEmpty())errors->addItem("Program media: "+main);const auto standby=play->continuity()->mediaError();if(!standby.isEmpty())errors->addItem("Standby media: "+standby);const auto outputError=output?output->property("lastError").toString():QString();if(!outputError.isEmpty())errors->addItem("Output: "+outputError);};QObject::connect(errors,&QComboBox::currentIndexChanged,page,[=](int i){if(i>0){QString copy=errors->currentText();copy.replace(QRegularExpression("(?:rtmps?|srt|https?)://[^\\s]+"),"[destination]");message->setPlainText(copy);}});auto *timer=new QTimer(page);timer->setInterval(2000);QObject::connect(timer,&QTimer::timeout,page,refreshErrors);timer->start();QObject::connect(library,&Library::elementsChanged,page,fill);QObject::connect(library,&Library::adsChanged,page,fill);fill();return page;}
+    auto configure=[=]()->bool{QString selectedFile=file->text();if(mode->currentText()=="Ad")if(const auto *ad=library->ad(source->currentData().toString()))selectedFile=ad->file;QString error;const bool ok=play->continuity()->configure(mode->currentText(),source->currentData().toString(),selectedFile,message->toPlainText(),&error);errorStatus->setText(error);if(!ok)settings->setChecked(true);return ok;};QObject::connect(take,&QPushButton::toggled,page,[=](bool on){if(on&&!configure()){QSignalBlocker block(take);take->setChecked(false);return;}play->continuity()->setActive(on);take->setText(on?"Return to program":"Black / standby");});QObject::connect(mode,&QComboBox::currentTextChanged,page,[=](QString){fill();if(take->isChecked())configure();});QObject::connect(source,&QComboBox::currentIndexChanged,page,[=]{if(take->isChecked())configure();});QObject::connect(message,&QPlainTextEdit::textChanged,page,[=]{if(take->isChecked())configure();});QObject::connect(browse,&QPushButton::clicked,page,[=]{auto chosen=QFileDialog::getOpenFileName(page,"Loop standby video",{},"Video (*.mp4 *.mov *.mkv *.webm *.avi)");if(!chosen.isEmpty()){file->setText(chosen);if(take->isChecked())configure();}});
+    take->setObjectName("takeStandby");errors->setObjectName("standbyErrorMessages");
+    mode->setObjectName("standbyMode");message->setObjectName("standbyMessage");
+    auto refreshErrors=[=]{
+        if(errors->view()->isVisible())return;
+        QSignalBlocker block(errors);
+        errors->clear();errors->addItem("Choose an on-screen message…");
+        const auto main=play->primaryPlayer()->errorString();
+        const auto standby=play->continuity()->mediaError();
+        const auto outputError=output?output->property("lastError").toString():QString();
+        if(!main.isEmpty())errors->addItem("Program media: "+audienceError(main),audienceError(main));
+        if(!standby.isEmpty())errors->addItem("Standby media: "+audienceError(standby),audienceError(standby));
+        if(!outputError.isEmpty())errors->addItem("Network output: "+audienceError(outputError),audienceError(outputError));
+        errors->insertSeparator(errors->count());
+        errors->addItem("Template · Signal interruption","Our signal was interrupted. We’ll return shortly.");
+        errors->addItem("Template · Media unavailable","This program is temporarily unavailable.");
+        errors->addItem("Template · Technical delay","Please stand by while we resolve a technical issue.");
+    };
+    QObject::connect(errors,&QComboBox::activated,page,[=](int index){
+        const auto copy=errors->itemData(index).toString();
+        if(copy.isEmpty())return;
+        message->setPlainText(copy);
+        if(mode->currentText()=="Black")mode->setCurrentText("Technical");
+        message->setFocus();
+    });
+    auto *timer=new QTimer(page);timer->setInterval(2000);
+    QObject::connect(timer,&QTimer::timeout,page,refreshErrors);
+    timer->start();refreshErrors();
+    QObject::connect(library,&Library::elementsChanged,page,fill);
+    QObject::connect(library,&Library::adsChanged,page,fill);
+    fill();return page;
+}

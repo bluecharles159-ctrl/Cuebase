@@ -528,6 +528,33 @@ private slots:
         Library lib;lib.display.watermarkOn=false;ProgramItem program;program.id="show";lib.programs={program};auto design=ElementDesign::defaultScene();DObject shape;shape.id="red";shape.type="Shape";shape.w=8;shape.h=5;shape.base.rot={90,0,0};shape.mat.color=Qt::red;shape.mat.shadeless=true;design.objects.append(shape);Element element;element.id="graphic";element.type="Custom";element.live=true;element.design=design.toJson();lib.elements={element};
         Playout play(&lib);ViewportWidget monitor(&lib,&play);play.start();play.togglePause();const auto before=monitor.programFrame({320,180});auto *standby=play.continuity();QString reason;QVERIFY(standby->configure("Black",{},{},{},&reason));standby->setActive(true);const auto blackout=monitor.programFrame({320,180});QCOMPARE(blackout.pixelColor(160,90),QColor(Qt::black));QCOMPARE(play.state(),Playout::Paused);QVERIFY(standby->configure("Standby",{},{},"Editing the program",&reason));QVERIFY(monitor.programFrame({320,180})!=blackout);standby->setActive(false);QCOMPARE(monitor.programFrame({320,180}),before);QVERIFY(!standby->configure("Video",{},"missing-video.mp4",{},&reason));QVERIFY(!reason.isEmpty());lib.elements[0].cueBoard={QJsonObject{{"id","invalid"},{"cue","missing"}}};QVERIFY(!standby->configure("Element",element.id,{},{},&reason));QVERIFY(!reason.isEmpty());play.stop();
     }
+    void editableStandbyErrorsAndLoopedVideo(){
+        Library lib;lib.display.watermarkOn=false;ProgramItem episode;episode.id="episode";episode.seconds=25;lib.programs={episode};
+        Playout play(&lib);play.start();play.togglePause();ViewportWidget monitor(&lib,&play);const auto air=monitor.programFrame({240,140});
+        NetworkOutput output;output.setProperty("lastError","Lost rtmps://example.invalid/private/key");
+        std::unique_ptr<QWidget> panel(continuityControls(&lib,&play,&output));
+        auto *errors=panel->findChild<QComboBox*>("standbyErrorMessages");
+        auto *text=panel->findChild<QPlainTextEdit*>("standbyMessage");auto *take=panel->findChild<QPushButton*>("takeStandby");
+        QVERIFY(errors && text && take);
+        const int reported=errors->findText("Network output:",Qt::MatchStartsWith);QVERIFY(reported>0);
+        QVERIFY(!errors->itemText(reported).contains("private/key"));emit errors->activated(reported);
+        QCOMPARE(text->toPlainText(),QString("Lost [destination]"));text->setPlainText("We’ll return in a moment.");
+        take->click();QVERIFY(play.continuity()->active());QCOMPARE(play.continuity()->mode(),QString("Technical"));
+        const auto card=monitor.programFrame({240,140});text->setPlainText("Please stand by");QVERIFY(card!=monitor.programFrame({240,140}));
+        take->click();QCOMPARE(monitor.programFrame({240,140}),air);
+        QTemporaryDir tmp;const auto clip=tmp.filePath("loop.mkv");
+        QProcess encoder;encoder.start(NetworkOutput::findEncoder(),{"-hide_banner","-loglevel","error","-f","lavfi","-i","color=c=blue:s=160x90:r=12:d=0.5","-threads","1","-c:v","ffv1",clip});
+        QVERIFY(encoder.waitForFinished(30000));QCOMPARE(encoder.exitCode(),0);
+        QString reason;auto *standby=play.continuity();QVERIFY(standby->configure("Video",{},clip,{},&reason));standby->setActive(true);
+        auto blue=[&]{return monitor.programFrame({240,140}).pixelColor(30,32).blue()>180;};QTRY_VERIFY_WITH_TIMEOUT(blue(),6000);
+        auto *player=standby->findChild<QMediaPlayer*>();QVERIFY(player);QCOMPARE(player->loops(),QMediaPlayer::Infinite);
+        QTRY_VERIFY_WITH_TIMEOUT(player->position()>40,2000);QSignalSpy positions(player,&QMediaPlayer::positionChanged);
+        auto looped=[&]{
+            qint64 previous=-1;for(const auto &args:positions){const auto ms=args.first().toLongLong();if(previous>ms+30)return true;previous=ms;}return false;
+        };QTRY_VERIFY_WITH_TIMEOUT(looped(),5000);
+        const auto before=monitor.programFrame({240,140});QVERIFY(standby->configure("Video",{},clip,"Signal interruption",&reason));
+        QVERIFY(monitor.programFrame({240,140})!=before);standby->setActive(false);QCOMPARE(monitor.programFrame({240,140}),air);
+    }
     void validation(){StreamSettings s;s.executable=NetworkOutput::findEncoder();QVERIFY(!s.executable.isEmpty());s.endpoint="file:///tmp/output";QVERIFY(!NetworkOutput::validate(s).isEmpty());s.endpoint="rtmp://127.0.0.1/live/test";QVERIFY(NetworkOutput::validate(s).isEmpty());s.size={321,180};QVERIFY(!NetworkOutput::validate(s).isEmpty());NetworkOutput output;QVERIFY(!output.start(s));QCOMPARE(output.property("lastError").toString(),NetworkOutput::validate(s));}
     void replayIndependentClock(){
         Library library;ProgramItem p;p.id="replay-show";p.kind="News";p.seconds=60;library.programs={p};Playout play(&library);auto *replay=play.replay();QString reason;
