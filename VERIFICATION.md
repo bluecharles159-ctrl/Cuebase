@@ -2,6 +2,19 @@
 
 ## Latest verified checkpoint
 
+Windows Build 55 tested timed two- and three-pane layouts through the viewport
+menu and sampled the outgoing program picture. All five transition presets
+produced intermediate frames. Physical camera capture still needs a device test.
+Planner tests dragged sources onto the mixed timeline, reordered the playing
+entry, styled one of two connections sharing a port, formatted and resized
+cards and restored a board after a failed save. The private monitor decoded
+two video files with audio while the broadcast stayed paused at its original
+position. An imported note image survived deletion of the original file.
+[Windows ZIP](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42197981936/artifacts/13493391135)
+and [native reports and screenshots](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42197981936/artifacts/13492976822).
+
+## Build 52
+
 Build 52 passed the Windows workflow. In the native editor, Grab then Z stepped
 through both boundaries with a one-second hold. Releasing committed the layer,
 Escape cancelled it, and undo restored it. The output tests compared overlap

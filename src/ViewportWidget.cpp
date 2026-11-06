@@ -127,8 +127,12 @@ ViewportWidget::ViewportWidget(Library *lib, Playout *play, QWidget *parent)
 
     connect(play, &Playout::segmentsChanged, this, [this] {
         if (m_detached) {
-            m_viewMs = qBound<qint64>(0, m_viewMs, qMax<qint64>(0, m_play->totalMs() - 1));
-            syncViewer(false);
+            const auto range=scrubRange();
+            if(range.a<0){goCurrent();return;}
+            const auto &segment=m_play->segments()[range.a];
+            m_previewOffset=qBound<qint64>(0,m_previewOffset,segment.ms-1);
+            m_viewMs=m_play->segmentStartMs(range.a)+m_previewOffset;
+            m_viewSeg=-1;syncViewer(true);
         }
         update();
     });
@@ -186,16 +190,19 @@ ViewportWidget::View ViewportWidget::makeView() const {
     return v;
 }
 
-// The scrubber shows one program only: the one on air (or the one the preview / the cue point is in), with its
-// own break and ad. Nothing else of the queue is drawn on it.
+// Keep the private monitor on its chosen program even as the live rundown advances.
 ViewportWidget::Range ViewportWidget::scrubRange() const {
-    int ref = -1;
-    if (m_detached) ref = m_play->segmentAtMs(m_viewMs);
-    else if (m_play->isLive()) ref = m_play->index();
-    else ref = m_play->segmentAtMs(m_play->playheadMs());
-    Range r;
-    if(ref>=0&&ref<m_play->segments().size()){r.a=ref;r.b=ref;}
-    return r;
+    const auto &segments=m_play->segments();
+    if(m_detached){
+        for(int i=0;i<segments.size();++i)
+            if(segments[i].type==Segment::Program && segments[i].programId==m_previewProgram)return {i,i};
+        return {};
+    }
+    const int ref=m_play->isLive()?m_play->index():m_play->segmentAtMs(m_play->playheadMs());
+    if(ref<0 || ref>=segments.size())return {};
+    for(int i=ref;i>=0;--i)if(segments[i].type==Segment::Program)return {i,i};
+    for(int i=ref+1;i<segments.size();++i)if(segments[i].type==Segment::Program)return {i,i};
+    return {};
 }
 
 double ViewportWidget::rangeUnit(qint64 ms, const Range &r) const {
@@ -208,10 +215,15 @@ qint64 ViewportWidget::rangeMs(double unit,const Range &r) const {
 }
 
 void ViewportWidget::detachAt(qint64 ms) {
-    if (m_play->segments().isEmpty()) return;
+    const auto range=scrubRange();
+    if(range.a<0)return;
+    const auto &program=m_play->segments()[range.a];
+    const qint64 start=m_play->segmentStartMs(range.a);
+    m_previewProgram=program.programId;
+    m_previewOffset=qBound<qint64>(0,ms-start,program.ms-1);
     const bool was = m_detached;
     m_detached = true;
-    m_viewMs = qBound<qint64>(0, ms, qMax<qint64>(0, m_play->totalMs() - 1));
+    m_viewMs=start+m_previewOffset;
     if (!was) {
         m_monitorTransition.start();m_transitionTimer.start();
         m_viewPlaying = true;
@@ -233,6 +245,7 @@ void ViewportWidget::goCurrent() {
     if (!m_detached) return;
     m_returnTransition.start();m_transitionTimer.start();
     m_detached = false;
+    m_previewProgram.clear();m_previewOffset=0;
     m_scrub = false;
     m_vtimer.stop();
     m_vpending = -1;
@@ -284,9 +297,11 @@ void ViewportWidget::tickViewer() {
     const qint64 dt = qMin<qint64>(now - m_vlast, 500);
     m_vlast = now;
     if (!m_detached || !m_viewPlaying || m_scrub) return;
-    m_viewMs += dt;
-    if (m_viewMs >= m_play->totalMs()) {  // reached the end of the timeline: stop there
-        m_viewMs = qMax<qint64>(0, m_play->totalMs() - 1);
+    const auto range=scrubRange();if(range.a<0){goCurrent();return;}
+    const auto duration=m_play->segments()[range.a].ms;
+    m_previewOffset=qMin<qint64>(duration-1,m_previewOffset+dt);
+    m_viewMs=m_play->segmentStartMs(range.a)+m_previewOffset;
+    if (m_previewOffset>=duration-1) {
         m_viewPlaying = false;
         syncViewer(false);
         update();
@@ -322,13 +337,16 @@ void ViewportWidget::mousePressEvent(QMouseEvent *e) {
     }
     if (m_detached && g.playBtn.contains(pos)) {
         m_viewPlaying = !m_viewPlaying;
-        if (m_viewPlaying && m_play->totalMs() > 0 && m_viewMs >= m_play->totalMs() - 1) m_viewMs = 0;  // replay from the start
+        const auto range=scrubRange();
+        if(m_viewPlaying && range.a>=0 && m_previewOffset>=m_play->segments()[range.a].ms-1){
+            m_previewOffset=0;m_viewMs=m_play->segmentStartMs(range.a);
+        }
         m_vlast = m_vclock.elapsed();
         syncViewer(m_viewPlaying);
         update();
         return;
     }
-    if (g.trackHit.contains(pos)) {
+    if (g.trackHit.contains(pos) && scrubRange().a>=0) {
         m_scrub = true;
         scrubTo(pos.x());
     }
@@ -415,6 +433,8 @@ void ViewportWidget::paintEvent(QPaintEvent *) {
         const double t=m_returnTransition.elapsed()/420.;const double opacity=qSin(t*3.141592653589793);
         p.fillRect(g.screen,QColor(0,0,0,int(140*opacity)));const QPointF center=g.screen.center();const double cell=12,gap=4;
         p.setPen(Qt::NoPen);for(int i=0;i<9;++i){const int destination=(i+3)%9;const double ease=t*t*(3-2*t);const QPointF from((i%3-1)*(cell+gap),(i/3-1)*(cell+gap)),to((destination%3-1)*(cell+gap),(destination/3-1)*(cell+gap));p.setBrush(QColor(160+i*7,190+i*5,240,int(220*opacity)));p.drawRoundedRect(QRectF(center+from*(1-ease)+to*ease-QPointF(cell/2,cell/2),QSizeF(cell,cell)),2,2);}
+        p.setPen(QColor(245,248,255,int(255*opacity)));p.setFont(uiFont(12,true));
+        p.drawText(QRectF(g.screen.left(),center.y()+31,g.screen.width(),22),Qt::AlignCenter,"Catching up to live");
     }
     if (barVisible()) drawScrubber(p, g, v);
     p.restore();
@@ -618,24 +638,16 @@ void ViewportWidget::drawScrubber(QPainter &p, const Geo &g, const View &) {
     p.fillRect(g.bar, bg);
 
     const auto &segs = m_play->segments();
-    if (segs.isEmpty()) {
+    const Range rg=scrubRange();
+    if (rg.a<0) {
         p.setPen(QColor(255, 255, 255, 170));
         p.setFont(uiFont(12));
-        p.drawText(g.bar.adjusted(12, 0, -12, -8), Qt::AlignBottom | Qt::AlignLeft, "Nothing on the timeline to preview yet");
+        p.drawText(g.bar.adjusted(12, 0, -12, -8), Qt::AlignBottom | Qt::AlignLeft, "Add a program to preview its timeline");
         return;
     }
 
-    // the one program's timeline as a thin strip, one block per segment (program, break, ad, break)
-    const Range rg = scrubRange();
-    const double u0 = m_play->unitAt(rg.a, false), u1 = m_play->unitAt(rg.b, true);
-    const double span = qMax(1e-9, u1 - u0);
-    auto xOf = [&](double u) { return g.track.left() + int(g.track.width() * qBound(0.0, (u - u0) / span, 1.0)); };
     p.setPen(Qt::NoPen);
-    for (int i = rg.a; i >= 0 && i <= rg.b; ++i) {
-        const int x0 = xOf(m_play->unitAt(i, false)), x1 = xOf(m_play->unitAt(i, true));
-        p.setBrush(segColor(segs[i]).darker(115));
-        p.drawRoundedRect(QRect(x0, g.track.top(), qMax(2, x1 - x0 - 1), g.track.height()), 2, 2);
-    }
+    p.setBrush(segColor(segs[rg.a]).darker(115));p.drawRoundedRect(g.track,2,2);
 
     // hover guide
     if (!m_scrub && g.trackHit.contains(m_hoverPt)) {

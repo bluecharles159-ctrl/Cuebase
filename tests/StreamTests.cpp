@@ -507,6 +507,23 @@ private slots:
         QTest::mouseMove(&monitor,{200,354});QTest::mousePress(&monitor,Qt::LeftButton,Qt::NoModifier,{200,354});QTest::mouseMove(&monitor,{350,354});QTest::mouseRelease(&monitor,Qt::LeftButton,Qt::NoModifier,{350,354});QVERIFY(monitor.detached());QVERIFY(monitor.viewMs()!=position);QTest::qWait(350);QCOMPARE(play.playheadMs(),position);QCOMPARE(monitor.programFrame({320,180}),onAir);QVERIFY(monitor.grab().save("artifacts/live-preview-picture-in-picture.png"));
         QTest::mouseClick(&monitor,Qt::LeftButton,Qt::NoModifier,{580,354});QVERIFY(!monitor.detached());QTest::qWait(450);QCOMPARE(play.playheadMs(),position);QCOMPARE(monitor.programFrame({320,180}),onAir);play.stop();
     }
+    void scrubDuringAnAdKeepsTheProgramInPrivatePreview(){
+        Library lib;ProgramItem show;show.id="before";show.title="First show";show.seconds=3;show.adId="spot";
+        auto next=show;next.id="next";next.adId.clear();next.title="Next show";next.seconds=10;
+        Ad ad;ad.id="spot";ad.name="Sponsor";ad.seconds=5;lib.programs={show,next};lib.ads={ad};
+        Playout play(&lib);ViewportWidget monitor(&lib,&play);monitor.resize(640,420);monitor.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&monitor));play.start(1,1000);play.togglePause();
+        QCOMPARE(play.current()->type,Segment::Ad);const auto live=play.timelinePosMs();
+        const auto picture=monitor.programFrame({320,180});QTest::mouseMove(&monitor,{200,354});QTest::qWait(30);
+        QTest::mousePress(&monitor,Qt::LeftButton,{},QPoint(200,354));QTest::mouseRelease(&monitor,Qt::LeftButton,{},QPoint(200,354));
+        QVERIFY(monitor.detached());QVERIFY(monitor.viewMs()>0 && monitor.viewMs()<3000);
+        QTest::mousePress(&monitor,Qt::LeftButton,{},QPoint(518,354));QTest::mouseRelease(&monitor,Qt::LeftButton,{},QPoint(518,354));
+        QTRY_COMPARE(monitor.viewMs(),qint64(2999));QTest::qWait(120);QCOMPARE(monitor.viewMs(),qint64(2999));
+        QCOMPARE(play.timelinePosMs(),live);QCOMPARE(monitor.programFrame({320,180}),picture);
+        QTest::mouseClick(&monitor,Qt::LeftButton,{},QPoint(24,354));QTRY_VERIFY(monitor.viewMs()<500);
+        QTest::mouseClick(&monitor,Qt::LeftButton,{},QPoint(580,354));QVERIFY(!monitor.detached());
+        QTest::qWait(160);QVERIFY(monitor.grab().save("artifacts/program-return-to-live.png"));QCOMPARE(play.timelinePosMs(),live);
+    }
     void continuityOverrideAndReturn(){
         Library lib;lib.display.watermarkOn=false;ProgramItem program;program.id="show";lib.programs={program};auto design=ElementDesign::defaultScene();DObject shape;shape.id="red";shape.type="Shape";shape.w=8;shape.h=5;shape.base.rot={90,0,0};shape.mat.color=Qt::red;shape.mat.shadeless=true;design.objects.append(shape);Element element;element.id="graphic";element.type="Custom";element.live=true;element.design=design.toJson();lib.elements={element};
         Playout play(&lib);ViewportWidget monitor(&lib,&play);play.start();play.togglePause();const auto before=monitor.programFrame({320,180});auto *standby=play.continuity();QString reason;QVERIFY(standby->configure("Black",{},{},{},&reason));standby->setActive(true);const auto blackout=monitor.programFrame({320,180});QCOMPARE(blackout.pixelColor(160,90),QColor(Qt::black));QCOMPARE(play.state(),Playout::Paused);QVERIFY(standby->configure("Standby",{},{},"Editing the program",&reason));QVERIFY(monitor.programFrame({320,180})!=blackout);standby->setActive(false);QCOMPARE(monitor.programFrame({320,180}),before);QVERIFY(!standby->configure("Video",{},"missing-video.mp4",{},&reason));QVERIFY(!reason.isEmpty());lib.elements[0].cueBoard={QJsonObject{{"id","invalid"},{"cue","missing"}}};QVERIFY(!standby->configure("Element",element.id,{},{},&reason));QVERIFY(!reason.isEmpty());play.stop();

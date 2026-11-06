@@ -92,6 +92,8 @@ private:
     QTimer m_transitionTimer;
     qint64 m_vlast = 0, m_viewMs = 0, m_vpending = -1;
     int m_viewSeg = -1;
+    QString m_previewProgram;
+    qint64 m_previewOffset=0;
     QPoint m_hoverPt{-1, -1};
     bool m_detached = false, m_viewPlaying = true, m_hover = false, m_scrub = false;
 };

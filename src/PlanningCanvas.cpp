@@ -23,6 +23,7 @@
 #include <QPointer>
 #include <QScrollBar>
 #include <QTextDocument>
+#include <QAbstractTextDocumentLayout>
 #include <QTextEdit>
 #include <QTimer>
 #include <QToolButton>
@@ -172,8 +173,17 @@ void PlanningCanvas::drawBackground(QPainter *p,const QRectF &visible){
                 crop.moveCenter(QRectF(image->rect()).center());p->drawPixmap(card.rect,*image,crop);
             }else{p->setPen(palette().color(QPalette::Text));p->drawText(card.rect,Qt::AlignCenter,"Image unavailable");}
         }
-        if(!card.html.isEmpty()){QTextDocument text;text.setDefaultFont(font());text.setDefaultStyleSheet("body{color:"+palette().color(QPalette::Text).name()+";}");text.setHtml(card.html);text.setTextWidth(card.rect.width()-24);p->translate(card.rect.topLeft()+QPointF(12,32));text.drawContents(p,QRectF(0,0,card.rect.width()-24,card.rect.height()-42));}
-        else if(empty){p->setPen(palette().color(QPalette::PlaceholderText));uiIcon("add").paint(p,QRectF(card.rect.center()-QPointF(10,18),QSizeF(20,20)).toRect());p->drawText(card.rect.adjusted(8,20,-8,-8),Qt::AlignCenter,"Type a note or add an image");}p->restore();
+        const QColor ink=qGray(paper.rgb())<140?QColor("#f2f5f7"):QColor("#101820");
+        if(!card.html.isEmpty()){
+            QTextDocument text;text.setDefaultFont(font());text.setHtml(card.html);text.setTextWidth(card.rect.width()-24);
+            p->translate(card.rect.topLeft()+QPointF(12,32));QAbstractTextDocumentLayout::PaintContext context;
+            context.palette.setColor(QPalette::Text,ink);context.clip=QRectF(0,0,card.rect.width()-24,card.rect.height()-42);
+            p->setClipRect(context.clip,Qt::IntersectClip);text.documentLayout()->draw(p,context);
+        }else if(empty){
+            p->setPen(ink);const auto center=card.rect.center()-QPointF(0,8);
+            p->drawLine(center-QPointF(7,0),center+QPointF(7,0));p->drawLine(center-QPointF(0,7),center+QPointF(0,7));
+            p->drawText(card.rect.adjusted(8,20,-8,-8),Qt::AlignCenter,"Type a note or add an image");
+        }p->restore();
         if(card.id==d->hover||card.id==d->selected){
             p->save();p->setPen(Qt::NoPen);p->setBrush(QColor(0,0,0,135));
             p->drawRoundedRect(QRectF(card.rect.left()+1,card.rect.top()+1,card.rect.width()-2,25),8,8);

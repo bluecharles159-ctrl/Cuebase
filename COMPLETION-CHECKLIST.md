@@ -1,6 +1,6 @@
 # Cuebase completion counter
 
-Updated 2026-11-06. **39 of 84 tasks completed — 45 remaining.**
+Updated 2026-11-06. **44 of 84 tasks completed — 40 remaining.**
 
 The Claude transcript adds four distinct acceptance groups (81–84). Row 06 remains
 open: converted surfaces now retain their Inspector controls and unchanged
@@ -62,7 +62,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 - [ ] 34. Current-program scrubber, private preview and continuously visible live picture-in-picture.
 - [ ] 35. Return-to-live overlay/animation and independent replay controls; live-camera replay gap.
 - [ ] 36. Black-screen override, looping alternate content, logo presets and editable/error messages.
-- [ ] 37. Timed multi-source split screens and five smooth transition presets.
+- [x] 37. Timed multi-source split screens and five smooth transition presets (Build 55, multiple Build scenes verified; physical camera inputs require hardware validation).
 - [ ] 38. Control-panel tool navigation and wheel-adjusted volume controls with useful meters.
 - [ ] 39. Audio workspace: multiple sources, trim/split, pan, fades/crossfades, duplicate and automation.
 - [ ] 40. Sample-clock mixing, buses, synchronization, metering and high-quality audio export.
@@ -73,10 +73,10 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 
 ## Planning board
 
-- [ ] 45. Private mixed-source planner preview, filtering/list reorder, drag/drop and moving playhead.
-- [ ] 46. Resizable/full-screen board, rich text/image cards, formatting, locks and resize/empty states.
-- [ ] 47. Shared connection ports, timeline links, tracking, line styles and native gestures.
-- [ ] 48. Planner undo/reopen, atomic saves, recovery, isolation and representative-media checks.
+- [x] 45. Private mixed-source planner preview, filtering/list reorder, drag/drop and moving playhead (Build 55).
+- [x] 46. Resizable/full-screen board, rich text/image cards, formatting, locks and resize/empty states (Build 55).
+- [x] 47. Shared connection ports, timeline links, tracking, line styles and native gestures (Build 55).
+- [x] 48. Planner undo/reopen, atomic saves, recovery, isolation and representative-media checks (Build 55).
 - [x] 49. Reviewed plan-to-rundown append, exact durations, save-failure rollback and undo. Verified in `rundown-portable-results.txt`, including instance controls and picture/audio lifecycle. Native and sustained-output gates remain separate.
 
 ## Creative expansion
@@ -142,5 +142,5 @@ regressions covering modified-key replacement, glyph shadows and axis-specific
 text fitting. 79–80 concern tracking/test infrastructure only; they do not certify
 the unfinished features or a release. The preview now passes; the trim test update
 and interrupted application build still need verification after freeing disk space.
-The intermittent RTMP issue remains open for sustained testing. Planner rows remain unchecked
-despite passing automated checks because their listed acceptance work remains.
+The sustained RTMP check remains open. Build 55 added native planner interaction,
+decoded video and audio fixture files, interrupted-save recovery and reopen checks.
