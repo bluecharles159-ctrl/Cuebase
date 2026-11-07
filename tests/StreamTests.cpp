@@ -432,9 +432,28 @@ private slots:
         QVERIFY(sample(0)>.25f);QVERIFY(qAbs(sample(1000))<.0001f);QVERIFY(sample(2000)>.1f);QVERIFY(sample(2000)<sample(0));
     }
     void hoverCutUsesProgramHistory(){
-        Library library;ProgramItem program;program.id="hover-cut";program.title="Cut me";program.seconds=8;library.programs={program};Playout play(&library);TimelineWidget timeline(&play,&library);timeline.resize(800,240);timeline.show();QTest::qWait(20);
+        Library library;
+        ProgramItem program;
+        program.id="hover-cut";program.title="Cut me";program.seconds=8;
+        library.programs={program};
+        Playout play(&library);
+        TimelineWidget timeline(&play,&library);
+        timeline.resize(800,240);
+        timeline.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&timeline));
         QSignalSpy cuts(&timeline,&TimelineWidget::cutRequested);connect(&timeline,&TimelineWidget::cutRequested,&library,[&](const QString &id,qint64 ms){library.splitProgramAtMs(id,ms);});
-        QTest::mouseMove(&timeline,QPoint(timeline.blockX(0)+timeline.blockW(0)/2,50));QTest::keyClick(&timeline,Qt::Key_C);QCOMPARE(cuts.size(),1);QCOMPARE(library.programs.size(),2);QVERIFY(library.undoProgramCut());QCOMPARE(library.programs.size(),1);QVERIFY(library.redoProgramCut());QCOMPARE(library.programs.size(),2);
+        const QPoint target(timeline.blockX(0)+timeline.blockW(0)/2,50);
+        QVERIFY(timeline.rect().contains(target));
+        // Deliver both events through the window system, in input order, even on a
+        // Windows runner where moving the desktop cursor can post a delayed event.
+        QTest::mouseMove(timeline.windowHandle(),target);
+        QTest::keyClick(timeline.windowHandle(),Qt::Key_C);
+        QCOMPARE(cuts.size(),1);
+        QCOMPARE(cuts.first().at(0).toString(),program.id);
+        QVERIFY(qAbs(cuts.first().at(1).toLongLong()-4000)<100);
+        QCOMPARE(library.programs.size(),2);
+        QVERIFY(library.undoProgramCut());QCOMPARE(library.programs.size(),1);
+        QVERIFY(library.redoProgramCut());QCOMPARE(library.programs.size(),2);
     }
     void exactMainTrackCutsPreservePlayout(){
         const auto old=qApp->applicationName();qApp->setApplicationName(old+"-exact-cuts");
