@@ -116,7 +116,9 @@ CuePlan compileCueBoard(const ElementDesign &source,const QJsonArray &board,cons
     return plan;
 }
 QString cueTimingLabel(const QJsonObject &cue){
-    QString label=QString("%1 s · %2 plays").arg(qMax(1.,cue["end"].toDouble()-cue["start"].toDouble())/1000.,0,'g',4).arg(repetitions(cue));if(cue["loop"].toBool())label+=" · Loop until stopped";
+    const int count=repetitions(cue);
+    QString label=QString("%1 s · %2 %3").arg(qMax(1.,cue["end"].toDouble()-cue["start"].toDouble())/1000.,0,'g',4).arg(count).arg(count==1?"play":"plays");
+    if(cue["loop"].toBool())label+=" · Loop";
     if(!cue["plays"].toArray().isEmpty())label+=" · Per-play timing";
     else if(manualHold(cue))label+=" · Manual hold";else if(holdTime(cue)>0)label+=QString(" · Hold %1 s each").arg(holdTime(cue)/1000.,0,'g',4);
     return label;

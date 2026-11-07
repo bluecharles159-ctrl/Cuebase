@@ -420,6 +420,12 @@ void BuildModel::setProps(const QString &id, const DProps &p) {
         if (o->locked) return;
         const DProps old = o->at(t);
         QHash<QString,QMatrix4x4> children;if(isolateParents)for(const auto &child:design.objects)if(child.parentId==id)children[child.id]=design.parentMatrix(child,t);
+        if(!children.isEmpty()){
+            // A singular parent cannot be counter-transformed to hold a child in place.
+            bool invertible=false;
+            (design.parentMatrix(*o,t)*matrixOf(p)).inverted(&invertible);
+            if(!invertible)return;
+        }
         for (const auto &path : transformChannels()) {
             const double v = channelValue(p, path);
             if (qAbs(v - channelValue(old, path)) < 0.000001) continue;
@@ -429,7 +435,11 @@ void BuildModel::setProps(const QString &id, const DProps &p) {
                 if (o->track(path)) o->overrides[path] = v;
             }
         }
-        const auto inverse=design.worldMatrix(*o,t).inverted();for(auto it=children.begin();it!=children.end();++it)if(auto *child=byId(it.key()))child->parentInverse=inverse*it.value();
+        if(!children.isEmpty()){
+            const auto inverse=design.worldMatrix(*o,t).inverted();
+            for(auto it=children.begin();it!=children.end();++it)
+                if(auto *child=byId(it.key()))child->parentInverse=inverse*it.value();
+        }
     }
 }
 
@@ -468,6 +478,7 @@ bool BuildModel::parentSelected(bool clear){
     auto *parent=active();if(!clear&&(!parent||sel.size()<2))return false;
     QVector<QString> children;
     for(const auto &id:sel){auto *o=byId(id);if(!o||o->locked||o->type=="Camera"||(!clear&&id==activeId))continue;
+        if(o->parentId==(clear?QString():activeId))continue;
         if(!clear){QSet<QString> visited;auto *p=parent;bool cycle=false;while(p&&!visited.contains(p->id)){if(p->id==id){cycle=true;break;}visited.insert(p->id);p=byId(p->parentId);}if(cycle)return false;}
         children.append(id);
     }

@@ -430,11 +430,27 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     auto *lower=new QSplitter(Qt::Horizontal);
     auto *layers=new LayerPanel(m);layers->setMaximumWidth(QWIDGETSIZE_MAX);
     auto *layerPanel=new QWidget;auto *layerLayout=new QVBoxLayout(layerPanel);layerLayout->setContentsMargins(0,0,0,0);layerLayout->setSpacing(2);
-    auto *layerBar=new QHBoxLayout;auto *searchButton=new QToolButton;searchButton->setIcon(uiIcon("100%"));searchButton->setToolTip("Search layers");auto *reveal=new QToolButton;reveal->setIcon(uiIcon("composition"));reveal->setToolTip("Reveal active layer");auto *search=new QLineEdit;search->setPlaceholderText("Search layers");search->hide();layerBar->addWidget(searchButton);layerBar->addWidget(reveal);layerBar->addWidget(search,1);layerLayout->addLayout(layerBar);layerLayout->addWidget(layers,1);
-    connect(searchButton,&QToolButton::clicked,search,[search]{search->setVisible(!search->isVisible());if(search->isVisible())search->setFocus();else search->clear();});
-    connect(reveal,&QToolButton::clicked,layers,[layers,m,search]{search->clear();for(QTreeWidgetItemIterator it(layers);*it;++it)if((*it)->data(0,Qt::UserRole).toString()==m->activeId){for(auto *parent=(*it)->parent();parent;parent=parent->parent())parent->setExpanded(true);layers->scrollToItem(*it,QAbstractItemView::PositionAtCenter);break;}});
-    auto filterLayers=[layers,search]{const auto text=search->text();for(QTreeWidgetItemIterator it(layers);*it;++it)(*it)->setHidden(!text.isEmpty()&&!(*it)->text(0).contains(text,Qt::CaseInsensitive));if(!text.isEmpty())for(QTreeWidgetItemIterator it(layers);*it;++it)if(!(*it)->isHidden())for(auto *parent=(*it)->parent();parent;parent=parent->parent()){parent->setHidden(false);parent->setExpanded(true);}};
-    connect(search,&QLineEdit::textChanged,layers,filterLayers);connect(m,&BuildModel::changed,layers,filterLayers);
+    layerPanel->setObjectName("buildLayersPanel");
+    auto *layerBar=new QHBoxLayout;
+    auto *layerTitle=new QLabel("Layers");
+    auto *searchButton=new QToolButton;
+    searchButton->setObjectName("showLayerSearch");searchButton->setCheckable(true);
+    searchButton->setIcon(uiIcon("100%"));searchButton->setAccessibleName("Search layers");searchButton->setToolTip("Search layers");
+    auto *reveal=new QToolButton;
+    reveal->setObjectName("revealActiveLayer");reveal->setIcon(uiIcon("composition"));
+    reveal->setAccessibleName("Reveal active layer");reveal->setToolTip("Reveal active layer");
+    auto *search=new QLineEdit;
+    search->setObjectName("layerSearch");search->setAccessibleName("Search layer names");
+    search->setPlaceholderText("Search layers");search->setClearButtonEnabled(true);search->hide();
+    layerBar->setContentsMargins(5,0,3,0);layerBar->addWidget(layerTitle,1);layerBar->addWidget(search,1);
+    layerBar->addWidget(searchButton);layerBar->addWidget(reveal);
+    layerLayout->addLayout(layerBar);layerLayout->addWidget(layers,1);
+    connect(searchButton,&QToolButton::toggled,search,[=](bool open){
+        layerTitle->setVisible(!open);search->setVisible(open);
+        if(open)search->setFocus();else search->clear();
+    });
+    connect(reveal,&QToolButton::clicked,layers,[=]{searchButton->setChecked(false);layers->revealActive();});
+    connect(search,&QLineEdit::textChanged,layers,&LayerPanel::filterByName);
     lower->addWidget(layerPanel);lower->addWidget(tlFrame);lower->setSizes({240,820});
     for(auto *split:{views,lower}){split->setHandleWidth(4);split->setChildrenCollapsible(false);}
     left->addWidget(views);

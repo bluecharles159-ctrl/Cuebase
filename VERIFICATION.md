@@ -2,6 +2,14 @@
 
 ## Latest verified checkpoint
 
+Build 64 verified paused timeline seeking and fractional-rate frame stepping with
+keyboard and wheel. Cue creation from selected keys and cue picker filtering ran in
+the native Windows UI. The reports include both dialogs and the timeline capture.
+[Windows ZIP](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42334371204/artifacts/13559266731)
+and [test evidence](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42334371204/artifacts/13559042228).
+
+## Build 63
+
 Build 63 launched separate channel windows and verified private library data,
 duplicate-open handling and opt-in output format sharing. Native audio tests
 measured semitone pitch shifts, independent tempo, keyed gain and sidechain

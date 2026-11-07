@@ -122,6 +122,63 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(panel.accessibleDescription().contains("ready"),2000);
         QTest::keyClick(&canvas,Qt::Key_Escape);QCOMPARE(order(),0);QCOMPARE(model.design.frontLayer,0);
     }
+    void findAndRevealNestedLayers() {
+        Library library;
+        BuildWorkspace workspace(&library);
+        workspace.resize(1280,780);
+        workspace.show();
+        auto *model=workspace.findChild<BuildModel*>();
+        auto design=scene();
+        auto *parent=design.find("subject");
+        parent->name="Lower third";
+        auto text=*parent;
+        text.type="Text";text.id="byline";text.name="Guest name";
+        text.style={};text.text="Alex Rivera";text.style["zIndex"]=2;
+        design.objects.append(text);
+        model->reset(design);
+        model->setSelection({"subject","byline"},"subject");
+        const auto before=model->design.worldMatrix(*model->byId("byline"),model->t);
+        QVERIFY(model->parentSelected());
+        QCOMPARE(model->design.worldMatrix(*model->byId("byline"),model->t),before);
+        model->select("byline");
+        auto *tree=workspace.findChild<QTreeWidget*>("buildLayers");
+        auto *button=workspace.findChild<QToolButton*>("showLayerSearch");
+        auto *search=workspace.findChild<QLineEdit*>("layerSearch");
+        auto *reveal=workspace.findChild<QToolButton*>("revealActiveLayer");
+        QVERIFY(tree && button && search && reveal);
+        const auto matches=tree->findItems("Lower third",Qt::MatchExactly|Qt::MatchRecursive);
+        QCOMPARE(matches.size(),1);
+        auto *branch=matches.first();
+        QCOMPARE(branch->childCount(),1);
+        branch->setExpanded(false);
+        button->click();search->setText("gUeSt");
+        QVERIFY(branch->isExpanded());QVERIFY(!branch->isHidden());
+        QVERIFY(!branch->child(0)->isHidden());
+        search->setText("unavailable");QVERIFY(branch->isHidden());
+        search->clear();QVERIFY(!branch->isHidden());QVERIFY(!branch->isExpanded());
+        reveal->click();QVERIFY(branch->isExpanded());QVERIFY(!search->isVisible());
+        QCOMPARE(model->activeId,QString("byline"));QCOMPARE(tree->currentItem(),branch->child(0));
+
+        model->select("subject");
+        QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
+        auto *units=workspace.findChild<QComboBox*>("property_corner.unit");
+        auto *radius=workspace.findChild<QDoubleSpinBox*>("property_corner.radius");
+        QVERIFY(units && radius);
+        units->setCurrentText("%");emit units->activated(units->currentIndex());
+        QCOMPARE(radius->suffix(),QString(" %"));radius->setValue(35);
+        const auto reopened=ElementDesign::fromJson(model->design.toJson());
+        QCOMPARE(reopened.find("byline")->parentId,QString("subject"));
+        QCOMPARE(reopened.find("subject")->style["corner.unit"].toString(),QString("%"));
+        QCOMPARE(reopened.find("subject")->propertyBase("corner.radius"),35.);
+        QVERIFY(model->undo());QVERIFY(model->active()->propertyBase("corner.radius")!=35.);
+        QVERIFY(model->redo());
+        model->select("byline");reveal->click();
+        auto *panel=workspace.findChild<QWidget*>("buildLayersPanel");
+        QVERIFY(panel && panel->isVisible());
+        QTest::qWait(40);
+        QVERIFY(workspace.grab().save("artifacts/build-layers-workspace.png"));
+        QVERIFY(panel->grab().save("artifacts/build-layers-detail.png"));
+    }
     void surfaceFinishesOnTypeAndLogo() {
         QTemporaryDir temp;
         QImage logo(244,128,QImage::Format_ARGB32_Premultiplied);logo.fill(Qt::transparent);

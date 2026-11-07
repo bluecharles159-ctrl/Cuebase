@@ -514,7 +514,11 @@ private slots:
         QImage image(640,360,QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);QPainter p(&image);m.design.render(p,image.rect(),0);p.end();
         QVERIFY(qGreen(image.pixel(350,180))>200);QCOMPARE(qAlpha(image.pixel(390,180)),0);
         m.editProperty("parent","position.x",2);QCOMPARE(m.design.worldMatrix(*m.byId("child"),0).map(QVector3D()).x(),3.5f);
-        m.isolateParents=true;const auto childBefore=m.design.worldMatrix(*m.byId("child"),0);m.editProperty("parent","position.x",4);QCOMPARE(m.design.worldMatrix(*m.byId("child"),0),childBefore);m.isolateParents=false;
+        m.isolateParents=true;const auto childBefore=m.design.worldMatrix(*m.byId("child"),0);m.editProperty("parent","position.x",4);QCOMPARE(m.design.worldMatrix(*m.byId("child"),0),childBefore);
+        const auto parentBefore=m.design.worldMatrix(*m.byId("parent"),0);
+        m.editProperty("parent","scale.x",0);
+        QCOMPARE(m.design.worldMatrix(*m.byId("parent"),0),parentBefore);
+        QCOMPARE(m.design.worldMatrix(*m.byId("child"),0),childBefore);m.isolateParents=false;
         m.setSelection({"parent","child"},"child");QVERIFY(!m.parentSelected());
         m.select("child");const auto world=m.design.worldMatrix(*m.active(),0);QVERIFY(m.parentSelected(true));QVERIFY(m.active()->parentId.isEmpty());QCOMPARE(m.design.worldMatrix(*m.active(),0),world);
         auto roundtrip=ElementDesign::fromJson(m.design.toJson());QCOMPARE(roundtrip.worldMatrix(*roundtrip.find("child"),0),world);

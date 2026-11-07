@@ -21,6 +21,8 @@ public:
 }
 
 LayerPanel::LayerPanel(BuildModel *model,QWidget *parent):QTreeWidget(parent),m(model){
+    setObjectName("buildLayers");
+    setAccessibleName("Layers");
     pulse.setDuration(500);pulse.setLoopCount(2);pulse.setStartValue(35);pulse.setKeyValueAt(.5,185);pulse.setEndValue(35);
     connect(&pulse,&QVariantAnimation::valueChanged,this,[this]{viewport()->update();});
     connect(m,&BuildModel::layerBoundaryChanged,this,[this](int direction,bool pending){
@@ -29,7 +31,7 @@ LayerPanel::LayerPanel(BuildModel *model,QWidget *parent):QTreeWidget(parent),m(
         setAccessibleDescription(!direction?QString():pending?"New layer ready on release":"Hold to create a layer");
         viewport()->update();
     });
-    setColumnCount(4);setHeaderLabels({"Layers","", "", "Z"});setRootIsDecorated(true);setIndentation(13);
+    setColumnCount(4);setHeaderLabels({"Object","", "", "Z"});setRootIsDecorated(true);setIndentation(13);
     setItemDelegateForColumn(3,new LayerOrderDelegate(this));setColumnWidth(3,48);headerItem()->setToolTip(3,"Overlap order · higher values appear in front without changing size or position. Double-click to edit.");
     setStyleSheet("QTreeWidget{background:palette(window);color:palette(text);border:0;font-size:10px;} QTreeWidget::item{height:23px;} QTreeWidget::item:selected{background:palette(highlight);color:palette(highlighted-text);} QHeaderView::section{background:palette(button);color:palette(button-text);border:0;padding:4px;font-size:10px;}");
     setSelectionMode(QAbstractItemView::ExtendedSelection);setDragDropMode(QAbstractItemView::InternalMove);
@@ -86,9 +88,49 @@ void LayerPanel::refresh(){
             if(!cycle&&items.contains(o.parentId))items[o.parentId]->addChild(item);else addTopLevelItem(item);
         }
         for(auto it=items.begin();it!=items.end();++it)it.value()->setExpanded(!closed.contains(it.key()));
+        if(!filter.isEmpty())updateFilter();
     }
     for(QTreeWidgetItemIterator it(this);*it;++it){auto *item=*it;const auto id=item->data(0,Qt::UserRole).toString();item->setSelected(m->sel.contains(id));if(id==m->activeId)setCurrentItem(item,0,QItemSelectionModel::NoUpdate);}
     syncing=false;
+}
+void LayerPanel::filterByName(const QString &text){
+    const auto query=text.trimmed();
+    if(filter==query)return;
+    if(filter.isEmpty()){
+        collapsedBeforeSearch.clear();
+        for(QTreeWidgetItemIterator it(this);*it;++it)
+            if((*it)->childCount() && !(*it)->isExpanded())
+                collapsedBeforeSearch.insert((*it)->data(0,Qt::UserRole).toString());
+    }
+    filter=query;
+    updateFilter();
+    if(filter.isEmpty())collapsedBeforeSearch.clear();
+}
+
+void LayerPanel::updateFilter(){
+    for(QTreeWidgetItemIterator it(this);*it;++it){
+        auto *item=*it;
+        item->setHidden(!filter.isEmpty() && !item->text(0).contains(filter,Qt::CaseInsensitive));
+        if(item->childCount())item->setExpanded(!collapsedBeforeSearch.contains(item->data(0,Qt::UserRole).toString()));
+    }
+    if(filter.isEmpty())return;
+    for(QTreeWidgetItemIterator it(this);*it;++it){
+        if((*it)->isHidden())continue;
+        for(auto *parent=(*it)->parent();parent;parent=parent->parent()){
+            parent->setHidden(false);
+            parent->setExpanded(true);
+        }
+    }
+}
+
+void LayerPanel::revealActive(){
+    for(QTreeWidgetItemIterator it(this);*it;++it){
+        auto *item=*it;
+        if(item->data(0,Qt::UserRole).toString()!=m->activeId)continue;
+        for(auto *parent=item->parent();parent;parent=parent->parent())parent->setExpanded(true);
+        scrollToItem(item,QAbstractItemView::PositionAtCenter);
+        break;
+    }
 }
 void LayerPanel::paintEvent(QPaintEvent *event){
     QTreeWidget::paintEvent(event);

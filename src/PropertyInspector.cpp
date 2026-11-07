@@ -81,6 +81,7 @@ void PropertyInspector::number(QFormLayout *form,const QString &label,const QStr
             return object->propertyValue(path,m->t);
         };
         double value=displayed(o);bool mixed=false;
+        if(path.startsWith("corner."))spin->setSuffix(o->style["corner.unit"].toString()=="%"?" %":" px");
         for(auto *other:m->inspected())mixed=mixed||qAbs(displayed(other)-value)>.00001;
         spin->setValue(value);
         if(mixed){auto *line=spin->findChild<QLineEdit*>();line->clear();line->setPlaceholderText("Mixed");}

@@ -545,6 +545,7 @@ private slots:
         Library library;ProgramItem program;program.id="recover-program";program.title="Programme";library.programs={program};const QJsonObject damaged{{"version",999},{"unrecognized","Keep this data"}};library.production["planningBoard"]=damaged;ProductionBoard board(&library);QString error;QVERIFY(!board.savePlan(&error));QVERIFY(!error.isEmpty());QVERIFY(!board.appendSource("Program",program.id));QCOMPARE(library.production["planningBoard"].toObject(),damaged);auto *recover=board.findChild<QPushButton*>("planRecover");QVERIFY(recover);recover->click();QCOMPARE(library.production["planningBoardRecovery"].toObject(),damaged);QVERIFY(board.appendSource("Program",program.id));QVERIFY(board.savePlan(&error));QVERIFY(board.document().validate());
     }
     void fixedCenterTimeline(){
+        applyUiTheme("Studio Blue",false);
         QSettings().setValue("studio/timelineScale",14.);QSettings().setValue("studio/fixedPlayhead",true);
         Library lib;ProgramItem program;program.id="center-show";program.title="Centered playhead";program.seconds=120;lib.programs={program};Playout play(&lib);
         QScrollArea scroll;scroll.setWidgetResizable(true);scroll.setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);scroll.resize(640,160);
@@ -835,6 +836,7 @@ private slots:
         QCOMPARE(reopened.placement(copyId)->boardSnapshot,original.boardSnapshot);
     }
     void nestedBoardNavigationEditsAndDelayedPlacement(){
+        applyUiTheme("Studio Blue",false);
         auto design = elementPreset("News lower third");
         const QJsonObject cue{{"id","headline"},{"name","Headline"},{"start",0},{"end",1000},{"hold",false}};
         design.animationCues = {cue};

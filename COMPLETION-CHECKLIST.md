@@ -1,6 +1,6 @@
 # Cuebase completion counter
 
-Updated 2026-11-07. **51 of 84 tasks completed — 33 remaining.**
+Updated 2026-11-07. **53 of 84 tasks completed — 31 remaining.**
 
 The Claude transcript adds four distinct acceptance groups (81–84). Row 06 remains
 open: converted surfaces now retain their Inspector controls and unchanged
@@ -28,7 +28,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 - [ ] 06. Parented Edit Mode world coordinates and full shape appearance preservation, including Background/Effects controls and rendering after conversion.
 - [x] 07. Independent per-object inspector expansion, including text Typography defaults. Verified selection/default/persistence workflow in `portable-editor-results.txt`.
 - [x] 08. Independent frame-range cues, empty state, extraction and timeline highlighting. Build 42 verifies the selected play's range in Build and Studio, the selected-key dialog, cancel cleanup and source isolation. The native graph capture shows the highlight between the selected keys. Save, undo and restricted playback also pass in the Build suite.
-- [ ] 09. Rounded cue creation/edit modal and polished cue-board cards/padding.
+- [x] 09. Rounded cue creation/edit modal and cue-board cards/padding. Build 64 verified selected-frame modal entry and cancellation, filtered cue selection, board playback and independent per-play controls. Windows captures reviewed.
 - [x] 10. Loop counts and independent per-play holds, timings and Studio controls. Verified finite/infinite edits and preserved per-play holds in `cue-loop-editor-results.txt` and `cue-loop-studio-results.txt`.
 - [x] 11. Build manual hold/continue for individual cue plays.
 - [x] 12. Nested cue boards, duplication, delays, scheduling, trims and on-air edit protection. Build 42 verifies the native Studio controls, delayed independent placements, duplicate/extend/left trim, repeated output frames, reopening, the five-minute edit boundary and early manual takes.
@@ -57,7 +57,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 
 - [ ] 30. Primary sequence supports actual programs/ads/elements, linked segments and exact timing.
 - [ ] 31. Main-track delete/expand, cut icon, trim/split/ripple, snapping, transitions and validation.
-- [ ] 32. Fixed-center Studio playhead, moving timeline, frame stepping and navigation; native audit.
+- [x] 32. Fixed-center Studio playhead, moving timeline, frame stepping and navigation. Build 64 verified centering across resizes, pan, fit and reveal, fractional-rate keyboard/wheel stepping and paused/off-air state preservation on Windows.
 - [x] 33. Source-aligned thumbnail strips/waveforms and persistent Timeline settings. Verified by `resumed-preview-handoff-results.txt` (9 passing focused cases, including both trim modes); native/performance release gates remain separate.
 - [x] 34. Current-program scrubber, private preview and continuously visible live picture-in-picture (Build 58).
 - [ ] 35. Return-to-live overlay/animation and independent replay controls; live-camera replay gap.

@@ -403,7 +403,8 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
         p.setOpacity(opacity);
         const QColor c = segColor(s);
         p.setPen(current ? QPen(Qt::white, 2) : Qt::NoPen);
-        p.setBrush(palette().color(QPalette::Base).darker(125));
+        const auto surface=palette().color(QPalette::Base).darker(125);
+        p.setBrush(surface);
         p.drawRoundedRect(r, 8, 8);
         p.setPen(QPen(c,2));p.drawLine(r.topLeft()+QPoint(9,1),r.topRight()+QPoint(-9,1));
         if(!s.file.isEmpty()&&r.intersects(visible)){
@@ -414,14 +415,14 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
             if(m_waveforms)drawWave(QRect(r.left()+1,r.bottom()-20,r.width()-2,20),s.file,s.offsetMs,s.ms);
             p.restore();
         }
-        p.setPen(Qt::white);
+        p.setPen(textOn(surface));
         QFont f = font();
         f.setBold(true);
         f.setPixelSize(12);
         p.setFont(f);
-        const QRect inner = r.adjusted(8, 4, -8, -4-(m_waveforms?20:0));
+        const QRect inner = r.intersected(visible).adjusted(8, 4, -8, -4-(m_waveforms?20:0));
         if (s.type == Segment::Break) {
-            p.drawText(r, Qt::AlignCenter, "BR");
+            p.drawText(r.intersected(visible), Qt::AlignCenter, "BR");
         } else {
             const QFontMetrics fm(f);
             p.drawText(inner, Qt::AlignLeft | Qt::AlignTop,
@@ -429,7 +430,7 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
             f.setBold(false);
             f.setPixelSize(11);
             p.setFont(f);
-            p.setPen(QColor(255, 255, 255, 190));
+            p.setPen(textOn(surface));
             p.drawText(inner, Qt::AlignLeft | Qt::AlignBottom,
                        (s.type == Segment::Program ? s.kind + " · " : "") + formatDuration(s.ms / 1000));
         }
@@ -511,11 +512,12 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
         f.setPixelSize(11);
         f.setBold(true);
         p.setFont(f);
-        p.setPen(textOn(c.darker(125)));
+        p.setPen(textOn(palette().color(QPalette::Base).darker(145)));
         const QString prefix = pb.type == "Sound" ? "♪ " : pb.type == "Ad" ? "AD · " : "";
         const QString label = prefix + pl->name + "  ·  " + formatDuration(int(pl->startMs / 1000));
-        p.drawText(pb.rect.adjusted(7, 0, -5, 0), Qt::AlignVCenter | Qt::AlignLeft,
-                   QFontMetrics(f).elidedText(label, Qt::ElideRight, pb.rect.width() - 12));
+        const QRect labelRect=pb.rect.intersected(visible).adjusted(7,0,-5,0);
+        p.drawText(labelRect, Qt::AlignVCenter | Qt::AlignLeft,
+                   QFontMetrics(f).elidedText(label, Qt::ElideRight, labelRect.width()));
         p.setOpacity(1.0);
     }
 
