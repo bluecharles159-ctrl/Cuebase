@@ -2,6 +2,7 @@
 #include "CueSequence.h"
 
 #include <QDir>
+#include <QCoreApplication>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -221,7 +222,10 @@ void Library::load() {
     m_cutUndo.clear();m_cutRedo.clear();
     QFile f(filePath());
     if (!f.open(QIODevice::ReadOnly)) {
-        seed();
+        if(f.exists())return;
+        const auto channel=QCoreApplication::instance()->property("initialChannelName").toString();
+        if(channel.isEmpty())seed();
+        else{display.channel=channel;layers=QVector<LayerState>(4);}
         save();
         return;
     }

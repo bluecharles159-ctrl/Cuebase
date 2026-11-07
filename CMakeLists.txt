@@ -17,6 +17,7 @@ add_library(CuebaseBuildCore STATIC
     src/SceneEffects.h src/SceneEffects.cpp
     src/UiControls.h src/UiControls.cpp
     src/WorkspaceSetup.h src/WorkspaceSetup.cpp
+    src/ChannelDirectory.h src/ChannelDirectory.cpp
     src/SplitLayout.h src/SplitLayout.cpp src/SplitLayoutDialog.cpp
     src/SplitCameras.h src/SplitCameras.cpp
     src/Toast.h src/Toast.cpp
@@ -123,6 +124,7 @@ if(BUILD_TESTING)
         src/CrewWorkspace.h src/CrewWorkspace.cpp src/CrewPortal.h
         src/TimelineWidget.h src/TimelineWidget.cpp src/DragDrop.h src/DragDrop.cpp
         src/Playout.h src/Playout.cpp src/ViewportWidget.h src/ViewportWidget.cpp)
+    add_dependencies(CuebaseStreamTests Cuebase)
     target_link_libraries(CuebaseStreamTests PRIVATE CuebaseStreaming CuebaseBuildCore CuebasePlanningUi Qt6::Test Qt6::Widgets)
     if(WIN32)
         target_link_libraries(CuebaseStreamTests PRIVATE psapi)

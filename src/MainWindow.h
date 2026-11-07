@@ -11,6 +11,7 @@ class BuildWorkspace;
 class EditorPanel;
 struct DragPayload;
 class Library;
+class ChannelDirectory;
 class Playout;
 class NetworkOutput;
 class QCloseEvent;
@@ -27,7 +28,7 @@ class QWidget;
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
-    explicit MainWindow(QWidget *parent = nullptr);
+    explicit MainWindow(QWidget *parent = nullptr,ChannelDirectory *channels=nullptr);
     void enterWorkspace();
 
 protected:
@@ -37,6 +38,9 @@ protected:
 private:
     void buildMenus();
     void openWorkspaceSetup();
+    void configureChannels();
+    void openChannels();
+    ChannelDirectory *m_channels=nullptr;
     void importFiles(const QStringList &paths);
     void importVideo(const QString &path);
     QWidget *m_fileOverlay = nullptr;

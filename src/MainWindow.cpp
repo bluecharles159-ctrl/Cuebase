@@ -87,6 +87,7 @@
 #include "ViewportWidget.h"
 #include "NetworkOutput.h"
 #include "WorkspaceSetup.h"
+#include "ChannelDirectory.h"
 
 class CueBoardDialog final:public QDialog {
 public:using QDialog::QDialog;
@@ -161,7 +162,7 @@ QPixmap channelLogoPreview(const QPixmap &image,int size){
 }
 } // namespace
 
-MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
+MainWindow::MainWindow(QWidget *parent,ChannelDirectory *channels) : QMainWindow(parent),m_channels(channels) {
     setAcceptDrops(true);
     setWindowTitle("Cuebase");
     setWindowFlag(Qt::FramelessWindowHint);
@@ -172,6 +173,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     buildUi();
     buildMenus();
     buildStatusBar();
+    if(m_channels)configureChannels();
     qApp->installEventFilter(this);
     log("Cuebase started");
 }
@@ -181,6 +183,28 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
 void MainWindow::enterWorkspace(){
     if(WorkspaceSetup::editingOnly(*m_lib))showBuild({},false);
     else if(!m_lib->production.contains("workspaceProfile"))openWorkspaceSetup();
+}
+void MainWindow::configureChannels(){
+    auto signature=std::make_shared<QByteArray>(ChannelDirectory::outputFormat(m_lib->display));
+    connect(m_lib,&Library::displayChanged,this,[this,signature]{
+        const auto current=ChannelDirectory::outputFormat(m_lib->display);
+        if(*signature==current)return;
+        *signature=current;QString reason;if(!m_channels->publishOutput(m_lib->display,&reason))report(reason);
+    });
+    auto receive=[this,signature]{
+        if(m_network->active())return;
+        auto next=m_lib->display;
+        if(!m_channels->readOutput(next))return;
+        const auto previous=m_lib->display;m_lib->display=next;QString reason;
+        if(!m_lib->saveChecked(&reason)){m_lib->display=previous;report(reason);return;}
+        *signature=ChannelDirectory::outputFormat(next);emit m_lib->displayChanged();
+    };
+    receive();auto *timer=new QTimer(this);timer->setInterval(1500);connect(timer,&QTimer::timeout,this,receive);timer->start();
+}
+void MainWindow::openChannels(){
+    if(!m_channels)return;
+    if(auto *existing=findChild<QDialog*>("channelManager")){existing->raise();return;}
+    auto *dialog=m_channels->manager(this,m_lib);dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->open();
 }
 void MainWindow::openWorkspaceSetup(){
     if(auto *existing=findChild<QDialog*>("workspaceSetup")){existing->raise();return;}
@@ -220,6 +244,13 @@ void MainWindow::buildMenus() {
     hl->addWidget(divider);
     hl->addWidget(bar);
     hl->addStretch();
+    if(m_channels){
+        auto *channel=new QToolButton;channel->setObjectName("currentChannel");channel->setToolTip("Production channels");hl->addWidget(channel);
+        auto label=[this,channel]{const auto name=m_channels->list().value(m_channels->current());
+            channel->setText(channel->fontMetrics().elidedText(name,Qt::ElideRight,150));channel->setAccessibleName("Channels · "+name);};
+        label();auto *timer=new QTimer(channel);timer->setInterval(1500);connect(timer,&QTimer::timeout,channel,label);timer->start();
+        connect(channel,&QToolButton::clicked,this,&MainWindow::openChannels);
+    }
     auto control=[&](QString name,QString icon,QString label){auto *button=new QToolButton;button->setObjectName(name);button->setIcon(uiIcon(icon));button->setIconSize({13,13});button->setFixedSize(30,26);button->setToolTip(label);button->setAccessibleName(label);hl->addWidget(button);return button;};
     auto *planner=control("windowPlanner","workflow","Production plan");connect(planner,&QToolButton::clicked,this,[this]{auto *board=findChild<ProductionBoard*>("productionBoard",Qt::FindDirectChildrenOnly);if(!board){board=new ProductionBoard(m_lib,this);board->setBroadcastPlayout(m_play);}board->show();board->raise();board->activateWindow();});
     auto *settings=control("windowSettings","settings","Settings");connect(settings,&QToolButton::clicked,this,[this]{showUiSettings(this,[this]{openWorkspaceSetup();});});
@@ -312,6 +343,7 @@ void MainWindow::buildMenus() {
         else showBuild(QString(), false);
     });
     m_workspaceAct = window->actions().last();
+    if(m_channels)add(window,"Channels…",QKeySequence(),[this]{openChannels();});
     window->addSeparator();
     add(window, "Toggle Control Panel", QKeySequence("Ctrl+B"), [this] {
         const bool show = !m_control->isVisible();

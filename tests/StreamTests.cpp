@@ -46,6 +46,8 @@
 #include "MainWindow.h"
 #include "WorkspaceSetup.h"
 #include "ControlPanel.h"
+#include "ChannelDirectory.h"
+#include <QLocalSocket>
 #include <QProgressBar>
 #include <QStackedWidget>
 #include "SplitLayout.h"
@@ -78,11 +80,65 @@
 class StreamTests:public QObject{
     Q_OBJECT
 private slots:
+    void separateChannelWindowsAndSharedFormat(){
+        const QString oldOrg=qApp->organizationName(),oldName=qApp->applicationName();
+        const auto token=QUuid::createUuid().toString(QUuid::WithoutBraces);
+        qApp->setOrganizationName("CuebaseTest-"+token);qApp->setApplicationName("Cuebase");
+        auto reset=qScopeGuard([&]{qApp->setApplicationName(oldName);qApp->setOrganizationName(oldOrg);});
+        const QString primaryPath=QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        ChannelDirectory primary(primaryPath);QCOMPARE(primary.list().size(),1);
+        QVERIFY(ChannelDirectory::profileName("../other").isEmpty());
+        Library main;main.display.channel="First";main.display.resolution="1280x720";
+        main.production["workspaceProfile"]=QJsonObject{{"mode","studio"}};
+        ProgramItem secret;secret.id="only-in-main";main.programs={secret};QVERIFY(main.saveChecked());
+        std::unique_ptr<QDialog> manager(primary.manager(nullptr,&main));manager->show();
+        manager->findChild<QLineEdit*>("directoryChannelName")->setText("Stage Two");
+        manager->findChild<QPushButton*>("directoryAdd")->click();
+        auto *list=manager->findChild<QListWidget*>("channelDirectoryList");QCOMPARE(list->count(),2);
+        const auto id=list->currentItem()->data(Qt::UserRole).toString();
+        QVERIFY(!id.isEmpty() && id!="main");QCOMPARE(primary.list().value(id),QString("Stage Two"));
+        QVERIFY(manager->grab().save("artifacts/channel-directory.png"));
+        manager->hide();ChannelDirectory other(primaryPath,id);QString error;
+        QVERIFY(primary.shareOutput(true,main.display,&error));QVERIFY(other.shareOutput(true,main.display,&error));
+        qApp->setApplicationName(ChannelDirectory::profileName(id));
+        const QString secondaryPath=QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        QVERIFY(secondaryPath!=primaryPath);
+        auto launch=[&](QProcess &process,const QString &channel){
+            auto env=QProcessEnvironment::systemEnvironment();env.insert("CUEBASE_TEST_PROFILE",token);process.setProcessEnvironment(env);
+            QString exe=QCoreApplication::applicationDirPath()+"/Cuebase";
+#ifdef Q_OS_WIN
+            exe+=".exe";
+#endif
+            process.start(exe,{"--channel",channel,"-platform",QGuiApplication::platformName()});return process.waitForStarted(5000);
+        };
+        QProcess first,second;
+        auto stop=qScopeGuard([&]{for(auto *p:{&first,&second})if(p->state()!=QProcess::NotRunning){p->kill();p->waitForFinished(5000);}});
+        QVERIFY(launch(first,"main"));QVERIFY(launch(second,id));
+        auto ready=[&](const QString &path){
+            QLocalSocket probe;const QString name="cuebase-"+QString::fromLatin1(QCryptographicHash::hash(path.toUtf8(),QCryptographicHash::Sha256).toHex().left(32));
+            probe.connectToServer(name);return probe.waitForConnected(100);
+        };
+        QTRY_VERIFY_WITH_TIMEOUT(ready(primaryPath) && ready(secondaryPath),15000);
+        QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(secondaryPath+"/cuebase.json"),10000);
+        QProcess duplicate;QVERIFY(launch(duplicate,id));QVERIFY(duplicate.waitForFinished(7000));QCOMPARE(duplicate.exitCode(),0);
+        QCOMPARE(first.state(),QProcess::Running);QCOMPARE(second.state(),QProcess::Running);
+        auto display=[&](const QString &path){QFile f(path+"/cuebase.json");if(!f.open(QIODevice::ReadOnly))return QJsonObject{};
+            return QJsonDocument::fromJson(f.readAll()).object().value("display").toObject();};
+        auto change=main.display;change.resolution="1080x1920";change.fps=30;QVERIFY(primary.publishOutput(change,&error));
+        QTRY_COMPARE_WITH_TIMEOUT(display(primaryPath).value("resolution").toString(),change.resolution,8000);
+        QTRY_COMPARE_WITH_TIMEOUT(display(secondaryPath).value("resolution").toString(),change.resolution,8000);
+        QCOMPARE(display(secondaryPath).value("channel").toString(),QString("Stage Two"));
+        Library secondary;secondary.load();QVERIFY(secondary.programs.isEmpty());QVERIFY(secondary.elements.isEmpty());
+        QVERIFY(other.shareOutput(false,secondary.display,&error));change.resolution="1920x1080";QVERIFY(primary.publishOutput(change,&error));
+        QTRY_COMPARE_WITH_TIMEOUT(display(primaryPath).value("resolution").toString(),change.resolution,8000);
+        QCOMPARE(display(secondaryPath).value("resolution").toString(),QString("1080x1920"));
+        qApp->setApplicationName("Cuebase");Library loaded;loaded.load();QCOMPARE(loaded.programs.first().id,secret.id);QCOMPARE(loaded.display.channel,QString("First"));
+    }
     void renderedPitchTempoSidechainAndKeys(){
         QTemporaryDir temp;const auto voice=temp.filePath("voice.wav"),trigger=temp.filePath("trigger.wav");
         auto ffmpeg=[&](QStringList args){QProcess p;p.start(NetworkOutput::findEncoder(),QStringList{"-hide_banner","-loglevel","error"}+args);
             if(!p.waitForFinished(15000)||p.exitCode()!=0){qWarning()<<p.readAllStandardError();return QByteArray{};}return p.readAllStandardOutput();};
-        ffmpeg({"-f","lavfi","-i","sine=f=440:s=8000:d=2",voice});
+        ffmpeg({"-f","lavfi","-i","sine=f=440:r=8000:d=2",voice});
         ffmpeg({"-f","lavfi","-i",R"(aevalsrc=if(lt(t\,0.6)\,0\,0.9*sin(2*PI*200*t)):s=8000:d=1.4)",trigger});
         QVERIFY(QFileInfo(voice).size()>100);QVERIFY(QFileInfo(trigger).size()>100);
         auto samples=[&](QJsonObject effect){QString error;
