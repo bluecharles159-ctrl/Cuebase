@@ -91,6 +91,8 @@ private:
     int viewportWidth() const;
     void followPlayhead();
     void pauseFollowing();
+    void stepFrames(int count);
+    int m_stepWheelDelta = 0;
     QElapsedTimer m_glassClock;
     QTimer m_glassTimer;
     QString m_trimId;

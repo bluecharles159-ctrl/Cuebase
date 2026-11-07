@@ -309,14 +309,14 @@ void Playout::startMedia(const Segment &s, qint64 inSegmentMs) {
         const qint64 pos = s.offsetMs + inSegmentMs;
         if (m_player->source() == url) {
             // same file as before (e.g. the second half of a cut): just move within it
-            m_pendingSeek = -1;
+            m_pendingSeek = m_player->mediaStatus() == QMediaPlayer::LoadingMedia ? pos : -1;
             m_player->setPosition(pos);
-            m_player->play();
         } else {
             m_pendingSeek = pos;
             m_player->setSource(url);
-            m_player->play();
         }
+        if (m_state == Paused) m_player->pause();
+        else m_player->play();
     } else {
         m_pendingSeek = -1;
         m_player->stop();
@@ -327,7 +327,7 @@ void Playout::startMedia(const Segment &s, qint64 inSegmentMs) {
 
 void Playout::enter(qint64 inSegmentMs) {
     m_segElapsed = inSegmentMs;
-    if (m_state == Playing) startMedia(m_segs[m_index], inSegmentMs);
+    if (m_state != Stopped) startMedia(m_segs[m_index], inSegmentMs);
     emit segmentChanged();
 }
 
@@ -352,11 +352,15 @@ void Playout::start(int segment, qint64 inSegmentMs) {
 
 void Playout::jumpTo(int segment, qint64 inSegmentMs) {
     if (segment < 0 || segment >= m_segs.size()) return;
-    m_finishAfterReplay=false;if(m_replay&&m_replay->active())m_replay->cancel();
     if (m_state == Stopped) {
         start(segment, inSegmentMs);
         return;
     }
+    reposition(segment, inSegmentMs, Playing);
+}
+
+void Playout::reposition(int segment, qint64 inSegmentMs, State targetState) {
+    m_finishAfterReplay=false;if(m_replay&&m_replay->active())m_replay->cancel();
     // everything before the target program counts as played, everything from it on is queued again
     const int target = m_lib->programIndex(m_segs[segment].programId);
     for (int i = 0; i < m_lib->programs.size(); ++i) {
@@ -371,14 +375,15 @@ void Playout::jumpTo(int segment, qint64 inSegmentMs) {
         if(it.key().startsWith("program:"))it=m_manualCues.erase(it);else ++it;
     }
     inSegmentMs=qBound<qint64>(0,inSegmentMs,qint64(m_segs[segment].ms)-1);
-    const bool wasPaused = m_state == Paused;
-    m_state = Playing;
+    const bool changedState = m_state != targetState;
+    m_state = targetState;
     m_index = segment;
     m_total = m_starts[segment] + inSegmentMs;
     resetSounds();
     enter(qBound<qint64>(0, inSegmentMs, qint64(m_segs[segment].ms) - 1));
     syncSounds();
-    if (wasPaused) emit stateChanged();
+    if (changedState) emit stateChanged();
+    emit ticked();
 }
 
 void Playout::seekTo(qint64 timelineMs) {
@@ -390,7 +395,7 @@ void Playout::seekTo(qint64 timelineMs) {
         m_cueMs = m_starts[i] + off;
         emit ticked();
     } else {
-        jumpTo(i, off);
+        reposition(i, off, m_state);
     }
 }
 

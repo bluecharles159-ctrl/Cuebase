@@ -1,6 +1,6 @@
 # Cuebase completion counter
 
-Updated 2026-11-06. **49 of 84 tasks completed — 35 remaining.**
+Updated 2026-11-07. **51 of 84 tasks completed — 33 remaining.**
 
 The Claude transcript adds four distinct acceptance groups (81–84). Row 06 remains
 open: converted surfaces now retain their Inspector controls and unchanged
@@ -67,7 +67,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 - [ ] 39. Audio workspace: multiple sources, trim/split, pan, fades/crossfades, duplicate and automation.
 - [ ] 40. Sample-clock mixing, buses, synchronization, metering and high-quality audio export.
 - [x] 41. Reorderable/bypassable DSP chains: EQ, dynamics, filters, spatial/time/modulation effects (Build 61, stored asset chains, audition and processed-copy rendering).
-- [ ] 42. Pitch/time processing, stereo imaging, sidechain, presets and processor automation.
+- [x] 42. Pitch/time processing, stereo imaging, sidechain, presets and processor automation. Build 63 measured rendered tone frequencies, durations, gain-key changes and sidechain ducking, and exercised saving and reopening chain presets.
 - [ ] 43. RTMP/SRT sustained output, health/errors, recovery and public-destination validation.
 - [ ] 44. Audience metrics with real provider data and dashboard verification.
 
@@ -102,7 +102,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 
 - [x] 66. Studio-default onboarding, editing-only mode and production/channel details (Build 52, local profile; hosted authentication is row 67).
 - [ ] 67. Google/GitHub/email accounts and real cross-device login — Supabase deferred by user.
-- [ ] 68. One default channel, isolated channel data, multiple windows and optional shared settings.
+- [x] 68. One default channel, isolated local data, multiple windows and optional shared output settings. Build 63 launched two real channel processes, checked duplicate-open handling, independent libraries and channel identities, and verified propagation and opt-out. Cross-device accounts and syncing remain in 67 and 70.
 - [ ] 69. Secure device pairing, revocation, permissions and device-management interface.
 - [ ] 70. Multi-device document/media sync, concurrent roles, offline conflicts and change details.
 - [ ] 71. Shared team notes, assignments, reminders and production scheduling.

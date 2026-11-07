@@ -81,7 +81,7 @@ TimelineWidget::TimelineWidget(Playout *play, Library *lib, QWidget *parent)
     connect(lib, &Library::layersChanged, this, [this] { update(); });
     setMouseTracking(true);
     setAcceptDrops(true);
-    setFocusPolicy(Qt::StrongFocus);setToolTip("Wheel: zoom · middle-drag / Shift-wheel: pan · Alt-wheel: step playhead · Home: fit · F: reveal playhead");
+    setFocusPolicy(Qt::StrongFocus);setToolTip("Wheel: zoom · middle-drag / Shift-wheel: pan · Left / Right or Alt-wheel: step frame · Home: fit · F: reveal playhead");
     DragController::instance()->setTarget(this);
     relayout();
 }
@@ -570,7 +570,12 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
     p.setBrush(pc);
     p.drawRoundedRect(QRect(px - 6, kCapY, 12, 8), 2, 2);
     p.drawPolygon(QPolygon({QPoint(px - 6, kCapY + 6), QPoint(px + 6, kCapY + 6), QPoint(px, kCapY + 12)}));
-    if (grabbing) drawPill(p, px, formatDuration(int(xToMs(px) / 1000)), QColor("#ef4444"), width());
+    const bool overHead = m_hasHover && qAbs(m_hover.x()-px)<=7 && m_hover.y()>=kCapY && m_hover.y()<kMainTop;
+    if (grabbing || overHead) {
+        const qint64 ms=grabbing?xToMs(px):m_play->playheadMs();
+        const auto stamp=QString("%1:%2.%3").arg(ms/60000).arg(ms/1000%60,2,10,QChar('0')).arg(ms%1000,3,10,QChar('0'));
+        drawPill(p,px,stamp,pc,width());
+    }
 }
 
 // ---------------------------------------------------------------- mouse
@@ -808,15 +813,25 @@ void TimelineWidget::autoScroll(int localX) {
     else if (vx > vp->width() - 30) sb->setValue(sb->value() + 20);
 }
 
-// Shift + wheel (or a sideways wheel) scrolls the timeline; the plain wheel scrolls the page it sits in.
+void TimelineWidget::stepFrames(int count) {
+    if (!count || !m_play->totalMs()) return;
+    const double frameMs = 1000.0 * qMax(.001, m_lib->display.fpsBase) / qMax(1, m_lib->display.fps);
+    const qint64 currentFrame = qRound64(m_play->playheadMs() / frameMs);
+    const qint64 lastFrame = qFloor((m_play->totalMs() - 1) / frameMs);
+    const qint64 target = qBound<qint64>(0, currentFrame + count, lastFrame);
+    m_play->seekTo(qRound64(target * frameMs));
+}
+
 void TimelineWidget::wheelEvent(QWheelEvent *e) {
     if(e->modifiers()&Qt::AltModifier){
         const int delta=e->angleDelta().y()?e->angleDelta().y():e->angleDelta().x();
         if(!delta){e->ignore();return;}
-        const double frame=1000.*qMax(.001,m_lib->display.fpsBase)/qMax(1,m_lib->display.fps);
-        m_play->seekTo(qMax<qint64>(0,qRound64((qRound64(m_play->playheadMs()/frame)+(delta>0?1:-1))*frame)));
+        m_stepWheelDelta += delta;
+        stepFrames(m_stepWheelDelta / 120);
+        m_stepWheelDelta %= 120;
         e->accept();return;
     }
+    m_stepWheelDelta = 0;
     QScrollBar *sb = hbar();
     if(!(e->modifiers()&Qt::ShiftModifier)&&e->angleDelta().y()){
         const auto anchor=xToMs(e->position().x());const double viewportX=e->position().x()-(sb?sb->value():0);
@@ -836,6 +851,9 @@ void TimelineWidget::zoomView(double factor){auto *bar=hbar();int center=(bar?ba
 void TimelineWidget::fitView(){pauseFollowing();qint64 end=m_play->totalMs();for(const auto &p:m_lib->placements)end=qMax(end,p.startMs+p.lengthMs());m_pixelsPerSecond=qBound(.1,(viewportWidth()-30)/qMax(1.,end/1000.),800.);QSettings().setValue("studio/timelineScale",m_pixelsPerSecond);relayout();if(auto *bar=hbar())bar->setValue(qMax(0,m_originX-15));update();}
 void TimelineWidget::revealPlayhead(){m_followPaused=false;if(auto *bar=hbar())bar->setValue(qMax(0,playheadX()-viewportWidth()/2));emit navigationChanged();update();}
 void TimelineWidget::keyPressEvent(QKeyEvent *e){
+    if(e->modifiers()==Qt::NoModifier && (e->key()==Qt::Key_Left || e->key()==Qt::Key_Right)){
+        stepFrames(e->key()==Qt::Key_Right?1:-1);e->accept();return;
+    }
     if(e->key()==Qt::Key_C&&e->modifiers()==Qt::NoModifier&&!e->isAutoRepeat()){
         int segment,seconds,x;if(cutTarget(&segment,&seconds,&x)){emit cutRequested(m_play->segments()[segment].programId,seconds);e->accept();return;}
     }

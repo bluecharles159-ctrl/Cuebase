@@ -1,6 +1,15 @@
-# Verification — updated 2026-11-05
+# Verification — updated 2026-11-07
 
 ## Latest verified checkpoint
+
+Build 63 launched separate channel windows and verified private library data,
+duplicate-open handling and opt-in output format sharing. Native audio tests
+measured semitone pitch shifts, independent tempo, keyed gain and sidechain
+ducking in decoded samples.
+[Windows ZIP](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42333206318/artifacts/13557618934)
+and [test reports and screenshots](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42333206318/artifacts/13557688761).
+
+## Build 61
 
 Build 61 auditioned a chain on an imported stereo asset, reordered its effects,
 bypassed the EQ and reopened the saved chain. The eight-processor render included

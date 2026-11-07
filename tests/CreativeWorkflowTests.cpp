@@ -513,6 +513,9 @@ private slots:
         cueButton->click();
         auto *dialog = workspace.findChild<QDialog*>("cueRangeDialog");
         QVERIFY(dialog);
+        QVERIFY(dialog->windowFlags().testFlag(Qt::FramelessWindowHint));
+        QCOMPARE(dialog->windowModality(),Qt::WindowModal);
+        QVERIFY(dialog->grab().save("artifacts/build-animation-cue-dialog.png"));
         QCOMPARE(model->cueRangeStart,qint64(920));
         QCOMPARE(model->cueRangeEnd,qint64(1280));
         QVERIFY(graph.grab().save("artifacts/selected-cue-range.png"));

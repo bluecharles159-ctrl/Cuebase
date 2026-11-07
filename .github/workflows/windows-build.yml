@@ -84,7 +84,7 @@ jobs:
           build-cloud/CuebaseStreamTests.exe -platform windows duplicateTrimAndExtendCuePlacement nestedBoardNavigationEditsAndDelayedPlacement livePlacementEditorProtectsIndividualPlays chooseWorkspaceAtFirstLaunchAndSwitchInSettings scheduleAndBroadcastSplitLayouts -o native-cue-board-results.txt,txt || test_status=$?
           build-cloud/CuebaseStreamTests.exe -platform windows plannerCardFormattingAndSharedConnections plannerMediaRecoveryAndPreview plannerSourceGesturesKeepPlayingEntry planningPreviewIsolation planningSurvivesCrewEdit planningRecoveryPreservesOriginal -o native-planner-results.txt,txt || test_status=$?
           build-cloud/CuebaseStreamTests.exe -platform windows auditionAndReopenAudioEffectChain renderedPitchTempoSidechainAndKeys studioAudioMeterAndWheelFader privatePreviewPreservesLivePicture scrubDuringAnAdKeepsTheProgramInPrivatePreview editableStandbyErrorsAndLoopedVideo continuityOverrideAndReturn -o native-monitor-results.txt,txt || test_status=$?
-          build-cloud/CuebaseStreamTests.exe -platform windows separateChannelWindowsAndSharedFormat -o native-channel-results.txt,txt || test_status=$?
+          build-cloud/CuebaseStreamTests.exe -platform windows separateChannelWindowsAndSharedFormat fixedCenterTimeline -o native-channel-and-timeline-results.txt,txt || test_status=$?
           exit "$test_status"
       - name: Stage and verify the portable runtime
         env:
@@ -123,7 +123,7 @@ jobs:
             native-creative-results.txt
             native-planner-results.txt
             native-monitor-results.txt
-            native-channel-results.txt
+            native-channel-and-timeline-results.txt
             native-cue-board-results.txt
             artifacts/
             .delivery/**/verification/

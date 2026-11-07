@@ -123,6 +123,7 @@ private:
     };
 
     void enter(qint64 inSegmentMs = 0);
+    void reposition(int segment, qint64 inSegmentMs, State targetState);
     void advance();
     void finishAll();
     void markFinished(const QString &programId);

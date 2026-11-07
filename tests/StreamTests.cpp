@@ -559,6 +559,20 @@ private slots:
         lib.display.fps=30;lib.display.fpsBase=1.001;play.seekTo(0);
         QWheelEvent step(QPointF(100,10),timeline->mapToGlobal(QPoint(100,10)),{},QPoint(0,120),Qt::NoButton,Qt::AltModifier,Qt::NoScrollPhase,false);
         QApplication::sendEvent(timeline,&step);QCOMPARE(play.playheadMs(),qint64(33));
+        QCOMPARE(play.state(),Playout::Paused);
+        auto wheel=[&](int delta){
+            QWheelEvent event(QPointF(100,10),timeline->mapToGlobal(QPoint(100,10)),{},QPoint(0,delta),
+                              Qt::NoButton,Qt::AltModifier,Qt::NoScrollPhase,false);
+            QApplication::sendEvent(timeline,&event);
+        };
+        wheel(60);QCOMPARE(play.playheadMs(),qint64(33));
+        wheel(60);QCOMPARE(play.playheadMs(),qint64(67));
+        wheel(240);QCOMPARE(play.playheadMs(),qint64(133));
+        QTest::keyClick(timeline,Qt::Key_Left);QCOMPARE(play.playheadMs(),qint64(100));
+        QTest::qWait(100);QCOMPARE(play.playheadMs(),qint64(100));QVERIFY(centered());
+        play.seekTo(119000);QTest::keyClick(timeline,Qt::Key_Right);QVERIFY(centered());
+        play.stop();QTest::keyClick(timeline,Qt::Key_Left);QCOMPARE(play.state(),Playout::Stopped);
+        play.seekTo(0);QTest::keyClick(timeline,Qt::Key_Left);QCOMPARE(play.playheadMs(),qint64(0));
         const auto unchanged=play.playheadMs();timeline->fitView();QVERIFY(!timeline->followingPlayhead());QCOMPARE(play.playheadMs(),unchanged);
         timeline->setFixedPlayhead(false);QCOMPARE(timeline->blockX(0),10);TimelineWidget restored(&play,&lib);QVERIFY(!restored.fixedPlayhead());
         timeline->setFixedPlayhead(true);QSettings().setValue("studio/timelineScale",14.);play.stop();
@@ -862,6 +876,17 @@ private slots:
         auto *delay = page->findChild<QDoubleSpinBox*>("cueRenderDelay");
         auto *render = page->findChild<QPushButton*>("renderCueBoard");
         QVERIFY(list && enter && back && fields && editor && repeats && delay && render);
+        page->findChild<QPushButton*>("addBoardCue")->click();
+        auto *picker=page->findChild<QDialog*>("cuePicker");
+        QVERIFY(picker && picker->windowFlags().testFlag(Qt::FramelessWindowHint));
+        auto *search=picker->findChild<QLineEdit*>();
+        auto *addCue=picker->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Ok);
+        QVERIFY(search && addCue && addCue->isEnabled());
+        search->setText("absent-label");
+        QVERIFY(!addCue->isEnabled());
+        search->clear();QVERIFY(addCue->isEnabled());
+        QVERIFY(picker->grab().save("artifacts/studio-cue-picker.png"));
+        picker->reject();QCOMPARE(list->count(),2);
         list->setCurrentRow(0);
         QVERIFY(enter->isVisible());
         enter->click();
