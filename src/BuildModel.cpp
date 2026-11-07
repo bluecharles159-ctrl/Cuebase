@@ -423,7 +423,7 @@ void BuildModel::setProps(const QString &id, const DProps &p) {
         if(!children.isEmpty()){
             // A singular parent cannot be counter-transformed to hold a child in place.
             bool invertible=false;
-            (design.parentMatrix(*o,t)*matrixOf(p)).inverted(&invertible);
+            (design.parentMatrix(*o,t)*ElementDesign::matrixOf(p)).inverted(&invertible);
             if(!invertible)return;
         }
         for (const auto &path : transformChannels()) {
