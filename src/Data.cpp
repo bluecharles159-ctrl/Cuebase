@@ -111,40 +111,54 @@ Placement *Library::placement(const QString &id) {
 // ---- timeline editing -------------------------------------------------------
 
 QString Library::cutProgram(const QString &id, int atSec, bool slot) {
+    return splitProgramAtMs(id,qint64(atSec)*1000,slot);
+}
+
+bool Library::saveCutEdit(QList<ProgramItem> replacement,QString *error) {
+    programs.swap(replacement);
+    if(saveChecked(error))return true;
+    programs.swap(replacement);
+    return false;
+}
+
+QString Library::splitProgramAtMs(const QString &id,qint64 atMs,bool slot,QString *error){
     const int i = programIndex(id);
-    if (i < 0) return {};
-    ProgramItem b = programs[i];
-    if (b.isAdSpot() || !b.elementId.isEmpty() || atSec < 1 || qint64(atSec)*1000 >= b.lengthMs()) return {};
-    m_cutUndo.append(programs);if(m_cutUndo.size()>100)m_cutUndo.removeFirst();m_cutRedo.clear();
+    if(i<0 || atMs<1 || atMs>=programs[i].lengthMs() || programs[i].offsetMs+atMs>2147483647){
+        if(error)*error="Choose a frame inside the item.";
+        return {};
+    }
+    const auto before=programs;
+    auto next=programs;
+    auto &first=next[i];
+    if(first.cutSourceId.isEmpty())first.cutSourceId=first.id;
+    if(first.splitClockOrigin<0 && !first.splitShots.isEmpty())first.splitClockOrigin=first.offsetMs;
+    auto second=first;
+    second.id=newId();
+    second.durationMs=first.lengthMs()-atMs;
+    second.seconds=int((second.durationMs+999)/1000);
+    second.offsetMs+=int(atMs);
+    first.durationMs=atMs;
+    first.seconds=int((atMs+999)/1000);
+    if(!first.isAdSpot())first.adId.clear();
+    first.breakIn.clear();first.breakOut.clear();
+    first.slotAfter=slot;
+    next.insert(i+1,second);
+    if(!saveCutEdit(next,error))return {};
+    m_cutUndo.append(before);if(m_cutUndo.size()>100)m_cutUndo.removeFirst();m_cutRedo.clear();
     QScopedValueRollback<bool> transaction(m_cutEdit,true);
-
-    // second half: the rest of the media, keeps the ad and breaks and any "+" that was after the program
-    b.id = newId();
-    b.durationMs=programs[i].lengthMs()-qint64(atSec)*1000;
-    b.seconds=int((b.durationMs+999)/1000);
-    b.offsetMs = programs[i].offsetMs + atSec * 1000;
-
-    // first half: plays up to the cut, no ad or breaks, a "+" sits after it
-    ProgramItem &a = programs[i];
-    a.seconds = atSec;a.durationMs=qint64(atSec)*1000;
-    a.adId.clear();
-    a.breakIn.clear();
-    a.breakOut.clear();
-    a.slotAfter = slot;
-
-    const QString newId2 = b.id;
-    programs.insert(i + 1, b);
-    commitPrograms();
-    return newId2;
+    emit programsChanged();
+    return second.id;
 }
 
 bool Library::undoProgramCut(){
     if(m_cutUndo.isEmpty())return false;QScopedValueRollback<bool> transaction(m_cutEdit,true);
-    m_cutRedo.append(programs);programs=m_cutUndo.takeLast();commitPrograms();return true;
+    const auto before=programs;if(!saveCutEdit(m_cutUndo.last()))return false;
+    m_cutUndo.removeLast();m_cutRedo.append(before);emit programsChanged();return true;
 }
 bool Library::redoProgramCut(){
     if(m_cutRedo.isEmpty())return false;QScopedValueRollback<bool> transaction(m_cutEdit,true);
-    m_cutUndo.append(programs);programs=m_cutRedo.takeLast();commitPrograms();return true;
+    const auto before=programs;if(!saveCutEdit(m_cutRedo.last()))return false;
+    m_cutRedo.removeLast();m_cutUndo.append(before);emit programsChanged();return true;
 }
 void Library::insertAfter(const QString &afterId, ProgramItem item) {
     if (item.id.isEmpty()) item.id = newId();
@@ -248,6 +262,7 @@ void Library::load() {
         p.replayInEffect=j["replayInEffect"].toString("preset:Fade");p.replayOutEffect=j["replayOutEffect"].toString("preset:Fade");
         p.splitShots=j["splitShots"].toArray();
         p.splitClockOrigin=j["splitClockOrigin"].toInt(-1);
+        p.cutSourceId=j["cutSourceId"].toString();
         p.seconds = j["seconds"].toInt(60);
         p.durationMs=qint64(qBound(0.,j["durationMs"].toDouble(),2147483647.));p.elementId=j["elementId"].toString();
         p.offsetMs = j["offsetMs"].toInt(0);
@@ -349,7 +364,7 @@ bool Library::saveChecked(QString *error) const {
                               {"adId", p.adId}, {"breakIn", p.breakIn}, {"breakOut", p.breakOut},
                               {"replayInEffect",p.replayInEffect},{"replayOutEffect",p.replayOutEffect},
                               {"splitShots",p.splitShots},
-                              {"splitClockOrigin",p.splitClockOrigin},
+                              {"splitClockOrigin",p.splitClockOrigin},{"cutSourceId",p.cutSourceId},
                               {"seconds", p.seconds}, {"durationMs",double(p.durationMs)}, {"elementId",p.elementId}, {"offsetMs", p.offsetMs}, {"slotAfter", p.slotAfter},
                               {"description", p.description}, {"image", p.image}, {"fx", fxToJson(p.fx)}});
     for (const Ad &a : ads)

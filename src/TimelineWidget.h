@@ -45,7 +45,7 @@ public:
 
 signals:
     void segmentClicked(int index);
-    void cutRequested(const QString &programId, int atSec);
+    void cutRequested(const QString &programId, qint64 atMs);
     void addRequested(const QString &afterProgramId, const QPoint &globalPos);
     void spotRemoveRequested(const QString &spotId);
     void placementRemoveRequested(const QString &id);
@@ -112,7 +112,7 @@ private:
     int laneAt(const QPoint &pos) const;              // extra lane under pos (1..3), 0 if none
     void notifyHeight();
     int blockAt(const QPoint &pos) const;             // main-lane block under pos, -1 if none
-    bool cutTarget(int *segment, int *atSec, int *lineX) const;
+    bool cutTarget(int *segment, qint64 *atMs, int *lineX) const;
     bool overScissors(const QPoint &pos) const;
     const PBlock *hitPlacement(const QPoint &pos) const;
     const Slot *hitSlot(const QPoint &pos) const;

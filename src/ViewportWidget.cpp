@@ -491,7 +491,8 @@ void ViewportWidget::drawScreen(QPainter &p, const QRect &r, const View &v, bool
     p.fillRect(r, Qt::black);
     if(!seg&&!guides)return;
     p.save();
-    if (seg && seg->type != Segment::Break) applyFx(p, r, transitionAt(seg->fx, v.segElapsed, seg->ms));
+    if (seg && seg->type != Segment::Break)
+        applyFx(p,r,transitionAt(seg->fx,seg->transitionOffsetMs+v.segElapsed,seg->transitionDurationMs>0?seg->transitionDurationMs:seg->ms));
     const bool split=drawSplitLayout(p,r,v);
     if (split) {
         // Panes replace the program picture. The channel graphics below stay full-screen.

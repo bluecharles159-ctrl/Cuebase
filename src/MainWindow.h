@@ -59,7 +59,7 @@ private:
     static QString comboText(QKeyEvent *e);
 
     // timeline editing
-    void onCut(const QString &programId, int atSec);
+    void onCut(const QString &programId, qint64 atMs);
     void showAddMenu(const QString &afterId, const QPoint &globalPos);
     void onAddChosen(const QString &what, const QString &afterId);
     void chooseSound(const QString &afterId);

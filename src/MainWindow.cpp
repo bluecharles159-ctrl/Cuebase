@@ -899,13 +899,14 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *e) {
 
 // -------------------------------------------------------- timeline editing
 
-void MainWindow::onCut(const QString &programId, int atSec) {
+void MainWindow::onCut(const QString &programId,qint64 atMs) {
     const ProgramItem *p = m_lib->program(programId);
     if (!p) return;
     const QString title = p->title;
-    const qint64 at = m_play->programStartMs(programId) + qint64(atSec) * 1000;
-    if (m_lib->cutProgram(programId, atSec, true).isEmpty()) {
-        report("Can't cut there");
+    const qint64 at = m_play->programStartMs(programId) + atMs;
+    QString error;
+    if (m_lib->splitProgramAtMs(programId,atMs,true,&error).isEmpty()) {
+        report(error);
         return;
     }
     report(QString("Cut \u201c%1\u201d at %2. Press + to add something in between").arg(title, clockText(at)));

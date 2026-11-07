@@ -36,7 +36,12 @@ LayerPanel::LayerPanel(BuildModel *model,QWidget *parent):QTreeWidget(parent),m(
     setStyleSheet("QTreeWidget{background:palette(window);color:palette(text);border:0;font-size:10px;} QTreeWidget::item{height:23px;} QTreeWidget::item:selected{background:palette(highlight);color:palette(highlighted-text);} QHeaderView::section{background:palette(button);color:palette(button-text);border:0;padding:4px;font-size:10px;}");
     setSelectionMode(QAbstractItemView::ExtendedSelection);setDragDropMode(QAbstractItemView::InternalMove);
     setDefaultDropAction(Qt::MoveAction);setEditTriggers(QAbstractItemView::EditKeyPressed);
-    setMinimumWidth(175);setMaximumWidth(260);header()->setSectionResizeMode(0,QHeaderView::Stretch);setColumnWidth(1,26);setColumnWidth(2,26);
+    setMinimumWidth(218);setMaximumWidth(300);
+    header()->setStretchLastSection(false);
+    header()->setMinimumSectionSize(20);
+    header()->setSectionResizeMode(0,QHeaderView::Stretch);
+    for(int col:{1,2,3})header()->setSectionResizeMode(col,QHeaderView::Fixed);
+    setColumnWidth(1,22);setColumnWidth(2,22);setColumnWidth(3,42);
     headerItem()->setIcon(1,uiIcon("eye"));headerItem()->setIcon(2,uiIcon("lock"));
     setContextMenuPolicy(Qt::CustomContextMenu);
     connect(this,&QWidget::customContextMenuRequested,this,[this](const QPoint &point){
@@ -80,7 +85,7 @@ void LayerPanel::refresh(){
                 item->setToolTip(3,OverlapLayers::label(z)+" · G then Z to change overlap");
             }
             const bool component=!o.style["component.id"].toString().isEmpty();item->setIcon(0,uiIcon(component?"component":o.type));item->setIcon(1,uiIcon(o.visible?"eye":"hidden",o.visible));item->setIcon(2,uiIcon(o.locked?"lock":"unlock",o.locked));
-            item->setToolTip(0,o.type+" · F2 to rename · Ctrl+P to parent to the active layer");item->setToolTip(1,o.visible?"Hide layer":"Show layer");item->setToolTip(2,o.locked?"Unlock layer":"Lock layer");
+            item->setToolTip(0,o.name+" · "+o.type+" · F2 to rename · Ctrl+P to parent to the active layer");item->setToolTip(1,o.visible?"Hide layer":"Show layer");item->setToolTip(2,o.locked?"Unlock layer":"Lock layer");
             if(component)item->setToolTip(0,o.style["component.role"].toString()+" · "+o.type+" · / opens Components");
         }
         for(const auto &o:m->design.objects){if(o.type=="Audio")continue;auto *item=items[o.id];QSet<QString> seen{o.id};auto *parent=m->byId(o.parentId);bool cycle=false;

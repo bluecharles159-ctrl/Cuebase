@@ -176,6 +176,7 @@ private slots:
         auto *panel=workspace.findChild<QWidget*>("buildLayersPanel");
         QVERIFY(panel && panel->isVisible());
         QTest::qWait(40);
+        QVERIFY(tree->columnWidth(0)>=120);
         QVERIFY(workspace.grab().save("artifacts/build-layers-workspace.png"));
         QVERIFY(panel->grab().save("artifacts/build-layers-detail.png"));
     }

@@ -42,6 +42,10 @@ constexpr int kLaneGap = 4;
 constexpr int kBadge = 13;                                  // scissors badge radius
 constexpr int kSlotR = 10;                                  // "+" radius
 
+QString clockStamp(qint64 ms){
+    return QString("%1:%2.%3").arg(ms/60000).arg(ms/1000%60,2,10,QChar('0')).arg(ms%1000,3,10,QChar('0'));
+}
+
 void drawPill(QPainter &p, int cx, const QString &text, const QColor &bg, int viewW) {
     QFont f;
     f.setPixelSize(11);
@@ -226,7 +230,7 @@ const TimelineWidget::Slot *TimelineWidget::hitSlot(const QPoint &pos) const {
 }
 
 // The cut tool: the program under the cursor, where it would be cut, and where the line is drawn.
-bool TimelineWidget::cutTarget(int *segment, int *atSec, int *lineX) const {
+bool TimelineWidget::cutTarget(int *segment, qint64 *atMs, int *lineX) const {
     if (!m_hasHover || m_drag != Drag::None || m_blocks.isEmpty()) return false;
     if (m_hover.y() < kMainTop || m_hover.y() > kMainTop + mainHeight()) return false;
     if (hitSlot(m_hover)) return false;
@@ -235,13 +239,14 @@ bool TimelineWidget::cutTarget(int *segment, int *atSec, int *lineX) const {
         const Block &b = m_blocks[i];
         if (m_hover.x() > b.x + 2 && m_hover.x() < b.x + b.w - 2) {
             const Segment &s = segs[i];
-            const int secs = s.ms / 1000;
-            if (s.type != Segment::Program || s.spot || secs < 2) return false;
-            const double f = double(m_hover.x() - b.x) / b.w;
-            const int at = qBound(1, qRound(f * secs), secs - 1);
-            *segment = i;
-            *atSec = at;
-            *lineX = b.x + int(double(b.w) * at / secs);
+            if(s.type!=Segment::Program && !s.spot)return false;
+            const double frame=1000.*qMax(.001,m_lib->display.fpsBase)/qMax(1,m_lib->display.fps);
+            const qint64 snapped=qRound64(qRound64(xToMs(m_hover.x())/frame)*frame);
+            const qint64 at=snapped-m_play->segmentStartMs(i);
+            if(at<=0 || at>=s.ms)return false;
+            *segment=i;
+            *atMs=at;
+            *lineX=msToX(snapped);
             return true;
         }
     }
@@ -249,7 +254,7 @@ bool TimelineWidget::cutTarget(int *segment, int *atSec, int *lineX) const {
 }
 
 bool TimelineWidget::overScissors(const QPoint &pos) const {
-    int seg, at, lx;
+    int seg,lx;qint64 at;
     if (!cutTarget(&seg, &at, &lx)) return false;
     return QLineF(pos, QPointF(lx, kMainTop + 12)).length() <= kBadge;
 }
@@ -542,8 +547,8 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
     if(m_dropLane>0&&m_hasHover){qint64 length=1000;if(m_cand.kind=="element"){if(const auto *element=m_lib->element(m_cand.id))length=element->lengthMs();}else if(m_cand.kind=="placement"){if(const auto *clip=m_lib->placement(m_cand.id))length=clip->lengthMs();}else if(const auto *program=m_lib->program(m_cand.id))length=program->lengthMs();
         QRect target(msToX(m_dropMs),laneY(m_dropLane)+1,qMax(2,msToX(m_dropMs+length)-msToX(m_dropMs)),kLaneH-3);p.setPen(QPen(QColor("#8bbcf0"),1,Qt::DashLine));p.setBrush(QColor(99,155,215,65));p.drawRoundedRect(target,3,3);p.setPen(Qt::white);p.drawText(target.adjusted(5,0,-3,0),Qt::AlignVCenter,m_cand.label);}
     // ---- the cut tool: dashed line through the program and a scissors in the middle of it
-    int cutSeg, cutSec, cutX;
-    if (!DragController::instance()->active() && cutTarget(&cutSeg, &cutSec, &cutX)) {
+    int cutSeg,cutX;qint64 cutMs;
+    if (!DragController::instance()->active() && cutTarget(&cutSeg, &cutMs, &cutX)) {
         p.setPen(QPen(QColor(255, 255, 255, 85), 1, Qt::DashLine));
         p.drawLine(cutX, kMainTop - 2, cutX, kMainTop + mainHeight() + 2);
         const QPointF c(cutX, kMainTop + 12);
@@ -553,7 +558,7 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
         p.setFont(sf);
         p.setPen(QColor(255,255,255,hot?255:155));
         p.drawText(QRectF(c.x() - kBadge, c.y() - kBadge, kBadge * 2, kBadge * 2), Qt::AlignCenter, QString(QChar(0x2702)));
-        drawPill(p, cutX, formatDuration(int((m_play->segmentStartMs(cutSeg) + qint64(cutSec) * 1000) / 1000)),
+        drawPill(p, cutX, clockStamp(m_play->segmentStartMs(cutSeg)+cutMs),
                  QColor("#475569"), width());
     }
 
@@ -575,8 +580,7 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
     const bool overHead = m_hasHover && qAbs(m_hover.x()-px)<=7 && m_hover.y()>=kCapY && m_hover.y()<kMainTop;
     if (grabbing || overHead) {
         const qint64 ms=grabbing?xToMs(px):m_play->playheadMs();
-        const auto stamp=QString("%1:%2.%3").arg(ms/60000).arg(ms/1000%60,2,10,QChar('0')).arg(ms%1000,3,10,QChar('0'));
-        drawPill(p,px,stamp,pc,width());
+        drawPill(p,px,clockStamp(ms),pc,width());
     }
 }
 
@@ -617,9 +621,9 @@ void TimelineWidget::mousePressEvent(QMouseEvent *e) {
     m_candSeg = -1;
 
     // 1. scissors: cut the program here
-    int cutSeg, cutSec, cutX;
-    if (cutTarget(&cutSeg, &cutSec, &cutX) && overScissors(pos)) {
-        emit cutRequested(m_play->segments()[cutSeg].programId, cutSec);
+    int cutSeg,cutX;qint64 cutMs;
+    if (cutTarget(&cutSeg, &cutMs, &cutX) && overScissors(pos)) {
+        emit cutRequested(m_play->segments()[cutSeg].programId, cutMs);
         return;
     }
     // 2. "+" between the two halves of a cut
@@ -857,7 +861,7 @@ void TimelineWidget::keyPressEvent(QKeyEvent *e){
         stepFrames(e->key()==Qt::Key_Right?1:-1);e->accept();return;
     }
     if(e->key()==Qt::Key_C&&e->modifiers()==Qt::NoModifier&&!e->isAutoRepeat()){
-        int segment,seconds,x;if(cutTarget(&segment,&seconds,&x)){emit cutRequested(m_play->segments()[segment].programId,seconds);e->accept();return;}
+        int segment,x;qint64 atMs;if(cutTarget(&segment,&atMs,&x)){emit cutRequested(m_play->segments()[segment].programId,atMs);e->accept();return;}
     }
     if(e->key()==Qt::Key_Home){fitView();e->accept();}else if(e->key()==Qt::Key_F){revealPlayhead();e->accept();}else QWidget::keyPressEvent(e);
 }

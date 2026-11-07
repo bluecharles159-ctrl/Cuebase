@@ -29,6 +29,8 @@ struct Segment {
     int offsetMs = 0;            // where in the media file this piece starts
     bool spot = false;           // a standalone ad spot (can be dragged on the timeline)
     Transition fx;               // how it moves in and out
+    QString cutSourceId;
+    qint64 transitionOffsetMs=0,transitionDurationMs=0;
 };
 
 // The playout engine: turns the program planner into a timeline and plays it.

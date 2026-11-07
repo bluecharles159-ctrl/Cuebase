@@ -73,6 +73,10 @@ qint64 Playout::breakCountdownMs() const {
 bool Playout::continues(int i) const {
     if (i < 0 || i + 1 >= m_segs.size()) return false;
     const Segment &a = m_segs[i], &b = m_segs[i + 1];
+    if(!a.cutSourceId.isEmpty() || !b.cutSourceId.isEmpty()){
+        return !a.cutSourceId.isEmpty() && a.cutSourceId==b.cutSourceId && a.type==b.type &&
+               a.file==b.file && qint64(a.offsetMs)+a.ms==b.offsetMs;
+    }
     return a.type == Segment::Program && b.type == Segment::Program && !a.spot && !b.spot && !a.file.isEmpty() &&
            a.file == b.file && b.offsetMs == a.offsetMs + a.ms;
 }
@@ -198,6 +202,7 @@ void Playout::rebuild() {
     Segment::Type keyType = Segment::Program;
     int keyPart = 0;
     const bool had = isLive() && m_index >= 0 && m_index < m_segs.size();
+    const auto previousTime=had?timelinePosMs():0;
     if (had) {
         keyId = m_segs[m_index].programId;
         keyType = m_segs[m_index].type;
@@ -225,6 +230,7 @@ void Playout::rebuild() {
             a.file = spotAd ? spotAd->file : QString();
             a.ms = length(p);
             a.offsetMs=p.offsetMs;
+            a.cutSourceId=p.cutSourceId;
             a.fx = spotAd ? spotAd->fx : Transition();
             m_segs << a;
             continue;
@@ -239,6 +245,7 @@ void Playout::rebuild() {
         s.offsetMs = p.offsetMs;
         s.ms = length(p);
         s.fx = p.fx;
+        s.cutSourceId=p.cutSourceId;
         if(!p.elementId.isEmpty()){s.kind="Screen element";s.spot=true;}
         if(!p.elementId.isEmpty()||(planning&&p.kind=="Plan element"))if(const auto *element=m_lib->element(p.elementId.isEmpty()?p.breakIn:p.elementId);element&&element->type=="Break"){
             s.type=Segment::Break;s.color=element->color;s.text=element->text;
@@ -289,9 +296,30 @@ void Playout::rebuild() {
         w += blockWidth(s);
     }
     m_unitStarts << w;
+    for(int first=0;first<m_segs.size();){
+        int next=first+1;
+        if(!m_segs[first].cutSourceId.isEmpty())
+            while(next<m_segs.size() && continues(next-1))++next;
+        const qint64 duration=m_starts[next-1]+m_segs[next-1].ms-m_starts[first];
+        for(int j=first;j<next;++j){
+            m_segs[j].transitionOffsetMs=m_starts[j]-m_starts[first];
+            m_segs[j].transitionDurationMs=duration;
+        }
+        first=next;
+    }
     m_cueMs = qBound<qint64>(0, m_cueMs, qMax<qint64>(0, m_totalMs - 1));
 
-    if (had) {
+    bool cutMovedSegment=false;
+    if(had && m_lib->applyingCut()){
+        const auto target=segmentAtMs(previousTime,&m_segElapsed);
+        if(target>=0){
+            m_index=target;
+            const auto &newId=m_segs[target].programId;
+            cutMovedSegment=newId!=keyId;
+            if(cutMovedSegment && m_manualCues.contains("program:"+keyId))
+                m_manualCues.insert("program:"+newId,m_manualCues.take("program:"+keyId));
+        }
+    }else if (had) {
         int found = -1;
         for (int i = 0; i < m_segs.size(); ++i)
             if (m_segs[i].programId == keyId && m_segs[i].type == keyType && m_segs[i].part == keyPart) found = i;
@@ -299,6 +327,7 @@ void Playout::rebuild() {
         else stop();
     }
     emit segmentsChanged();
+    if(cutMovedSegment)emit segmentChanged();
 }
 
 // ------------------------------------------------------------------ media

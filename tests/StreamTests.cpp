@@ -433,8 +433,49 @@ private slots:
     }
     void hoverCutUsesProgramHistory(){
         Library library;ProgramItem program;program.id="hover-cut";program.title="Cut me";program.seconds=8;library.programs={program};Playout play(&library);TimelineWidget timeline(&play,&library);timeline.resize(800,240);timeline.show();QTest::qWait(20);
-        QSignalSpy cuts(&timeline,&TimelineWidget::cutRequested);connect(&timeline,&TimelineWidget::cutRequested,&library,[&](const QString &id,int seconds){library.cutProgram(id,seconds);});
+        QSignalSpy cuts(&timeline,&TimelineWidget::cutRequested);connect(&timeline,&TimelineWidget::cutRequested,&library,[&](const QString &id,qint64 ms){library.splitProgramAtMs(id,ms);});
         QTest::mouseMove(&timeline,QPoint(timeline.blockX(0)+timeline.blockW(0)/2,50));QTest::keyClick(&timeline,Qt::Key_C);QCOMPARE(cuts.size(),1);QCOMPARE(library.programs.size(),2);QVERIFY(library.undoProgramCut());QCOMPARE(library.programs.size(),1);QVERIFY(library.redoProgramCut());QCOMPARE(library.programs.size(),2);
+    }
+    void exactMainTrackCutsPreservePlayout(){
+        const auto old=qApp->applicationName();qApp->setApplicationName(old+"-exact-cuts");
+        auto reset=qScopeGuard([&]{qApp->setApplicationName(old);});
+        Library library;
+        Ad ad;ad.id="sponsor";ad.seconds=2;library.ads={ad};
+        Element id;id.id="ident";id.type="Custom";id.design=ElementDesign::defaultScene().toJson();library.elements={id};
+        ProgramItem show;show.id="show";show.offsetMs=120;show.durationMs=2510;show.adId=ad.id;
+        show.fx.in="Fade";show.fx.out="Fade";show.fx.inMs=400;show.fx.outMs=650;
+        ProgramItem spot;spot.id="spot";spot.kind="Ad";spot.adId=ad.id;spot.durationMs=910;
+        ProgramItem graphic;graphic.id="graphic";graphic.elementId=id.id;graphic.durationMs=1200;
+        library.programs={show,spot,graphic};
+        Playout play(&library);
+        const auto length=play.totalMs();
+        play.start(0,2440);play.togglePause();
+        const auto second=library.splitProgramAtMs(show.id,834);
+        QVERIFY(!second.isEmpty());QCOMPARE(play.playheadMs(),qint64(2440));QCOMPARE(play.state(),Playout::Paused);
+        QCOMPARE(play.current()->programId,second);QCOMPARE(play.current()->offsetMs,954);
+        QCOMPARE(play.current()->offsetMs+play.segmentElapsed(),qint64(2560));
+        QCOMPARE(play.totalMs(),length);
+        const auto *part=play.current();
+        QCOMPARE(transitionAt(part->fx,part->transitionOffsetMs+play.segmentElapsed(),part->transitionDurationMs).opacity,
+                 transitionAt(show.fx,2440,2510).opacity);
+        QCOMPARE(library.programs[0].adId,QString());QCOMPARE(library.programs[1].adId,ad.id);
+        QVERIFY(library.undoProgramCut());QCOMPARE(play.current()->programId,show.id);QCOMPARE(play.playheadMs(),qint64(2440));
+        QVERIFY(library.redoProgramCut());QCOMPARE(play.current()->programId,second);
+        const auto adPart=library.splitProgramAtMs(spot.id,200);
+        const auto graphicPart=library.splitProgramAtMs(graphic.id,680);
+        QVERIFY(!adPart.isEmpty() && !graphicPart.isEmpty());QCOMPARE(play.totalMs(),length);
+        Library reopened;reopened.load();Playout restored(&reopened);
+        QCOMPARE(reopened.program(adPart)->adId,ad.id);QCOMPARE(reopened.program(graphicPart)->elementId,id.id);
+        QCOMPARE(reopened.program(second)->cutSourceId,show.id);QCOMPARE(reopened.program(adPart)->lengthMs(),qint64(710));
+        QCOMPARE(reopened.program(graphicPart)->offsetMs,680);QCOMPARE(restored.totalMs(),length);
+
+        const auto file=QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)+"/cuebase.json";
+        QVERIFY(QFile::rename(file,file+".original"));QVERIFY(QDir().mkdir(file));
+        const auto count=library.programs.size();QString error;
+        QVERIFY(library.splitProgramAtMs(second,417,true,&error).isEmpty());QVERIFY(!error.isEmpty());
+        QCOMPARE(library.programs.size(),count);QVERIFY(!library.undoProgramCut());
+        QVERIFY(QDir().rmdir(file));QVERIFY(QFile::rename(file+".original",file));
+        QVERIFY(library.undoProgramCut());QVERIFY(!library.program(graphicPart));QCOMPARE(play.playheadMs(),qint64(2440));
     }
     void timelineSourcePreviews(){
         applyUiTheme("Studio Blue",false);

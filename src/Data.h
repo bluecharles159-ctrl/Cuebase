@@ -98,6 +98,7 @@ struct ProgramItem {
     bool isAdSpot() const { return kind == QLatin1String("Ad"); }
     qint64 durationMs = 0; // Optional exact duration; zero keeps legacy seconds.
     QString elementId;    // A screen element occupying its own main-track slot.
+    QString cutSourceId;  // Shared by parts of the same cut main-track item.
     qint64 lengthMs() const { return qBound<qint64>(qint64(1), durationMs>0?durationMs:qint64(seconds)*1000, qint64(2147483647)); }
 };
 
@@ -187,6 +188,8 @@ public:
     // Splits a program in two at atSec. Returns the id of the second half ("" if it can't be cut).
     // slot = true leaves a "+" insert point between the halves.
     QString cutProgram(const QString &id, int atSec, bool slot = true);
+    QString splitProgramAtMs(const QString &id,qint64 atMs,bool slot=true,QString *error=nullptr);
+    bool applyingCut() const { return m_cutEdit; }
     bool undoProgramCut();
     bool redoProgramCut();
     // Inserts an item right after another one; the "+" insert point stays in front of what followed.
@@ -237,6 +240,7 @@ signals:
     void openAudioRequested(const QString &placementId);
 
 private:
+    bool saveCutEdit(QList<ProgramItem> replacement,QString *error=nullptr);
     QList<QList<ProgramItem>> m_cutUndo,m_cutRedo;
     bool m_cutEdit=false;
     void seed();
