@@ -635,6 +635,121 @@ private slots:
         QCOMPARE(render(ElementDesign::fromJson(model.design.toJson())),render(design));
     }
     void planarFormKeepsOutwardEffects_data(){QTest::addColumn<bool>("shadow");QTest::newRow("shadow")<<true;QTest::newRow("blur")<<false;}
+    void deformedShapeKeepsShadowAndEditableFill_data(){
+        QTest::addColumn<QString>("shape");
+        QTest::addColumn<QString>("operation");
+        QTest::newRow("triangle") << QString("Triangle") << QString();
+        QTest::newRow("ellipse") << QString("Ellipse") << QString();
+        QTest::newRow("bent quad") << QString("Rectangle") << QString();
+        QTest::newRow("subdivided surface") << QString("Rectangle") << QString("Subdivide");
+        QTest::newRow("extruded cap") << QString("Rectangle") << QString("Extrude");
+    }
+    void deformedShapeKeepsShadowAndEditableFill(){
+        QFETCH(QString, shape);
+        QFETCH(QString, operation);
+        auto design = scene();
+        design.world.transparent = true;
+        auto *object = design.find("subject");
+        object->style["shape"] = shape;
+        object->style["corner.radius"] = 0;
+        object->style["shadow.color"] = "#ff00ff00";
+        object->style["shadow.x"] = 50.;
+        object->style["shadow.y"] = 40.;
+        object->style["shadow.blur"] = 0.;
+        Library library;
+        BuildModel model;
+        model.reset(design);
+        model.select(object->id);
+        PropertyInspector inspector(&model, &library);
+        const auto original = render(design);
+        QVERIFY(model.enterEdit());
+        QCOMPARE(render(model.design),original);
+        QVERIFY(inspector.findChild<QComboBox*>("property_background.type"));
+        QVERIFY(inspector.findChild<QDoubleSpinBox*>("property_effects.blur"));
+        if (!operation.isEmpty()) {
+            model.setSelMode(SelMode::Face);
+            model.esel.f.insert(0);
+            if (operation=="Subdivide") {
+                QVERIFY(model.opSubdivide());
+            } else {
+                QVector3D direction;
+                QVERIFY(model.opExtrude(&direction));
+                for (int index : model.esel.v) model.active()->mesh.v[index] += QVector3D(.3f,.15f,.6f);
+            }
+        }
+        model.pushUndo(true);
+        model.active()->mesh.v[0] += QVector3D(.65f,.35f,.7f);
+        model.notify();
+        const auto result = render(model.design);
+        QVERIFY(result != original);
+        const auto restored = ElementDesign::fromJson(model.design.toJson());
+        QCOMPARE(render(restored), result);
+        QTemporaryDir directory;
+        FrameExportOptions output;
+        output.size = result.size();
+        output.endFrame = 1;
+        const auto exported = exportSceneFrames(restored, directory.path(), output);
+        QVERIFY2(exported.success, qPrintable(exported.error));
+        QCOMPARE(QImage(directory.filePath("frame_000000.png")).convertToFormat(result.format()), result);
+        model.active()->style["shadow.enabled"] = false;
+        const auto bare = render(model.design);
+        int shadowPixels = 0;
+        for (int y=0; y<result.height(); ++y) {
+            for (int x=0; x<result.width(); ++x) {
+                const auto c = result.pixelColor(x,y);
+                if (qAlpha(bare.pixel(x,y))<25 && c.alpha()>100 && c.green()>c.red()+60)
+                    ++shadowPixels;
+            }
+        }
+        QVERIFY2(shadowPixels>100,qPrintable(QString("Only %1 exterior shadow pixels").arg(shadowPixels)));
+        QVERIFY(model.undo());
+    }
+    void perspectiveNearClipPreservesSurfaceTexture(){
+        auto design = scene("Image");
+        design.world.transparent = true;
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        QImage stripes(80,80,QImage::Format_ARGB32);
+        stripes.fill(Qt::red);
+        { QPainter p(&stripes); p.fillRect(40,0,40,80,Qt::blue); }
+        auto *object = design.find("subject");
+        object->image = directory.filePath("stripes.png");
+        QVERIFY(stripes.save(object->image));
+        object->style = QJsonObject{{"background.type","Media"}};
+        object->base.rot = {};
+        object->base.loc = {0,0,-3};
+        object->mat.color = Qt::green;
+        BuildModel model;
+        model.reset(design);
+        model.select(object->id);
+        QVERIFY(model.enterEdit());
+        // Cross the near plane with one corner. Both halves of the photograph
+        // still project onto the visible part of the face.
+        model.active()->mesh.v[0].setZ(2.8f);
+        ViewCam camera;
+        camera.ortho = false;
+        camera.f = .7;
+        camera.nearClip = 1;
+        auto draw = [&](const ElementDesign &d) {
+            QImage frame(640,360,QImage::Format_ARGB32_Premultiplied);
+            frame.fill(Qt::transparent);
+            QPainter p(&frame);
+            d.paint(p,frame.rect(),camera,0,{});
+            p.end();
+            return frame;
+        };
+        const auto frame = draw(model.design);
+        int red = 0, blue = 0;
+        for (int y=0; y<frame.height(); ++y) {
+            for (int x=0; x<frame.width(); ++x) {
+                const auto c = frame.pixelColor(x,y);
+                red += c.red()>200 && c.blue()<50 && c.alpha()>200;
+                blue += c.blue()>200 && c.red()<50 && c.alpha()>200;
+            }
+        }
+        QVERIFY(red>500 && blue>500);
+        QCOMPARE(draw(ElementDesign::fromJson(model.design.toJson())),frame);
+    }
     void planarFormKeepsOutwardEffects(){
         QFETCH(bool,shadow);BuildModel model;auto design=scene("Text");design.world.transparent=true;
         auto *text=design.find("subject");text->text.clear();text->style=QJsonObject{{"text.background",true},{"text.backgroundColor","#ffdd2233"}};

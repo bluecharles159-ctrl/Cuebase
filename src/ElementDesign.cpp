@@ -536,6 +536,69 @@ struct LightW {
     LightData d;
 };
 
+double cross2D(QPointF a, QPointF b) {
+    return a.x()*b.y() - a.y()*b.x();
+}
+
+// Clip in texture space before projecting. Intersections retain their material
+// coordinates even when the camera plane cuts through an animated triangle.
+template<typename Distance>
+QPolygonF clipTextureRegion(const QPolygonF &region, Distance distance) {
+    QPolygonF result;
+    if (region.isEmpty()) return result;
+    auto a = region.last();
+    double da = distance(a);
+    for (const auto &b : region) {
+        const double db = distance(b);
+        if ((da >= 0) != (db >= 0)) result << a + (b-a)*(da/(da-db));
+        if (db >= 0) result << b;
+        a = b;
+        da = db;
+    }
+    return result;
+}
+
+// Project a patch of the source bitmap through three corresponding mesh
+// points. The region can include the transparent margin around the artwork.
+bool projectSurfacePatch(Item &item, QPolygonF region, const QPointF uv[3],
+                         const QVector3D cameraPoints[3], const ViewCam &camera,
+                         const QRectF &viewport, const QPainterPath &outline) {
+    const auto u = uv[1]-uv[0], v = uv[2]-uv[0];
+    const double det = cross2D(u, v);
+    if (qAbs(det) < 1e-8 || region.size() < 3) return false;
+    const auto a = cameraPoints[1]-cameraPoints[0], b = cameraPoints[2]-cameraPoints[0];
+    const auto dx = (a*v.y()-b*u.y())/det;
+    const auto dy = (b*u.x()-a*v.x())/det;
+    const auto origin = cameraPoints[0]-dx*uv[0].x()-dy*uv[0].y();
+    const double zx = camera.ortho ? 0 : -dx.z();
+    const double zy = camera.ortho ? 0 : -dy.z();
+    const double z0 = camera.ortho ? 1 : -origin.z();
+    if (!camera.ortho) {
+        region = clipTextureRegion(region, [&](QPointF p) {
+            return zx*p.x()+zy*p.y()+z0-camera.nearClip;
+        });
+        if (region.size() < 3) return false;
+    }
+    const auto center = viewport.center();
+    const double focal = camera.ortho ? 2./camera.orthoScale : camera.f;
+    const double sx = viewport.width()*focal/2;
+    const double sy = -viewport.height()*focal*camera.aspect/2;
+    item.tr = QTransform(sx*dx.x()+center.x()*zx, sy*dx.y()+center.y()*zx, zx,
+                         sx*dy.x()+center.x()*zy, sy*dy.y()+center.y()*zy, zy,
+                         sx*origin.x()+center.x()*z0, sy*origin.y()+center.y()*z0, z0);
+    if (!item.tr.isInvertible()) return false;
+    QPainterPath patch;
+    patch.addPolygon(region);
+    patch.closeSubpath();
+    item.clip = item.clip.intersected(item.tr.map(patch));
+    if (item.clip.isEmpty()) return false;
+    if (item.backdrop > 0 || item.brightness != 1) {
+        item.backdropClip = item.tr.map(patch.intersected(outline));
+    }
+    item.depth = -(cameraPoints[0].z()+cameraPoints[1].z()+cameraPoints[2].z())/3.;
+    return true;
+}
+
 QVector3D newell(const QVector<QVector3D> &p) {
     QVector3D n;
     for (int k = 0; k < p.size(); ++k) {
@@ -686,6 +749,26 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
                 ? textureFor(obj,ms) : QImage{};
             const double padX = qMax(0, surface.width()-qBound(1,qRound(obj.w*kPxPerUnit),4096))/2.;
             const double padY = qMax(0, surface.height()-qBound(1,qRound(obj.h*kPxPerUnit),4096))/2.;
+            const QRectF bitmap(0, 0, surface.width(), surface.height());
+            const auto outline = surface.isNull() ? QPainterPath{} :
+                surfaceOutline(bitmap.adjusted(padX, padY, -padX, -padY), obj);
+            auto texturePoint = [&](int vertex) {
+                const auto point = (vertex < restSurface.v.size() ? restSurface.v[vertex] : m.v[vertex])-obj.surfaceOffset();
+                return QPointF((point.x()+obj.w/2)*kPxPerUnit+padX, (obj.h/2-point.y())*kPxPerUnit+padY);
+            };
+            // Extruded sides have zero area in the original surface plane.
+            // Count only UV faces that actually carry a piece of the artwork.
+            QHash<EdgeKey,int> textureEdgeUse;
+            if (!surface.isNull() && m.f.size() > 1) {
+                for (const auto &face : m.f) {
+                    double twiceArea = 0;
+                    for (int i = 0; i < face.size(); ++i)
+                        twiceArea += cross2D(texturePoint(face[i]), texturePoint(face[(i+1)%face.size()]));
+                    if (qAbs(twiceArea) < 1e-6) continue;
+                    for (int i = 0; i < face.size(); ++i)
+                        ++textureEdgeUse[ekey(face[i],face[(i+1)%face.size()])];
+                }
+            }
             for (const QVector<int> &L0 : m.f) {
                 QVector<int> L = L0;
                 if (flip) std::reverse(L.begin(), L.end());
@@ -732,11 +815,13 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
                 it.blend = o.shade==PaintOpts::Solid?QPainter::CompositionMode_SourceOver:blendMode(obj.style["blend"].toString());
                 // Retain the source surface on edited faces. Rest coordinates
                 // provide stable texture mapping when vertices are animated.
-                if (!surface.isNull() && clipped.size()==vp.size()) {
+                if (!surface.isNull()) {
                     // A planar four-corner surface can warp its entire padded
                     // texture. Triangle clipping would cut off its outward
                     // shadow and blur as soon as one corner is animated.
-                    if(m.v.size()==4 && m.f.size()==1 && restSurface.v.size()==4 && L.size()==4
+                    const bool fullyVisible = cam.ortho || std::all_of(vp.cbegin(), vp.cend(),
+                        [&](const QVector3D &point){return -point.z() >= cam.nearClip;});
+                    if(fullyVisible && m.v.size()==4 && m.f.size()==1 && restSurface.v.size()==4 && L.size()==4
                        && qAbs(QVector3D::dotProduct(wp[3]-wp[0],n))<1e-4f){
                         QPolygonF uv;bool convex=true;double winding=0;
                         for(int corner=0;corner<4;++corner){
@@ -745,8 +830,7 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
                             const double cross=a.x()*b.y()-a.y()*b.x();
                             if(qAbs(cross)<1e-8 || (winding!=0 && cross*winding<0))convex=false;
                             winding=cross;
-                            const auto local=restSurface.v[L[corner]]-obj.surfaceOffset();
-                            uv<<QPointF((local.x()+obj.w/2)*kPxPerUnit+padX,(obj.h/2-local.y())*kPxPerUnit+padY);
+                            uv << texturePoint(L[corner]);
                         }
                         if(convex && QTransform::quadToQuad(uv,it.poly,it.tr)){
                             // Reject a projective pole inside the padded bitmap.
@@ -760,29 +844,77 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
                             if(bounded){
                                 it.textured=true;it.img=surface;
                                 it.backdrop=obj.propertyBase("backdrop.blur");it.brightness=obj.propertyBase("backdrop.brightness");
-                                it.backdropClip=it.tr.map(surfaceOutline(QRectF(padX,padY,surface.width()-2*padX,surface.height()-2*padY),obj));
+                                it.backdropClip=it.tr.map(outline);
                                 items.append(it);continue;
                             }
                         }
                     }
-                    bool textured=false;
-                    for(int triangle=1;triangle+1<L.size();++triangle){
-                        const int indices[3]={L[0],L[triangle],L[triangle+1]};
-                        QPolygonF uv,dst;
-                        for(int vertex:indices){
-                            const auto local=(vertex<restSurface.v.size()?restSurface.v[vertex]:m.v[vertex])-obj.surfaceOffset();
-                            uv << QPointF((local.x()+obj.w/2)*kPxPerUnit+padX,(obj.h/2-local.y())*kPxPerUnit+padY);
-                            QPointF screen;projCam(cv[vertex],&screen);dst<<screen;
+                    it.textured = true;
+                    it.img = surface;
+                    it.backdrop = obj.propertyBase("backdrop.blur");
+                    it.brightness = obj.propertyBase("backdrop.brightness");
+                    // For one authored outline, extend the texture coordinates
+                    // out to the bitmap bounds. Each edge owns one sector of
+                    // the padding, so a shadow can follow a bent silhouette.
+                    const bool singleOutline = m.f.size()==1 && restSurface.f.size()==1 &&
+                        m.v.size()==restSurface.v.size() && m.f.first()==restSurface.f.first();
+                    QPointF uvCenter;
+                    QVector3D cameraCenter;
+                    if (singleOutline) {
+                        for (int index : L) {
+                            uvCenter += texturePoint(index);
+                            cameraCenter += cv[index];
                         }
-                        QPainterPath faceClip;faceClip.addPolygon(dst);faceClip.closeSubpath();
-                        uv << uv[0]+uv[2]-uv[1];dst << dst[0]+dst[2]-dst[1];
-                        Item face=it;
-                        if(!QTransform::quadToQuad(uv,dst,face.tr))continue;
-                        face.textured=true;face.img=surface;face.clip=clip.intersected(faceClip);
-                        face.backdrop=obj.propertyBase("backdrop.blur");face.brightness=obj.propertyBase("backdrop.brightness");face.backdropClip=faceClip;
-                        items.append(face);textured=true;
+                        uvCenter /= L.size();
+                        cameraCenter /= L.size();
                     }
-                    if(textured)continue;
+                    bool hasTextureArea = false;
+                    auto addPatch = [&](const QPolygonF &region, const QPointF uv[3], const QVector3D points[3]) {
+                        Item patch = it;
+                        if (projectSurfacePatch(patch, region, uv, points, cam, rect, outline)) {
+                            items.append(patch);
+                        }
+                    };
+                    auto sector = [&](QPointF center, QPointF a, QPointF b) {
+                        const auto left = a-center, right = b-center;
+                        const double direction = cross2D(left, right) > 0 ? 1. : -1.;
+                        QPolygonF region{bitmap.topLeft(),bitmap.topRight(),bitmap.bottomRight(),bitmap.bottomLeft()};
+                        region = clipTextureRegion(region, [&](QPointF p){return direction*cross2D(left,p-center);});
+                        return clipTextureRegion(region, [&](QPointF p){return direction*cross2D(p-center,right);});
+                    };
+                    const int firstEdge = singleOutline ? 0 : 1;
+                    const int endEdge = singleOutline ? int(L.size()) : int(L.size())-1;
+                    for (int edge = firstEdge; edge < endEdge; ++edge) {
+                        const int next = (edge+1)%L.size();
+                        const QPointF uv[] = {singleOutline ? uvCenter : texturePoint(L[0]),
+                                              texturePoint(L[edge]), texturePoint(L[next])};
+                        const QVector3D points[] = {singleOutline ? cameraCenter : cv[L[0]], cv[L[edge]], cv[L[next]]};
+                        if (qAbs(cross2D(uv[1]-uv[0],uv[2]-uv[0])) < 1e-8) continue;
+                        hasTextureArea = true;
+                        QPolygonF region{uv[0],uv[1],uv[2]};
+                        if (singleOutline) region = sector(uvCenter, uv[1], uv[2]);
+                        addPatch(region, uv, points);
+                        if (singleOutline || (padX==0 && padY==0)) continue;
+                        const int indices[] = {L[0], L[edge], L[next]};
+                        for (int side = 0; side < 3; ++side) {
+                            const int end = (side+1)%3;
+                            if (textureEdgeUse.value(ekey(indices[side],indices[end])) != 1) continue;
+                            const auto startUV = uv[side], endUV = uv[end], delta = endUV-startUV;
+                            if (qFuzzyIsNull(cross2D(delta,uv[(side+2)%3]-startUV))) continue;
+                            const double inward = cross2D(delta,bitmap.center()-startUV);
+                            if (qAbs(inward)<1e-8 || inward*cross2D(delta,uv[(side+2)%3]-startUV)<=0) continue;
+                            auto margin = sector(bitmap.center(),startUV,endUV);
+                            margin = clipTextureRegion(margin,[&](QPointF p){return -inward*cross2D(delta,p-startUV);});
+                            // A hole or a cut inside the artwork must stay empty.
+                            QPainterPath extension; extension.addPolygon(margin); extension.closeSubpath();
+                            extension = extension.subtracted(outline);
+                            if (!extension.isEmpty()) addPatch(extension.toFillPolygon(),uv,points);
+                        }
+                    }
+                    if (hasTextureArea || singleOutline) continue;
+                    it.textured = false; // A new extrusion side may have zero area in the source UV plane.
+                    it.backdrop = 0;
+                    it.brightness = 1;
                 }
                 items.append(it);
             }
