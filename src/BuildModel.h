@@ -49,6 +49,8 @@ public:
     QString addMesh(const QString &kind);
     QString addText();
     QString addParticleEmitter(const QString &preset);
+    QString addMeshEmitter();
+    bool captureEmitterMesh(const QString &emitterId,const QString &sourceId,QString *error);
     QString addImage(const QString &path);
     QString addLight(const QString &kind);
     QStringList duplicateSelected();
@@ -118,6 +120,7 @@ public:
 
 signals:
     void particlePathRequested(bool endPose=false);
+    void emitterMeshPickRequested(const QString &emitterId);
     void layerBoundaryChanged(int direction,bool ready);
     void componentRegistrationRequested(const QString &objectId,const QString &name);
     void cuePlaybackRequested();

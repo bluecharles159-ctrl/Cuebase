@@ -1,5 +1,6 @@
 #pragma once
 #include <QJsonArray>
+#include <QJsonObject>
 #include <QPainterPath>
 #include <QVector>
 #include <cmath>
@@ -44,4 +45,23 @@ inline QPainterPath curve(const QVector<Knot> &knots){
         path.cubicTo(knots[i-1].outgoing,knots[i].incoming,knots[i].point);
     return path;
 }
+class Motion {
+public:
+    explicit Motion(const QJsonObject &style)
+        :start(curve(read(style.value("effects.particlePath").toArray()))),
+         blend(qBound(0.,style.value("effects.pathMix").toDouble(),1.)),
+         reverse(style.value("effects.pathDirection").toString()=="Reverse"){
+        if(blend>0)end=curve(read(style.value("effects.particleEndPath").toArray()));
+    }
+    bool isEmpty()const{return start.isEmpty();}
+    QPointF at(double progress)const{
+        const double t=qBound(0.,reverse?1.-progress:progress,1.);
+        const auto uv=start.pointAtPercent(t);
+        return end.isEmpty()?uv:uv+(end.pointAtPercent(t)-uv)*blend;
+    }
+private:
+    QPainterPath start,end;
+    double blend;
+    bool reverse;
+};
 }

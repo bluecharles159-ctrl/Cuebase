@@ -409,6 +409,46 @@ private slots:
         QVERIFY(firstPose!=lastPose && between!=firstPose && between!=lastPose);
         QCOMPARE(sample(500),between);
     }
+    void meshEmitterUsesTheSelectedGeometry(){
+        Library library;BuildWorkspace workspace(&library);auto *model=workspace.findChild<BuildModel*>();
+        auto *menu=workspace.findChild<QMenu*>("addParticleEmitterMenu");QVERIFY(menu && model);
+        model->reset(ElementDesign::defaultScene());
+        const auto sourceId=model->addMesh("Cone");
+        const auto prototype=model->byId(sourceId)->mesh;
+        auto *add=menu->actions().first();QCOMPARE(add->text(),QString("3D mesh instances"));add->trigger();
+        const auto emitterId=model->activeId;auto *emitter=model->active();
+        QVERIFY(emitter && emitter->style["meshEmitter.enabled"].toBool());
+        QCOMPARE(prototype.toJson(),emitter->mesh.toJson());
+        emitter->style["meshEmitter.count"]=12;
+        emitter->keyChannel("meshEmitter.depth",0,.3);emitter->keyChannel("meshEmitter.depth",1000,2.);
+        QVERIFY(model->design.evalMesh(*emitter,0).isEmpty());
+        const auto cloud=model->design.evalMesh(*emitter,2345);
+        QCOMPARE(cloud.f.size(),12*prototype.f.size());
+        QCOMPARE(cloud.v.size(),12*prototype.v.size());
+        QVector3D low,high;QVERIFY(cloud.bounds(low,high));QVERIFY(high.y()-low.y()>1.);
+        QVERIFY(model->design.evalMesh(*emitter,1000).toJson()!=cloud.toJson());
+        QCOMPARE(model->design.evalMesh(*emitter,2345).toJson(),cloud.toJson());
+        auto other=model->addMesh("Cube");
+        QString error;QVERIFY2(model->captureEmitterMesh(emitterId,other,&error),qPrintable(error));
+        emitter=model->byId(emitterId);QCOMPARE(emitter->mesh.toJson(),model->byId(other)->mesh.toJson());
+        QVERIFY(!model->captureEmitterMesh(emitterId,emitterId,&error));QVERIFY(!error.isEmpty());
+        QVERIFY(model->undo());emitter=model->byId(emitterId);QCOMPARE(emitter->mesh.toJson(),prototype.toJson());
+        auto restored=ElementDesign::fromJson(model->design.toJson());
+        restored.objects.removeIf([&](const auto &object){return object.id==sourceId;});
+        QCOMPARE(restored.evalMesh(*restored.find(emitterId),2345).toJson(),cloud.toJson());
+        auto *detached=restored.find(emitterId);
+        const auto line=ParticlePath::smooth({QPointF(.1,.4),QPointF(.9,.4)});
+        detached->style["effects.particlePath"]=ParticlePath::write(line);
+        const auto guided=restored.evalMesh(*detached,2345);
+        QCOMPARE(guided.v.size(),cloud.v.size());
+        QVERIFY(guided.v!=cloud.v);
+        detached->style["effects.pathDirection"]="Reverse";
+        QVERIFY(restored.evalMesh(*detached,2345).v!=guided.v);
+        QImage picture(320,180,QImage::Format_ARGB32_Premultiplied);picture.fill(Qt::transparent);
+        restored.objects.removeIf([&](const auto &object){return object.id==other;});
+        QPainter painter(&picture);restored.render(painter,picture.rect(),2345);painter.end();
+        QImage empty=picture;empty.fill(Qt::transparent);QVERIFY(picture!=empty);
+    }
     void standaloneEmittersFollowSceneTime(){
         Library library;BuildWorkspace workspace(&library);
         auto *model=workspace.findChild<BuildModel*>();

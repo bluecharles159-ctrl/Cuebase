@@ -854,6 +854,13 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
         addMenu->addAction("Text", this, [m] { m->addText(); });
         auto *particles=addMenu->addMenu(uiIcon("effects"),"Particle emitter");
         particles->setObjectName("addParticleEmitterMenu");
+        particles->addAction("3D mesh instances",this,[m]{m->addMeshEmitter();});particles->addSeparator();
+        connect(m,&BuildModel::emitterMeshPickRequested,canvas,[this,canvas,m](const QString &emitter){
+            canvas->pickSceneObject([this,m,emitter](const QString &source){
+                QString error;if(!m->captureEmitterMesh(emitter,source,&error))say(error,true);
+                else say("Particle mesh captured");
+            });
+        });
         for(const auto &preset:QStringList{"Dust","Sparks","Embers","Fire","Smoke","Fog","Debris","Water droplets","Energy trails","Mesh stamp"})
             particles->addAction(preset,this,[m,preset]{m->addParticleEmitter(preset);});
         auto *media=addMenu->addMenu(uiIcon("image"),"Media");

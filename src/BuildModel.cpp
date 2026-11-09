@@ -1,4 +1,5 @@
 #include "BuildModel.h"
+#include "MeshEmitter.h"
 #include "FormAnimation.h"
 #include "UiControls.h"
 #include "SurfaceEffects.h"
@@ -179,6 +180,40 @@ QString BuildModel::addMesh(const QString &kind) {
     return o.id;
 }
 
+QString BuildModel::addMeshEmitter(){
+    DObject emitter;
+    emitter.id=newId();emitter.name=uniqueName("Mesh emitter");emitter.type="Mesh";
+    emitter.w=8;emitter.h=4.5;
+    emitter.style["meshEmitter.enabled"]=true;emitter.style["meshEmitter.start"]=t/1000.;
+    if(const auto *source=active();source && source->type=="Mesh" && !source->style.value("meshEmitter.enabled").toBool()){
+        const auto &prototype=design.evalMesh(*source,t);
+        if(!prototype.isEmpty() && MeshEmitter::capacity(prototype)>0){
+            emitter.mesh=prototype;emitter.mat=source->evaluated(t).mat;
+            emitter.style["meshEmitter.prototype"]=source->name;
+        }
+    }
+    if(emitter.mesh.isEmpty()){emitter.mesh=Mesh::primitive("Cube");emitter.style["meshEmitter.prototype"]="Cube";}
+    pushUndo(true);design.objects.append(emitter);finishAdd(this,emitter.id);
+    return emitter.id;
+}
+bool BuildModel::captureEmitterMesh(const QString &emitterId,const QString &sourceId,QString *error){
+    auto *emitter=byId(emitterId);const auto *source=byId(sourceId);
+    if(!emitter || emitter->locked || !emitter->style.value("meshEmitter.enabled").toBool() ||
+       !source || source->type!="Mesh" || source->style.value("meshEmitter.enabled").toBool()){
+        if(error)*error="Choose a mesh in the scene for the emitter.";return false;
+    }
+    const Mesh prototype=design.evalMesh(*source,t);
+    if(prototype.isEmpty() || !MeshEmitter::capacity(prototype)){
+        if(error)*error="Choose a mesh with faces and at most 24,000 vertices and faces.";return false;
+    }
+    if(editMode || (!emitter->style.value("form.poses").toArray().isEmpty() &&
+       (emitter->mesh.v.size()!=prototype.v.size() || emitter->mesh.f!=prototype.f))){
+        if(error)*error=editMode?"Exit Form Animation before replacing the prototype.":"The prototype needs matching topology to retain its form poses.";
+        return false;
+    }
+    pushUndo(true);emitter->mesh=prototype;emitter->mat=source->evaluated(t).mat;
+    emitter->style["meshEmitter.prototype"]=source->name;notify();return true;
+}
 QString BuildModel::addParticleEmitter(const QString &preset) {
     pushUndo(true);
     DObject object;
@@ -810,6 +845,7 @@ bool BuildModel::applyModifier(const QString &objectId,int index){
     // Apply the stack to the authored full form and each zero pose, rather than
     // baking the current influence and leaving the old animation to run twice.
     copy->style.remove("form.poses");
+    copy->style.remove("meshEmitter.enabled");
     DObject applied=original;applied.mesh=snapshot.evalMesh(*copy,t);
     if(!FormAnimation::retarget(applied,original,[&](Mesh &mesh){
         auto poseScene=snapshot;auto *pose=poseScene.find(objectId);pose->mesh=mesh;

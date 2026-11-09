@@ -160,6 +160,12 @@ double DObject::propertyBase(const QString &path) const {
     if(path=="effects.particleSize")return style[path].toDouble(4);
     if(path=="effects.particleTravel")return style[path].toDouble(1);
     if(path=="effects.particleSpeed")return style[path].toDouble(1);
+    if(path.startsWith("meshEmitter.")){
+        static const QHash<QString,double> defaults{{"meshEmitter.count",32},{"meshEmitter.life",2.},
+            {"meshEmitter.speed",1.8},{"meshEmitter.spread",.8},{"meshEmitter.depth",.8},
+            {"meshEmitter.size",.2},{"meshEmitter.gravity",1.8},{"meshEmitter.spin",90.}};
+        return style[path].toDouble(defaults.value(path));
+    }
     if(path=="effects.particleLifetime")return style[path].toDouble(20);
     if(path=="effects.emitterLifetime")return style[path].toDouble(1.8);
     if(path=="effects.particleRandomness")return style[path].toDouble(1);

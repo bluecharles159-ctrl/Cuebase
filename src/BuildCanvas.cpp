@@ -84,7 +84,7 @@ QVector3D axisOf(int a) { return a == 0 ? QVector3D(1, 0, 0) : a == 1 ? QVector3
 BuildCanvas::BuildCanvas(BuildModel *m, Library *lib, QWidget *parent) : QWidget(parent), m_m(m), m_lib(lib) {
     connect(m,&BuildModel::particlePathRequested,this,[this,m](bool endPose){
         auto *owner=m->active();
-        if(!owner || owner->locked || !owner->hasSurface() || modalActive())return;
+        if(!owner || owner->locked || (!owner->hasSurface() && !owner->style.value("meshEmitter.enabled").toBool()) || modalActive())return;
         const QString id=owner->id;
         const QString field=endPose?"effects.particleEndPath":"effects.particlePath";
         const auto original=owner->style.value(field);
@@ -102,7 +102,8 @@ BuildCanvas::BuildCanvas(BuildModel *m, Library *lib, QWidget *parent) : QWidget
             QPolygonF screen;
             for(const auto &uv:unit){
                 QPointF point;
-                const QVector3D local((uv.x()-.5)*object.w,(.5-uv.y())*object.h,0);
+                const float x=float((uv.x()-.5)*object.w),y=float((.5-uv.y())*object.h);
+                const auto local=object.style.value("meshEmitter.enabled").toBool()?QVector3D(x,0,y):QVector3D(x,y,0);
                 if(!cam.toScreen(world.map(local),frame,&point))return invalid;
                 screen.append(point);
             }

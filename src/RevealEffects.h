@@ -3,6 +3,7 @@
 #include "ParticlePath.h"
 #include <QBuffer>
 #include <QImageReader>
+#include <QLineF>
 #include <QPainter>
 #include <QtMath>
 #include <cmath>
@@ -77,11 +78,12 @@ inline void paintParticles(QImage &image,const QImage &surface,const DObject &o,
     const double turbulence=qBound(0.,o.propertyBase("effects.particleTurbulence"),8.);
     const double gravity=qBound(-8.,o.propertyBase("effects.particleGravity"),8.);
     QTransform emission;emission.rotate(o.propertyBase("effects.particleAngle"));
-    const auto path=ParticlePath::curve(ParticlePath::read(o.style.value("effects.particlePath").toArray()));
-    const auto pathMix=qBound(0.,o.propertyBase("effects.pathMix"),1.);
-    const auto endPath=pathMix>0?ParticlePath::curve(ParticlePath::read(o.style.value("effects.particleEndPath").toArray())):QPainterPath{};
+    const ParticlePath::Motion path(o.style);
     const bool onPath=!path.isEmpty();
-    const bool reverse=o.style.value("effects.pathDirection").toString()=="Reverse";
+    auto pathPosition=[&](double age){
+        const auto uv=path.at(age*speed);
+        return QPointF(area.left()+uv.x()*(area.width()-1),area.top()+uv.y()*(area.height()-1));
+    };
     QPainter painter(&image);painter.setPen(Qt::NoPen);painter.setRenderHint(QPainter::Antialiasing);
     painter.setRenderHint(QPainter::SmoothPixmapTransform);
     for(int i=0;i<count;++i){
@@ -101,11 +103,7 @@ inline void paintParticles(QImage &image,const QImage &surface,const DObject &o,
         const double age=emitter?phaseAge-std::floor(phaseAge):phaseAge;
         if(age<=0 || age>=1)continue;
         if(onPath){
-            const double along=qMin(1.,age*speed);
-            const double fraction=reverse?1-along:along;
-            auto uv=path.pointAtPercent(fraction);
-            if(!endPath.isEmpty())uv+=(endPath.pointAtPercent(fraction)-uv)*pathMix;
-            origin=area.topLeft()+QPointF(uv.x()*(area.width()-1),uv.y()*(area.height()-1));
+            origin=pathPosition(age);
         }else if(emitter && o.style.value("effects.emitterSource").toString()=="Point"){
             origin=QPointF(area.center())+QPointF((x-.5)*area.width()*.06,(y-.5)*area.height()*.06);
         }
@@ -136,11 +134,14 @@ inline void paintParticles(QImage &image,const QImage &surface,const DObject &o,
             painter.rotate(-25+50*noise(i,7,seed));painter.setBrush(QColor(255,177,68));
             painter.drawEllipse(QPointF(),radius*.27,radius*1.7);
         }else if(kind=="Energy trails"){
-            painter.rotate(30*noise(i,7,seed)-15);
+            const auto delta=(onPath?pathPosition(qMax(0.,age-.05))-origin:QPointF())-.05*drift/age;
+            QLineF trail(QPointF(),delta);
+            if(trail.length()<.001)trail.setP2(QPointF(0,radius));
+            trail.setLength(qBound(radius,trail.length(),radius*8));
             painter.setPen(QPen(QColor(49,171,255,95),radius,Qt::SolidLine,Qt::RoundCap));
-            painter.drawLine(QPointF(),QPointF(0,3*radius));
+            painter.drawLine(trail);
             painter.setPen(QPen(QColor(193,246,255),radius*.25,Qt::SolidLine,Qt::RoundCap));
-            painter.drawLine(QPointF(),QPointF(0,3*radius));
+            painter.drawLine(trail);
         }else if(kind=="Water droplets" || kind=="Embers"){
             const bool water=kind=="Water droplets";
             painter.setBrush(water?QColor(100,180,235,180):QColor(255,110,33));

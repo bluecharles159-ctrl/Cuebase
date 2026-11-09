@@ -1,4 +1,5 @@
 #include "ElementDesign.h"
+#include "MeshEmitter.h"
 #include "FormAnimation.h"
 #include "MirrorGeometry.h"
 #include "BevelGeometry.h"
@@ -455,10 +456,16 @@ const Mesh &ElementDesign::evalMesh(const DObject &o, qint64 ms) const {
     bool any = false;
     for (const Modifier &m : o.mods) any = any || m.on;
     const bool hasForms=!o.style["form.poses"].toArray().isEmpty();
-    if ((!any&&!hasForms) || m_evalDepth > 3) return o.mesh;
+    const bool emitter=o.style.value("meshEmitter.enabled").toBool();
+    if ((!any&&!hasForms&&!emitter) || m_evalDepth > 3) return o.mesh;
 
     const Mesh formed=hasForms?FormAnimation::evaluate(o,ms):o.mesh;
     quint64 sig = meshHash(formed);
+    DObject emitterSettings;
+    if(emitter){
+        emitterSettings=o.evaluated(ms);
+        sig=mix(mix(sig,quint64(ms)),qHash(QJsonDocument(emitterSettings.style).toJson(QJsonDocument::Compact)));
+    }
     QMatrix4x4 inv;
     const DObject *targets[8] = {};
     for (int i = 0; i < o.mods.size(); ++i) {
@@ -499,6 +506,7 @@ const Mesh &ElementDesign::evalMesh(const DObject &o, qint64 ms) const {
             r = Mesh::boolean(r, t, m.op);
         }
     }
+    if(emitter)r=MeshEmitter::instances(r,emitterSettings,ms);
     m_evalCache[o.id] = qMakePair(sig, r);
     return m_evalCache[o.id].second;
 }
