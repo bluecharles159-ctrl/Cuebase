@@ -329,7 +329,7 @@ void Playout::rebuild() {
         if (found >= 0) {
             m_index=found;
             const auto &segment=m_segs[found];
-            const auto elapsed=qBound<qint64>(0,m_segElapsed+previousOffset-segment.offsetMs,segment.ms-1);
+            const auto elapsed=qBound(qint64(0),m_segElapsed+previousOffset-segment.offsetMs,qint64(segment.ms)-1);
             if(elapsed!=m_segElapsed || previousOffset!=segment.offsetMs)enter(elapsed);
         }
         else stop();
