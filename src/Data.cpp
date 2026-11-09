@@ -30,7 +30,7 @@ qint64 Element::lengthMs() const {
 #include <limits>
 
 Library::Library(QObject *parent) : QObject(parent) {
-    connect(this,&Library::programsChanged,this,[this]{if(!m_cutEdit){m_cutUndo.clear();m_cutRedo.clear();}});
+    connect(this,&Library::programsChanged,this,[this]{if(!m_timelineEdit){m_cutUndo.clear();m_cutRedo.clear();}});
 }
 
 // ---- transitions ------------------------------------------------------------
@@ -115,35 +115,54 @@ QString Library::cutProgram(const QString &id, int atSec, bool slot) {
     return splitProgramAtMs(id,qint64(atSec)*1000,slot);
 }
 
-bool Library::saveCutEdit(QList<ProgramItem> replacement,QString *error) {
-    programs.swap(replacement);
-    if(saveChecked(error))return true;
-    programs.swap(replacement);
-    return false;
+bool Library::applyTimelineEdit(TimelineEdit edit,HistoryAction action,QString *error) {
+    auto nextPlacements=placements;
+    if(!edit.moves.isEmpty()){
+        qsizetype matched=0;
+        for(auto &p:nextPlacements){
+            auto move=edit.moves.constFind(p.id);
+            if(move==edit.moves.cend())continue;
+            if(p.startMs!=move->from)break;
+            p.startMs=move->to;
+            ++matched;
+        }
+        if(matched!=edit.moves.size()){
+            if(error)*error="A placement affected by this edit has moved or been removed.";
+            return false;
+        }
+        placements.swap(nextPlacements);
+    }
+    programs.swap(edit.programs);
+    if(!saveChecked(error)){
+        programs.swap(edit.programs);
+        if(!edit.moves.isEmpty())placements.swap(nextPlacements);
+        return false;
+    }
+    for(auto &move:edit.moves)std::swap(move.from,move.to);
+    if(action==HistoryAction::Undo)m_cutUndo.removeLast();
+    if(action==HistoryAction::Redo)m_cutRedo.removeLast();
+    if(action==HistoryAction::Edit)m_cutRedo.clear();
+    auto &history=action==HistoryAction::Undo?m_cutRedo:m_cutUndo;
+    history.append(edit);
+    if(history.size()>100)history.removeFirst();
+    QScopedValueRollback<bool> editing(m_timelineEdit,true);
+    QScopedValueRollback<bool> cutting(m_cutEdit,edit.split);
+    emit programsChanged();
+    if(!edit.moves.isEmpty())emit placementsChanged();
+    return true;
 }
 
 bool Library::saveRippleEdit(QList<ProgramItem> next,qint64 groupEnd,qint64 delta,QString *error) {
-    auto moved=placements;
-    bool shifted=false;
-    for(auto &placement:moved){
+    TimelineEdit edit{std::move(next),{},false};
+    for(const auto &placement:std::as_const(placements)){
         if(!delta || placement.startMs<groupEnd)continue;
         if(delta>0 && placement.startMs>std::numeric_limits<qint64>::max()-delta){
             if(error)*error="The ripple would move a placement beyond the timeline limit.";
             return false;
         }
-        placement.startMs+=delta;
-        shifted=true;
+        edit.moves.insert(placement.id,{placement.startMs,placement.startMs+delta});
     }
-    programs.swap(next);
-    if(shifted)placements.swap(moved);
-    if(!saveChecked(error)){
-        programs.swap(next);
-        if(shifted)placements.swap(moved);
-        return false;
-    }
-    emit programsChanged();
-    if(shifted)emit placementsChanged();
-    return true;
+    return applyTimelineEdit(std::move(edit),HistoryAction::Edit,error);
 }
 
 bool Library::trimTimelineItem(const QString &id,int offsetMs,qint64 durationMs,qint64 groupEnd,QString *error) {
@@ -179,7 +198,6 @@ QString Library::splitProgramAtMs(const QString &id,qint64 atMs,bool slot,QStrin
         if(error)*error="Choose a frame inside the item.";
         return {};
     }
-    const auto before=programs;
     auto next=programs;
     auto &first=next[i];
     if(first.cutSourceId.isEmpty())first.cutSourceId=first.id;
@@ -195,22 +213,15 @@ QString Library::splitProgramAtMs(const QString &id,qint64 atMs,bool slot,QStrin
     first.breakIn.clear();first.breakOut.clear();
     first.slotAfter=slot;
     next.insert(i+1,second);
-    if(!saveCutEdit(next,error))return {};
-    m_cutUndo.append(before);if(m_cutUndo.size()>100)m_cutUndo.removeFirst();m_cutRedo.clear();
-    QScopedValueRollback<bool> transaction(m_cutEdit,true);
-    emit programsChanged();
+    if(!applyTimelineEdit({std::move(next),{},true},HistoryAction::Edit,error))return {};
     return second.id;
 }
 
-bool Library::undoProgramCut(){
-    if(m_cutUndo.isEmpty())return false;QScopedValueRollback<bool> transaction(m_cutEdit,true);
-    const auto before=programs;if(!saveCutEdit(m_cutUndo.last()))return false;
-    m_cutUndo.removeLast();m_cutRedo.append(before);emit programsChanged();return true;
+bool Library::undoTimelineEdit(QString *error){
+    return !m_cutUndo.isEmpty() && applyTimelineEdit(m_cutUndo.last(),HistoryAction::Undo,error);
 }
-bool Library::redoProgramCut(){
-    if(m_cutRedo.isEmpty())return false;QScopedValueRollback<bool> transaction(m_cutEdit,true);
-    const auto before=programs;if(!saveCutEdit(m_cutRedo.last()))return false;
-    m_cutRedo.removeLast();m_cutUndo.append(before);emit programsChanged();return true;
+bool Library::redoTimelineEdit(QString *error){
+    return !m_cutRedo.isEmpty() && applyTimelineEdit(m_cutRedo.last(),HistoryAction::Redo,error);
 }
 void Library::insertAfter(const QString &afterId, ProgramItem item) {
     if (item.id.isEmpty()) item.id = newId();

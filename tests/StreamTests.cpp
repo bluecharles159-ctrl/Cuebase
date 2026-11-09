@@ -868,6 +868,20 @@ private slots:
         Library reopened;reopened.load();QCOMPARE(reopened.programs.size(),1);
         QCOMPARE(reopened.placement(later.id)->startMs,qint64(0));
         QCOMPARE(reopened.placement(early.id)->startMs,qint64(2500));
+        library.placement(later.id)->name="Updated overlay";
+        library.placement(later.id)->startMs=40;
+        QVERIFY(!library.undoTimelineEdit(&error));
+        QCOMPARE(library.programs.size(),1);
+        library.placement(later.id)->startMs=0;
+        QVERIFY(library.undoTimelineEdit(&error));
+        QCOMPARE(library.programs.size(),2);QCOMPARE(library.program(first.id)->lengthMs(),qint64(2000));
+        QCOMPARE(library.placement(later.id)->startMs,qint64(3000));
+        QCOMPARE(library.placement(later.id)->name,QString("Updated overlay"));
+        QVERIFY(library.undoTimelineEdit());QCOMPARE(library.program(first.id)->lengthMs(),qint64(1880));
+        QVERIFY(library.undoTimelineEdit());QCOMPARE(library.program(first.id)->lengthMs(),qint64(2400));
+        QCOMPARE(library.placement(later.id)->startMs,qint64(3400));
+        QVERIFY(library.redoTimelineEdit());QVERIFY(library.redoTimelineEdit());QVERIFY(library.redoTimelineEdit());
+        reopened.load();QCOMPARE(reopened.programs.size(),1);QCOMPARE(reopened.placement(later.id)->startMs,qint64(0));
     }
     void timelineTrim_data(){QTest::addColumn<bool>("previews");QTest::newRow("with previews")<<true;QTest::newRow("without previews")<<false;}
     void timelineTrim(){

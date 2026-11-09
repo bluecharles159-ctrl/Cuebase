@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QColor>
+#include <QHash>
 #include <QList>
 #include <QObject>
 #include <QString>
@@ -192,8 +193,10 @@ public:
     bool trimTimelineItem(const QString &id,int offsetMs,qint64 durationMs,qint64 groupEnd,QString *error);
     bool removeTimelineItem(const QString &id,qint64 groupStart,qint64 groupEnd,QString *error);
     bool applyingCut() const { return m_cutEdit; }
-    bool undoProgramCut();
-    bool redoProgramCut();
+    bool undoTimelineEdit(QString *error=nullptr);
+    bool redoTimelineEdit(QString *error=nullptr);
+    bool undoProgramCut(){return undoTimelineEdit();}
+    bool redoProgramCut(){return redoTimelineEdit();}
     // Inserts an item right after another one; the "+" insert point stays in front of what followed.
     void insertAfter(const QString &afterId, ProgramItem item);
     // Inserts an item right in front of another one ("" = at the very end).
@@ -243,8 +246,16 @@ signals:
 
 private:
     bool saveRippleEdit(QList<ProgramItem> next,qint64 groupEnd,qint64 delta,QString *error);
-    bool saveCutEdit(QList<ProgramItem> replacement,QString *error=nullptr);
-    QList<QList<ProgramItem>> m_cutUndo,m_cutRedo;
+    struct PlacementMove { qint64 from,to; };
+    struct TimelineEdit {
+        QList<ProgramItem> programs;
+        QHash<QString,PlacementMove> moves;
+        bool split=false;
+    };
+    enum class HistoryAction { Edit,Undo,Redo };
+    bool applyTimelineEdit(TimelineEdit edit,HistoryAction action,QString *error);
+    QList<TimelineEdit> m_cutUndo,m_cutRedo;
+    bool m_timelineEdit=false;
     bool m_cutEdit=false;
     void seed();
     static QString filePath();

@@ -295,8 +295,23 @@ void MainWindow::buildMenus() {
 
     // Edit (acts on the text field that has focus)
     auto *edit = newMenu("Edit");
-    add(edit, "Undo", QKeySequence("Ctrl+Z"), [this, focusCall] { if (m_build && m_stack->currentWidget() == m_build) m_build->undoEdit(); else if(qobject_cast<QLineEdit*>(QApplication::focusWidget())||qobject_cast<QPlainTextEdit*>(QApplication::focusWidget()))focusCall("undo")();else if(m_lib->undoProgramCut())report("Program cut undone"); });
-    add(edit, "Redo", QKeySequence("Ctrl+Shift+Z"), [this, focusCall] { if (m_build && m_stack->currentWidget() == m_build) m_build->redoEdit(); else if(qobject_cast<QLineEdit*>(QApplication::focusWidget())||qobject_cast<QPlainTextEdit*>(QApplication::focusWidget()))focusCall("redo")();else if(m_lib->redoProgramCut())report("Program cut restored"); });
+    auto timelineHistory=[this,focusCall](bool redo){
+        if(m_build && m_stack->currentWidget()==m_build){
+            if(redo)m_build->redoEdit();else m_build->undoEdit();
+            return;
+        }
+        QWidget *focus=QApplication::focusWidget();
+        if(qobject_cast<QLineEdit*>(focus)||qobject_cast<QPlainTextEdit*>(focus)){
+            focusCall(redo?"redo":"undo")();
+            return;
+        }
+        QString error;
+        if(redo?m_lib->redoTimelineEdit(&error):m_lib->undoTimelineEdit(&error))
+            report(redo?"Timeline edit restored":"Timeline edit undone");
+        else if(!error.isEmpty())report(error);
+    };
+    add(edit, "Undo", QKeySequence("Ctrl+Z"), [timelineHistory]{timelineHistory(false);});
+    add(edit, "Redo", QKeySequence("Ctrl+Shift+Z"), [timelineHistory]{timelineHistory(true);});
     add(edit, "Settings…", QKeySequence("Ctrl+,"), [this] { showUiSettings(this,[this]{openWorkspaceSetup();}); });
     edit->addSeparator();
     add(edit, "Cut", QKeySequence("Ctrl+X"), focusCall("cut"));
