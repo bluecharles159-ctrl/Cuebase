@@ -1,5 +1,6 @@
 #pragma once
 #include "ElementDesign.h"
+#include "ParticlePath.h"
 #include <QBuffer>
 #include <QImageReader>
 #include <QPainter>
@@ -68,22 +69,30 @@ inline void paintParticles(QImage &image,const QImage &surface,const DObject &o,
     const double radiusMax=qMax(1.,std::hypot(qMax(center.x(),1-center.x())*area.width(),qMax(center.y(),1-center.y())*area.height()));
     const bool smoke=kind=="Smoke",fog=kind=="Fog",fire=kind=="Fire",sparks=kind=="Sparks";
     const double travel=o.propertyBase("effects.particleTravel");
+    const auto path=ParticlePath::curve(ParticlePath::read(o.style.value("effects.particlePath").toArray()));
+    const bool onPath=!path.isEmpty();
     QPainter painter(&image);painter.setPen(Qt::NoPen);painter.setRenderHint(QPainter::Antialiasing);
     painter.setRenderHint(QPainter::SmoothPixmapTransform);
     for(int i=0;i<count;++i){
         const double x=noise(i,1,seed),y=noise(i,3,seed);
         const QPoint offset(qRound(x*(area.width()-1)),qRound(y*(area.height()-1)));
-        const QPoint origin=area.topLeft()+offset;
+        QPointF origin=area.topLeft()+offset;
         double birth;
-        if(style=="Blocks" || style=="Pixels")birth=noise(offset.x()/block,offset.y()/block,seed);
-        else if(style=="Assemble")birth=noise(origin.x()/block,origin.y()/block,seed)*.4;
+        if(onPath)birth=x;
+        else if(style=="Blocks" || style=="Pixels")birth=noise(offset.x()/block,offset.y()/block,seed);
+        else if(style=="Assemble")birth=noise((offset.x()+area.left())/block,(offset.y()+area.top())/block,seed)*.4;
         else if(style=="Liquid")birth=(1.15-y)/1.3;
         else if(radial)birth=std::hypot((x-center.x())*area.width(),(y-center.y())*area.height())/radiusMax;
         else birth=.5+QPointF::dotProduct(QPointF(x-.5,y-.5),direction)/(qAbs(direction.x())+qAbs(direction.y()));
         const double life=.13+.13*noise(i,2,seed);
         const double age=(p-birth)/life;
         if(age<=0 || age>=1)continue;
-        const double coverage=surface.pixelColor(origin).alphaF();
+        if(onPath){
+            const auto uv=path.pointAtPercent(qBound(0.,birth+age*life*.75,1.));
+            origin=area.topLeft()+QPointF(uv.x()*(area.width()-1),uv.y()*(area.height()-1));
+        }
+        const QColor sample=surface.rect().contains(origin.toPoint())?surface.pixelColor(origin.toPoint()):QColor(Qt::transparent);
+        const double coverage=onPath?1.:sample.alphaF();
         if(coverage==0)continue;
         const double radius=size*(.5+noise(i,4,seed))*(smoke||fog?1+2*age:1);
         QPointF drift((noise(i,5,seed)-.5)*size*9*age,-size*(2+5*noise(i,6,seed))*age);
@@ -107,7 +116,7 @@ inline void paintParticles(QImage &image,const QImage &surface,const DObject &o,
             painter.drawEllipse(QPointF(),radius*.27,radius*1.7);
         }else if(kind=="Debris"){
             painter.rotate(noise(i,7,seed)*360+age*150);
-            painter.setBrush(surface.pixelColor(origin));
+            painter.setBrush(sample.alpha()>0?sample:o.mat.color);
             painter.drawRect(QRectF(-radius,-radius*.5,radius*2,radius));
         }else{
             painter.setBrush(QColor(223,211,183));painter.drawEllipse(QPointF(),radius*.45,radius*.45);

@@ -41,6 +41,7 @@ add_library(CuebaseBuildCore STATIC
     src/RigidBodySimulation.h src/RigidBodySimulation.cpp
     src/BuildModel.h src/BuildModel.cpp
     src/BuildCanvas.h src/BuildCanvas.cpp
+    src/ParticlePath.h src/ParticlePathEditor.h src/ParticlePathEditor.cpp
     src/BuildWorkspace.h src/BuildWorkspace.cpp
     src/GraphicMaster.h src/GraphicMaster.cpp
     src/GraphicPackage.h src/GraphicPackage.cpp

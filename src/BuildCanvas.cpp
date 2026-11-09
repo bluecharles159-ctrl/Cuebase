@@ -1,4 +1,5 @@
 #include "BuildCanvas.h"
+#include "ParticlePathEditor.h"
 #include "OverlapLayers.h"
 #include "FormAnimation.h"
 #include "ColorManagement.h"
@@ -81,6 +82,42 @@ QVector3D axisOf(int a) { return a == 0 ? QVector3D(1, 0, 0) : a == 1 ? QVector3
 } // namespace
 
 BuildCanvas::BuildCanvas(BuildModel *m, Library *lib, QWidget *parent) : QWidget(parent), m_m(m), m_lib(lib) {
+    connect(m,&BuildModel::particlePathRequested,this,[this,m]{
+        auto *owner=m->active();
+        if(!owner || owner->locked || !owner->hasSurface() || modalActive())return;
+        const QString id=owner->id;
+        const auto original=owner->style.value("effects.particlePath");
+        if(auto *existing=findChild<QWidget*>("particlePathEditor")){existing->raise();existing->setFocus();return;}
+        auto projection=[this,m,id]{
+            const auto *source=m->byId(id);
+            auto invalid=QTransform::fromScale(0,0);if(!source)return invalid;
+            DObject object=source->evaluated(m->t);object.fitTextLayout();
+            QRectF frame;const auto cam=activeCam(&frame);
+            auto world=m->design.worldMatrix(*source,m->t);world.translate(object.surfaceOffset());
+            const QPolygonF unit{QPointF(0,0),QPointF(1,0),QPointF(1,1),QPointF(0,1)};
+            QPolygonF screen;
+            for(const auto &uv:unit){
+                QPointF point;
+                const QVector3D local((uv.x()-.5)*object.w,(.5-uv.y())*object.h,0);
+                if(!cam.toScreen(world.map(local),frame,&point))return invalid;
+                screen.append(point);
+            }
+            QTransform transform;
+            return QTransform::quadToQuad(unit,screen,transform)?transform:invalid;
+        };
+        if(!projection().isInvertible()){emit message("Face the surface in the Work viewport to draw a particle path.");return;}
+        auto *editor=new ParticlePathEditor(this,original.toArray(),projection,[this,m,id,original](QJsonArray path){
+            auto *source=m->byId(id);
+            if(!source || source->locked || m->activeId!=id || source->style.value("effects.particlePath")!=original){
+                emit message("The surface changed. Reopen its particle path.");return;
+            }
+            if(original.toArray()==path)return;
+            m->pushUndo(true);source->style["effects.particlePath"]=path;m->notify();
+        });
+        connect(m,&BuildModel::selectionChanged,editor,[editor,m,id]{if(m->activeId!=id)editor->close();});
+        connect(m,&BuildModel::timeChanged,editor,qOverload<>(&QWidget::update));
+        emit message("Drag to draw. Drag points and handles to edit. Enter saves the path.");
+    });
     m_layerHold.setSingleShot(true);m_layerHold.setInterval(1000);
     connect(&m_layerHold,&QTimer::timeout,this,[this]{
         if(!m_modal.layerMove || !m_modal.boundary)return;

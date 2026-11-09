@@ -116,6 +116,7 @@ public:
     void notify() { emit changed(); }
 
 signals:
+    void particlePathRequested();
     void layerBoundaryChanged(int direction,bool ready);
     void componentRegistrationRequested(const QString &objectId,const QString &name);
     void cuePlaybackRequested();

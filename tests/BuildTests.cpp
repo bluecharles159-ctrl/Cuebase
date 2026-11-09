@@ -312,6 +312,41 @@ private slots:
         }
         applyUiTheme("Darker",false);
     }
+    void drawAndEditRevealParticlePath(){
+        Library library;BuildModel model;auto scene=ElementDesign::defaultScene();
+        DObject title;title.type="Shape";title.id="path-card";title.w=9;title.h=5;
+        title.base.rot={90,0,0};title.mat.shadeless=true;title.mat.color=QColor("#14425a");
+        title.style["effects.revealParticles"]="Smoke";title.style["effects.reveal"]=.45;
+        scene.objects.append(title);model.reset(scene);model.select(title.id);
+        BuildCanvas canvas(&model,&library);canvas.resize(800,500);canvas.show();canvas.grab();
+        PropertyInspector inspector(&model,&library);
+        auto *edit=inspector.findChild<QPushButton*>("editParticlePath");QVERIFY(edit);
+        const auto frame=canvas.property("compositionFrame").toRectF();
+        auto position=[&](double x,double y){return QPoint(qRound(frame.center().x()+x*frame.width()),qRound(frame.center().y()+y*frame.height()));};
+        const auto first=position(-.18,.13),middle=position(-.04,-.12),end=position(.17,.1);
+        auto drag=[](QWidget *widget,QPoint p){
+            QMouseEvent move(QEvent::MouseMove,p,QPointF(widget->mapToGlobal(p)),Qt::NoButton,Qt::LeftButton,Qt::NoModifier);
+            QApplication::sendEvent(widget,&move);
+        };
+        edit->click();auto *overlay=canvas.findChild<QWidget*>("particlePathEditor");QVERIFY(overlay);
+        QTest::mousePress(overlay,Qt::LeftButton,Qt::NoModifier,first);drag(overlay,middle);
+        QTest::mouseRelease(overlay,Qt::LeftButton,Qt::NoModifier,end);
+        QTest::keyClick(overlay,Qt::Key_Return);QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
+        const auto stored=model.byId(title.id)->style["effects.particlePath"].toArray();
+        QCOMPARE(stored.size(),3);const auto image=model.design.textureFor(*model.byId(title.id));
+        QCOMPARE(ElementDesign::fromJson(model.design.toJson()).find(title.id)->style["effects.particlePath"].toArray(),stored);
+        for(bool save:{false,true}){
+            edit->click();overlay=canvas.findChild<QWidget*>("particlePathEditor");QVERIFY(overlay);
+            QTest::mousePress(overlay,Qt::LeftButton,Qt::NoModifier,middle);
+            drag(overlay,middle+QPoint(0,50));QTest::mouseRelease(overlay,Qt::LeftButton,Qt::NoModifier,middle+QPoint(0,50));
+            QTest::keyClick(overlay,save?Qt::Key_Return:Qt::Key_Escape);
+            QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
+            QCOMPARE(model.byId(title.id)->style["effects.particlePath"].toArray()!=stored,save);
+        }
+        QVERIFY(model.design.textureFor(*model.byId(title.id))!=image);
+        QVERIFY(model.undo());QCOMPARE(model.byId(title.id)->style["effects.particlePath"].toArray(),stored);
+        QVERIFY(model.redo());QVERIFY(model.byId(title.id)->style["effects.particlePath"].toArray()!=stored);
+    }
     void revealParticleSources(){
         Library library;BuildModel model;
         auto scene=ElementDesign::defaultScene();

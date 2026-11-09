@@ -377,6 +377,14 @@ void PropertyInspector::rebuild(){
         stampButton->setToolTip("Capture a mesh silhouette and its material color for these particles.");
         auto *stamps=new QMenu(stampButton);stampButton->setMenu(stamps);
         effects->addRow("Particle mesh",stampButton);
+        auto *pathRow=new QWidget;auto *pathActions=new QHBoxLayout(pathRow);pathActions->setContentsMargins(0,0,0,0);
+        auto *pathEdit=new QPushButton;pathEdit->setObjectName("editParticlePath");
+        auto *pathClear=new QPushButton("Clear");pathClear->setObjectName("clearParticlePath");
+        pathActions->addWidget(pathEdit,1);pathActions->addWidget(pathClear);effects->addRow("Motion path",pathRow);
+        connect(pathEdit,&QPushButton::clicked,this,[this]{emit m->particlePathRequested();});
+        connect(pathClear,&QPushButton::clicked,this,[this]{
+            if(auto *target=m->active();target && !target->locked)apply([&]{target->style.remove("effects.particlePath");});
+        });
         connect(stamps,&QMenu::aboutToShow,this,[this,stamps]{
             stamps->clear();
             for(const auto &mesh:m->design.objects){
@@ -399,6 +407,9 @@ void PropertyInspector::rebuild(){
                 effects->setRowVisible(stampButton,kind=="Mesh stamp");
                 stampButton->setEnabled(!active->locked);
                 stampButton->setText(active->style.value("effects.revealStampName").toString("Choose mesh…"));
+                const bool hasPath=!active->style.value("effects.particlePath").toArray().isEmpty();
+                effects->setRowVisible(pathRow,kind!="None");pathRow->setEnabled(!active->locked);
+                pathEdit->setText(hasPath?"Edit in viewport…":"Draw in viewport…");pathClear->setVisible(hasPath);
             }
         });
         for(const auto &path:QStringList{"brightness","contrast","saturation"})number(effects,path,"effects."+path,0,3,.05);
