@@ -592,6 +592,30 @@ QWidget *MainWindow::buildPreview() {
     row->addWidget(addBtn);
     auto tool=[&](QString label,QString icon,auto fn){auto *b=new QToolButton;b->setIcon(uiIcon(icon));b->setToolTip(label);b->setFixedSize(24,22);connect(b,&QToolButton::clicked,this,fn);row->addWidget(b);};
     tool("Fit timeline · Home","fit",[=]{tl->fitView();});tool("Zoom out","remove",[=]{tl->zoomView(1/1.25);});tool("Zoom in","add",[=]{tl->zoomView(1.25);});tool("Reveal playhead · F","cursor",[=]{tl->revealPlayhead();});
+    auto *check=new QToolButton;
+    check->setObjectName("validateRundown");
+    check->setText(tr("Check rundown"));
+    check->setToolTip(tr("Check clip timing, missing media and broadcast references"));
+    row->addWidget(check);
+    connect(check,&QToolButton::clicked,this,[this]{
+        auto *dialog=roundedModal(this,tr("Rundown check"));
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        auto *layout=new QVBoxLayout(dialog);
+        const auto issues=m_play->rundownIssues();
+        auto *summary=new QLabel(issues.isEmpty()?tr("No rundown issues found."):tr("Items to review: %1").arg(issues.size()));
+        layout->addWidget(summary);
+        if(!issues.isEmpty()){
+            auto *details=new QPlainTextEdit;
+            details->setReadOnly(true);
+            details->setPlainText(issues.join("\n\n"));
+            layout->addWidget(details);
+        }
+        auto *buttons=new QDialogButtonBox(QDialogButtonBox::Close);
+        connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::reject);
+        layout->addWidget(buttons);
+        dialog->resize(460,issues.isEmpty()?110:290);
+        dialog->open();
+    });
     auto *fixed=new QToolButton;fixed->setObjectName("fixedTimelinePlayhead");fixed->setIcon(uiIcon("camera"));fixed->setCheckable(true);fixed->setFixedSize(24,22);row->addWidget(fixed);
     auto updateFollow=[=]{fixed->setChecked(tl->fixedPlayhead());fixed->setToolTip(tl->followingPlayhead()?"Fixed-center playhead · pan to inspect, F to resume following":tl->fixedPlayhead()?"Following paused · F to center on the broadcast playhead":"Enable fixed-center playhead");};
     connect(fixed,&QToolButton::clicked,tl,&TimelineWidget::setFixedPlayhead);connect(tl,&TimelineWidget::navigationChanged,fixed,updateFollow);updateFollow();

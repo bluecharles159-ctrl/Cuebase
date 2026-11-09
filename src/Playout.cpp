@@ -1,4 +1,5 @@
 #include "Playout.h"
+#include <QFileInfo>
 #include "AudioLibrary.h"
 #include "Continuity.h"
 #include "Replay.h"
@@ -145,6 +146,45 @@ qint64 Playout::timelinePosMs() const {
     const int i = index();
     if (i < 0 || i >= m_starts.size()) return 0;
     return m_starts[i] + m_segElapsed;
+}
+
+QStringList Playout::rundownIssues() const {
+    QStringList issues;
+    if(m_lib->programs.isEmpty())issues<<tr("The primary track is empty.");
+    QSet<QString> ids;
+    for(const auto &item:std::as_const(m_lib->programs)){
+        const QString name=item.title.isEmpty()?item.id:item.title;
+        auto issue=[&](const QString &reason){issues<<tr("%1 — %2").arg(name,reason);};
+        if(item.id.isEmpty() || ids.contains(item.id))issue(tr("Missing or duplicate program ID."));
+        ids.insert(item.id);
+        if(item.offsetMs<0 || item.durationMs<0 || (item.durationMs==0 && item.seconds<1))
+            issue(tr("Invalid source offset or duration."));
+        if(!item.elementId.isEmpty() && !m_lib->element(item.elementId))issue(tr("Screen element is missing."));
+        if(!item.isAdSpot() && !item.file.isEmpty() && !QFileInfo(item.file).isFile())
+            issue(tr("Program media is missing: %1").arg(item.file));
+        const auto *ad=m_lib->ad(item.adId);
+        if((item.isAdSpot() || !item.adId.isEmpty()) && !ad)issue(tr("Assigned advertisement is missing."));
+        if(ad && !ad->file.isEmpty() && !QFileInfo(ad->file).isFile())issue(tr("Advertisement media is missing: %1").arg(ad->file));
+        for(const auto &breakId:{item.breakIn,item.breakOut}){
+            if(breakId.isEmpty())continue;
+            const auto *screen=m_lib->element(breakId);
+            if(!screen || screen->type!="Break")issue(tr("Assigned break screen is missing or has a different type."));
+            else if(!ad)issue(tr("Break screen has no assigned advertisement."));
+        }
+    }
+    for(const auto &p:std::as_const(m_lib->placements)){
+        const QString name=p.name.isEmpty()?p.id:p.name;
+        if(p.startMs<0 || p.lengthMs()<1 || p.offsetMs<0)
+            issues<<tr("%1 — Invalid placement timing.").arg(name);
+        else if(p.startMs>m_totalMs || p.lengthMs()>m_totalMs-p.startMs)
+            issues<<tr("%1 — Placement extends beyond the end of the primary track.").arg(name);
+        if((p.type=="Sound" || p.type=="Clip") && !QFileInfo(p.file).isFile())
+            issues<<tr("%1 — Placement media is missing.").arg(name);
+        if(p.type=="Element" && p.boardSnapshot.isEmpty() && !m_lib->element(p.refId))
+            issues<<tr("%1 — Placed screen element is missing.").arg(name);
+        if(p.type=="Ad" && !m_lib->ad(p.refId))issues<<tr("%1 — Placed advertisement is missing.").arg(name);
+    }
+    return issues;
 }
 
 qint64 Playout::groupEndMs(const QString &programId) const {
@@ -558,7 +598,8 @@ void Playout::layerAudio(const Placement &pl, Sfx &s) const {
     if (!s.out) return;
     const LayerState &ls = m_lib->layers.value(qBound(0, pl.layer, 3));
     double gain=1;
-    if(pl.type=="Sound"){const auto settings=AudioLibrary::placementSettings(*m_lib,pl.id);gain=qBound(0.,settings["volume"].toDouble(1),1.);const auto elapsed=timelinePosMs()-pl.startMs;const double fadeIn=settings["fadeIn"].toDouble()*1000,fadeOut=settings["fadeOut"].toDouble()*1000;if(fadeIn>0)gain*=qBound(0.,elapsed/fadeIn,1.);if(fadeOut>0)gain*=qBound(0.,(pl.lengthMs()-elapsed)/fadeOut,1.);}
+    if(pl.type=="Sound")
+        gain=AudioLibrary::clipGain(AudioLibrary::placementSettings(*m_lib,pl.id),timelinePosMs()-pl.startMs,pl.lengthMs());
     s.out->setVolume(float(m_volume * ls.volume / 100.0 * (1-m_replayMix)*gain));
     s.out->setMuted(m_muted || ls.muted || (m_continuity&&m_continuity->active()));
 }

@@ -1,4 +1,5 @@
 #include "AudioLibrary.h"
+#include <limits>
 #include "AudioDspDialog.h"
 #include "BuildModel.h"
 #include "Data.h"
@@ -51,6 +52,111 @@ void extendSceneForAudio(BuildModel &model,const DObject &audio){
 }
 QJsonObject AudioLibrary::asset(const Library &library,const QString &id){for(const auto &value:library.production["audioLibrary"].toArray())if(value.toObject()["id"].toString()==id)return value.toObject();return {};}
 QJsonObject AudioLibrary::placementSettings(const Library &library,const QString &id){auto settings=library.production["audioPlacementSettings"].toObject()[id].toObject();return settings.isEmpty()?defaults():settings;}
+double AudioLibrary::clipGain(const QJsonObject &settings,qint64 elapsedMs,qint64 lengthMs){
+    double gain=qBound(0.,settings["volume"].toDouble(1),1.);
+    const double fadeIn=settings["fadeIn"].toDouble()*1000;
+    const double fadeOut=settings["fadeOut"].toDouble()*1000;
+    if(fadeIn>0)gain*=qBound(0.,(settings["fadeInElapsedMs"].toDouble()+elapsedMs)/fadeIn,1.);
+    if(fadeOut>0)gain*=qBound(0.,(settings["fadeOutTailMs"].toDouble()+lengthMs-elapsedMs)/fadeOut,1.);
+    return gain;
+}
+
+qint64 AudioLibrary::crossfadeLength(const Placement &outgoing,const Placement &incoming){
+    if(outgoing.type!="Sound" || incoming.type!="Sound" || outgoing.id==incoming.id ||
+       outgoing.startMs<0 || incoming.startMs<=outgoing.startMs)return 0;
+    const auto separation=incoming.startMs-outgoing.startMs;
+    if(separation>=outgoing.lengthMs())return 0;
+    const auto overlap=outgoing.lengthMs()-separation;
+    return overlap<=incoming.lengthMs()?overlap:0;
+}
+
+bool AudioLibrary::crossfade(Library &library,const QString &outgoingId,const QString &incomingId,QString *error){
+    const auto *outgoing=library.placement(outgoingId);
+    const auto *incoming=library.placement(incomingId);
+    const qint64 overlap=outgoing && incoming?crossfadeLength(*outgoing,*incoming):0;
+    if(!overlap){
+        if(error)*error="Overlap the end of one audio clip with the start of the next.";
+        return false;
+    }
+    const auto previous=library.production;
+    auto all=previous["audioPlacementSettings"].toObject();
+    auto tail=placementSettings(library,outgoingId);
+    auto head=placementSettings(library,incomingId);
+    tail["fadeOut"]=overlap/1000.;
+    tail.remove("fadeOutTailMs");
+    head["fadeIn"]=overlap/1000.;
+    head.remove("fadeInElapsedMs");
+    all[outgoingId]=tail;
+    all[incomingId]=head;
+    library.production["audioPlacementSettings"]=all;
+    if(!library.saveChecked(error)){library.production=previous;return false;}
+    emit library.placementsChanged();
+    return true;
+}
+
+QString AudioLibrary::editTimelineClip(Library &library,const QString &id,ClipEdit edit,qint64 atMs,QString *error){
+    auto *first=library.placement(id);
+    if(!first || first->type!="Sound"){
+        if(error)*error="Select an audio clip on the timeline.";
+        return {};
+    }
+    const qint64 length=first->lengthMs();
+    if(length<=0 || first->startMs<0 || first->startMs>std::numeric_limits<qint64>::max()-length){
+        if(error)*error="The clip timing is outside the timeline range.";
+        return {};
+    }
+    const auto previousClips=library.placements;
+    const auto previousProduction=library.production;
+    const auto end=first->startMs+length;
+    auto copy=*first;
+    copy.id=Library::newId();
+    auto settings=placementSettings(library,id);
+    auto copiedSettings=settings;
+    auto all=library.production["audioPlacementSettings"].toObject();
+    if(edit==ClipEdit::Split){
+        if(atMs<=first->startMs || atMs>=end){
+            if(error)*error="Choose a frame inside the audio clip.";
+            return {};
+        }
+        const auto head=atMs-first->startMs;
+        const auto tail=end-atMs;
+        const double rate=qBound(.1,settings["speed"].toDouble(1),4.);
+        const double sourcePosition=first->offsetMs+head*rate;
+        if(sourcePosition>std::numeric_limits<int>::max() || sourcePosition<0){
+            if(error)*error="The split exceeds the supported source offset.";
+            return {};
+        }
+        // Detach the saved snapshot before writing through a placement pointer.
+        first=library.placement(id);
+        first->durationMs=head;
+        first->seconds=int((head+999)/1000);
+        copy.startMs=atMs;
+        copy.offsetMs=qRound(sourcePosition);
+        copy.durationMs=tail;
+        copy.seconds=int((tail+999)/1000);
+        settings["fadeOutTailMs"]=settings["fadeOutTailMs"].toDouble()+tail;
+        copiedSettings["fadeInElapsedMs"]=settings["fadeInElapsedMs"].toDouble()+head;
+        copiedSettings["offset"]=copy.offsetMs/1000.;
+        all[id]=settings;
+    }else{
+        if(end>std::numeric_limits<qint64>::max()-length){
+            if(error)*error="The duplicate would extend beyond the timeline range.";
+            return {};
+        }
+        copy.startMs=end;
+    }
+    all[copy.id]=copiedSettings;
+    library.production["audioPlacementSettings"]=all;
+    library.placements.append(copy);
+    if(!library.saveChecked(error)){
+        library.placements=previousClips;
+        library.production=previousProduction;
+        return {};
+    }
+    emit library.placementsChanged();
+    return copy.id;
+}
+
 QString AudioLibrary::addToScene(BuildModel &model,const Library &library,const QString &id){
     const auto a=asset(library,id);if(a.isEmpty()||!QFileInfo(a["file"].toString()).isFile())return {};
     model.pushUndo(true);DObject audio;audio.id=Library::newId();audio.name=model.uniqueName(a["name"].toString());audio.type="Audio";
@@ -143,7 +249,29 @@ void AudioLibraryPanel::saveControls(QDoubleSpinBox *changed){
         fields=QJsonObject{{key,fields[key]}};
     }
     if(!m_sceneId.isEmpty()&&m_model){if(auto *audio=m_model->byId(m_sceneId);audio&&audio->type=="Audio"&&!audio->locked){QMap<QString,double> changes;for(auto it=fields.begin();it!=fields.end();++it){const auto key="audio."+it.key();const double value=it.value().toDouble()*(it.key()=="speed"||it.key()=="volume"?1:1000);if(qAbs(audio->propertyValue(key,m_model->t)-value)>.000001)changes[key]=value;}if(changes.isEmpty())return;m_model->pushUndo();for(auto it=changes.begin();it!=changes.end();++it)m_model->editProperty(audio->id,it.key(),it.value());extendSceneForAudio(*m_model,*audio);m_model->notify();}return;}
-    if(!m_placementId.isEmpty()){auto *clip=m_library->placement(m_placementId);if(!clip)return;const auto old=AudioLibrary::placementSettings(*m_library,m_placementId);const double span=clip->lengthMs()*qBound(.1,old["speed"].toDouble(1),4.);const auto offset=qRound64(m_offset->value()*1000);clip->durationMs=qMax<qint64>(1,qRound64(qMax(1.,span-(offset-clip->offsetMs))/m_speed->value()));auto all=m_library->production["audioPlacementSettings"].toObject();all[m_placementId]=fields;m_library->production["audioPlacementSettings"]=all;clip->offsetMs=offset;if(persist())emit m_library->placementsChanged();return;}
+    if(!m_placementId.isEmpty()){
+        auto *clip=m_library->placement(m_placementId);
+        if(!clip)return;
+        auto settings=AudioLibrary::placementSettings(*m_library,m_placementId);
+        const QString key=changed==m_speed?"speed":changed==m_volume?"volume":changed==m_offset?"offset":changed==m_fadeIn?"fadeIn":"fadeOut";
+        if(changed==m_speed || changed==m_offset){
+            const double oldRate=qBound(.1,settings["speed"].toDouble(1),4.);
+            const double rate=changed==m_speed?m_speed->value():oldRate;
+            const int offset=changed==m_offset?qRound(m_offset->value()*1000):clip->offsetMs;
+            const double span=clip->lengthMs()*oldRate-(offset-clip->offsetMs);
+            clip->durationMs=qMax<qint64>(1,qRound64(span/rate));
+            clip->seconds=int((clip->durationMs+999)/1000);
+            clip->offsetMs=offset;
+        }
+        if(changed==m_fadeIn)settings.remove("fadeInElapsedMs");
+        if(changed==m_fadeOut)settings.remove("fadeOutTailMs");
+        settings[key]=fields.value(key);
+        auto all=m_library->production["audioPlacementSettings"].toObject();
+        all[m_placementId]=settings;
+        m_library->production["audioPlacementSettings"]=all;
+        if(persist())emit m_library->placementsChanged();
+        return;
+    }
     auto all=m_library->production["audioLibrary"].toArray();for(int i=0;i<all.size();++i){auto a=all[i].toObject();if(a["id"].toString()!=m_assetId)continue;for(auto it=fields.begin();it!=fields.end();++it)a[it.key()]=it.value();all[i]=a;}m_library->production["audioLibrary"]=all;if(persist())emit m_library->productionChanged();
 }
 void AudioLibraryPanel::importFile(const QString &path){

@@ -3,6 +3,7 @@
 #include <QWidget>
 #include <functional>
 class Library;
+struct Placement;
 class BuildModel;
 class QListWidget;
 class QDoubleSpinBox;
@@ -24,6 +25,11 @@ QJsonObject asset(const Library &library,const QString &id);
 QString addToScene(BuildModel &model,const Library &library,const QString &id);
 QString addToTimeline(Library &library,const QString &id,qint64 start,int layer,QString *error=nullptr);
 QJsonObject placementSettings(const Library &library,const QString &id);
+enum class ClipEdit { Split, Duplicate };
+QString editTimelineClip(Library &library,const QString &id,ClipEdit edit,qint64 atMs,QString *error);
+double clipGain(const QJsonObject &settings,qint64 elapsedMs,qint64 lengthMs);
+qint64 crossfadeLength(const Placement &outgoing,const Placement &incoming);
+bool crossfade(Library &library,const QString &outgoingId,const QString &incomingId,QString *error);
 }
 
 class AudioLibraryPanel final:public QWidget {

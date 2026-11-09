@@ -67,6 +67,7 @@ public:
     static int blockWidth(const Segment &s);            // how wide a segment is drawn, in px
     qint64 segmentStartMs(int i) const { return i >= 0 && i < m_starts.size() ? m_starts[i] : 0; }
     qint64 totalMs() const { return m_totalMs; }
+    QStringList rundownIssues() const;
     int segmentAtMs(qint64 ms, qint64 *offsetInSegment = nullptr) const;
     qint64 timelinePosMs() const;             // where the broadcast is on the timeline (0 when off air)
     qint64 playheadMs() const { return isLive() ? timelinePosMs() : m_cueMs; }  // the live position, or the cue when off air

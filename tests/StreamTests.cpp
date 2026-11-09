@@ -808,6 +808,70 @@ private slots:
         auto *post=request("POST",document);QTRY_VERIFY_WITH_TIMEOUT(post->isFinished(),15000);QCOMPARE(post->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),403);delete post;session.revoke(member);
         get=request("GET");QTRY_VERIFY_WITH_TIMEOUT(get->isFinished(),15000);QCOMPARE(get->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),403);delete get;code=session.invite("Producer","Editor");post=request("POST",document);QTRY_VERIFY_WITH_TIMEOUT(post->isFinished(),15000);QCOMPARE(post->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),200);delete post;post=request("POST",document);QTRY_VERIFY_WITH_TIMEOUT(post->isFinished(),15000);QCOMPARE(post->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),409);delete post;session.stopSession();QVERIFY(!session.isListening());
     }
+    void soundClipEditsPreserveSourceAndFades(){
+        const auto old=qApp->applicationName();
+        qApp->setApplicationName(old+"-sound-cut");
+        auto reset=qScopeGuard([&]{qApp->setApplicationName(old);});
+        Library library;
+        Placement sound;sound.id="voice";sound.type="Sound";sound.startMs=1000;
+        sound.offsetMs=813;sound.durationMs=3000;sound.layer=2;
+        library.placements={sound};
+        const QJsonObject settings{{"speed",1.5},{"volume",.8},{"fadeIn",2.5},{"fadeOut",2.0}};
+        library.production["audioPlacementSettings"]=QJsonObject{{sound.id,settings}};
+        QString error;
+        using ClipEdit=AudioLibrary::ClipEdit;
+        using AudioLibrary::clipGain;
+        const auto cut=AudioLibrary::editTimelineClip(library,sound.id,ClipEdit::Split,2270,&error);
+        QVERIFY2(!cut.isEmpty(),qPrintable(error));
+        QCOMPARE(library.placement(cut)->offsetMs,2718);
+        QCOMPARE(library.placement(cut)->lengthMs(),qint64(1730));
+        const auto left=AudioLibrary::placementSettings(library,sound.id);
+        const auto right=AudioLibrary::placementSettings(library,cut);
+        for(qint64 t:{0,400,1269,1270,2300,2999}){
+            const auto after=t<1270?clipGain(left,t,1270):clipGain(right,t-1270,1730);
+            QVERIFY(qAbs(after-clipGain(settings,t,3000))<1e-9);
+        }
+        Playout play(&library);
+        TimelineWidget timeline(&play,&library);
+        timeline.resize(640,220);timeline.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&timeline));
+        const QPoint point=timeline.placementRect(cut).center();
+        QSignalSpy opened(&library,&Library::openAudioRequested);
+        QTimer::singleShot(0,&timeline,[&]{
+            auto *menu=qobject_cast<QMenu*>(QApplication::activePopupWidget());
+            if(!menu)return;
+            for(auto *action:menu->actions()){
+                if(action->text()=="Duplicate audio after clip"){
+                    QTest::mouseClick(menu,Qt::LeftButton,Qt::NoModifier,menu->actionGeometry(action).center());
+                    return;
+                }
+            }
+            menu->close();
+        });
+        QContextMenuEvent event(QContextMenuEvent::Mouse,point,timeline.mapToGlobal(point));
+        QApplication::sendEvent(&timeline,&event);
+        QCOMPARE(opened.size(),1);
+        const auto copy=opened.first().first().toString();
+        QCOMPARE(library.placement(copy)->startMs,qint64(4000));
+        QCOMPARE(library.placement(copy)->offsetMs,2718);
+        QCOMPARE(AudioLibrary::placementSettings(library,copy),right);
+        QVERIFY(!AudioLibrary::crossfade(library,cut,copy,&error));
+        library.placement(copy)->startMs=3500;
+        QVERIFY(AudioLibrary::crossfade(library,cut,copy,&error));
+        Library restored;restored.load();
+        const auto out=AudioLibrary::placementSettings(restored,cut);
+        const auto in=AudioLibrary::placementSettings(restored,copy);
+        QCOMPARE(out["fadeOut"].toDouble(),.5);QCOMPARE(in["fadeIn"].toDouble(),.5);
+        QCOMPARE(in["speed"].toDouble(),1.5);QCOMPARE(in["volume"].toDouble(),.8);
+        QCOMPARE(clipGain(in,0,1730),0.);
+        QCOMPARE(AudioLibrary::placementSettings(restored,sound.id),left);
+        const auto path=QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)+"/cuebase.json";
+        QVERIFY(QFile::rename(path,path+".backup"));QVERIFY(QDir().mkdir(path));
+        QVERIFY(AudioLibrary::editTimelineClip(restored,cut,ClipEdit::Split,3000,&error).isEmpty());
+        QCOMPARE(restored.placements.size(),3);QCOMPARE(restored.placement(cut)->lengthMs(),qint64(1730));
+        QCOMPARE(AudioLibrary::placementSettings(restored,cut),out);
+        QVERIFY(QDir().rmdir(path));QVERIFY(QFile::rename(path+".backup",path));
+    }
     void primaryTrimPreviewAndRipple(){
         const auto old=qApp->applicationName();
         qApp->setApplicationName(old+"-primary-trim");
@@ -824,6 +888,16 @@ private slots:
         Placement later;later.id="later";later.startMs=3400;
         library.placements={early,later};
         Playout play(&library);
+        QVERIFY(!play.rundownIssues().isEmpty());
+        for(auto &placement:library.placements){
+            placement.durationMs=80;
+            placement.type="Ad";
+            placement.refId=sponsor.id;
+        }
+        QVERIFY(play.rundownIssues().isEmpty());
+        library.ads.clear();
+        QVERIFY(!play.rundownIssues().isEmpty());
+        library.ads={sponsor};
         TimelineWidget timeline(&play,&library);
         timeline.resize(660,200);timeline.show();
         QVERIFY(QTest::qWaitForWindowExposed(&timeline));

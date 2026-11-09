@@ -800,11 +800,40 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent *e) {
         QMenu menu(this);
         QAction *len = menu.addAction("Set length...");
         const auto *placed=m_lib->placement(id);QAction *edit=nullptr,*duplicate=nullptr;
+        QAction *splitSound=nullptr,*duplicateSound=nullptr;
+        QMenu *crossfades=nullptr;
+        const double frameMs=1000.*qMax(.001,m_lib->display.fpsBase)/qMax(1,m_lib->display.fps);
+        const auto splitAt=qRound64(qRound64(xToMs(pos.x())/frameMs)*frameMs);
+        if(placed && placed->type=="Sound"){
+            splitSound=menu.addAction("Split audio here");
+            splitSound->setEnabled(splitAt>placed->startMs && splitAt-placed->startMs<placed->lengthMs());
+            duplicateSound=menu.addAction("Duplicate audio after clip");
+            crossfades=menu.addMenu("Crossfade into");
+            for(const auto &other:std::as_const(m_lib->placements)){
+                const auto overlap=AudioLibrary::crossfadeLength(*placed,other);
+                if(overlap<=0)continue;
+                auto *target=crossfades->addAction(tr("%1 · Layer %2 · %3 s").arg(other.name).arg(other.layer).arg(overlap/1000.,0,'f',3));
+                target->setData(other.id);
+            }
+            if(crossfades->isEmpty())crossfades->addAction("Overlap another audio clip to crossfade")->setEnabled(false);
+        }
         QAction *order=placed&&placed->type=="Element"?menu.addAction("Overlap order…"):nullptr;
         if(placed&&!placed->boardSnapshot.isEmpty()){edit=menu.addAction("Edit this cue board");duplicate=menu.addAction("Duplicate on another layer");}
         QAction *rm = menu.addAction("Remove from timeline");
         QAction *chosen = menu.exec(e->globalPos());
-        if (chosen == len) emit placementLengthRequested(id);
+        if(!chosen)return;
+        if(chosen==splitSound || chosen==duplicateSound){
+            const auto operation=chosen==splitSound?AudioLibrary::ClipEdit::Split:AudioLibrary::ClipEdit::Duplicate;
+            QString error;
+            const auto created=AudioLibrary::editTimelineClip(*m_lib,id,operation,splitAt,&error);
+            if(created.isEmpty())QToolTip::showText(e->globalPos(),error,this);
+            else{m_selectedPlacement=created;emit m_lib->openAudioRequested(created);update();}
+        }
+        else if(crossfades && crossfades->actions().contains(chosen)){
+            QString error;
+            if(!AudioLibrary::crossfade(*m_lib,id,chosen->data().toString(),&error))QToolTip::showText(e->globalPos(),error,this);
+        }
+        else if (chosen == len) emit placementLengthRequested(id);
         else if (chosen == rm) emit placementRemoveRequested(id);
         else if(edit&&chosen==edit)emit m_lib->openCuePlacementRequested(id);
         else if(order&&chosen==order){if(auto *dialog=placementOrderDialog(m_lib,id,this))dialog->open();}
