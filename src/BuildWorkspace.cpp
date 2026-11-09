@@ -320,6 +320,10 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     overlay("Placement cursor",&canvas->showCursor);overlay("Lights",&canvas->showLights);overlay("Camera",&canvas->showCamera);overlay("Gizmos",&canvas->showGizmos);
     auto *panelAction=new QWidgetAction(overlayMenu);panelAction->setDefaultWidget(overlayPanel);overlayMenu->addAction(panelAction);overlayButton->setMenu(overlayMenu);tb->addWidget(overlayButton);
     auto *snapAction=helperMenu->addAction("Snap · Ctrl or Alt temporarily bypasses");snapAction->setCheckable(true);snapAction->setChecked(canvas->snapping);connect(snapAction,&QAction::toggled,canvas,[canvas](bool on){canvas->snapping=on;canvas->update();});
+    auto *snapGrid=helperMenu->addAction("Snap to visible grid");snapGrid->setCheckable(true);
+    canvas->snapToGrid=QSettings().value("build/snapToGrid",true).toBool();
+    snapGrid->setChecked(canvas->snapToGrid);
+    connect(snapGrid,&QAction::toggled,canvas,[canvas](bool on){canvas->snapToGrid=on;QSettings().setValue("build/snapToGrid",on);});
     auto *guideSettings=helperMenu->addAction("Composition guides…");guideSettings->setObjectName("compositionGuideSettings");
     connect(guideSettings,&QAction::triggered,this,[=,this]{
         const auto *camera=m->design.camera();if(!camera)return;const auto cameraId=camera->id;const auto original=camera->style;

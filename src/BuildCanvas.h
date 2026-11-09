@@ -40,6 +40,7 @@ public:
     bool showGrid = true, showAxes = true, showGizmos = true, placeCursor = false;
     bool showOverlays=true,showCursor=true,showLights=true,showCamera=true,showOrigins=true;
     bool showTitleSafe = true, showActionSafe = true, showRulers = true, snapping = true;
+    bool snapToGrid = true;
 
     void startMove() { startModal(Modal::Move); }
     void startRotate() { startModal(Modal::Rotate); }

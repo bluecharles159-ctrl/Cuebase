@@ -28,6 +28,19 @@
 namespace {
 const QColor kOrange("#ff9f43"), kOrangeLight("#ffd08a"), kGizmo("#e6c84a");
 
+QRectF safeFrame(const QRectF &frame,const QJsonObject &style,bool title){
+    const double inset=qBound(0.,title?style["editor.titleSafe"].toDouble(.05):style["editor.actionSafe"].toDouble(.035),.45);
+    return frame.adjusted(frame.width()*inset,frame.height()*inset,-frame.width()*inset,-frame.height()*inset);
+}
+
+double visibleGridStep(const QRectF &frame,const QJsonObject &style,int outputWidth){
+    const double spacing=qBound(1.,style["editor.gridSpacing"].toDouble(120),4096.);
+    double step=spacing*frame.width()/qMax(1,outputWidth);
+    if(step<=0)return 12;
+    while(step<12)step*=2;
+    return step;
+}
+
 QPointF projectView(const ViewCam &cam, const QRectF &r, const QVector3D &c) {
     const double d = -c.z();
     double nx, ny;
@@ -483,9 +496,8 @@ void BuildCanvas::paintEvent(QPaintEvent *) {
     p.setBrush(Qt::NoBrush);
     p.drawRect(r);
     const auto guideStyle=d.camera()?d.camera()->style:QJsonObject{};
-    const double titleMargin=qBound(0.,guideStyle["editor.titleSafe"].toDouble(.05),.45),actionMargin=qBound(0.,guideStyle["editor.actionSafe"].toDouble(.035),.45);
-    const QRectF titleSafe = r.adjusted(r.width()*titleMargin, r.height()*titleMargin, -r.width()*titleMargin, -r.height()*titleMargin);
-    const QRectF actionSafe = r.adjusted(r.width()*actionMargin, r.height()*actionMargin, -r.width()*actionMargin, -r.height()*actionMargin);
+    const QRectF titleSafe = safeFrame(r,guideStyle,true);
+    const QRectF actionSafe = safeFrame(r,guideStyle,false);
     p.setPen(QPen(QColor(96,165,250,45), 1, Qt::DashLine));
     if(showActionSafe&&m_cameraView) p.drawRect(actionSafe);
     p.setPen(QPen(QColor(250,204,21,38), 1, Qt::DashLine));
@@ -497,7 +509,7 @@ void BuildCanvas::paintEvent(QPaintEvent *) {
     p.save();p.setClipRect(r);
     if(showGrid){
         p.setPen(QColor(148,163,184,25));
-        const double step=qMax(12.,qBound(1.,guideStyle["editor.gridSpacing"].toDouble(120),4096.)*r.width()/m_lib->display.resX());
+        const double step=visibleGridStep(r,guideStyle,m_lib->display.resX());
         for(double x=r.left();x<r.right();x+=step)p.drawLine(QPointF(x,r.top()),QPointF(x,r.bottom()));
         for(double y=r.top();y<r.bottom();y+=step)p.drawLine(QPointF(r.left(),y),QPointF(r.right(),y));
     }
@@ -1051,15 +1063,37 @@ void BuildCanvas::applyModal(const QPointF &mouse) {
             if(snapping && !edit && !(QApplication::keyboardModifiers()&(Qt::AltModifier|Qt::ControlModifier))){
                 QPointF target;cam.toScreen(m_modal.pivot+delta,r,&target);
                 QVector<double> xs{r.left(),r.center().x(),r.right()},ys{r.top(),r.center().y(),r.bottom()};
-                for(double g:m_verticalGuides)xs.append(r.left()+g*r.width());
-                for(double g:m_horizontalGuides)ys.append(r.top()+g*r.height());
-                for(const auto &o:m_m->design.objects)if(o.visible&&!m_m->sel.contains(o.id)&&o.isRenderable()){auto box=objectBounds(o,cam,r);xs<<box.left()<<box.center().x()<<box.right();ys<<box.top()<<box.center().y()<<box.bottom();}
+                if(showOverlays){
+                    for(double g:m_verticalGuides)xs.append(r.left()+g*r.width());
+                    for(double g:m_horizontalGuides)ys.append(r.top()+g*r.height());
+                    if(m_cameraView){
+                        const auto *camera=m_m->design.camera();
+                        const auto style=camera?camera->style:QJsonObject{};
+                        for(bool title:{true,false}){
+                            if(!(title?showTitleSafe:showActionSafe))continue;
+                            const auto safe=safeFrame(r,style,title);
+                            xs<<safe.left()<<safe.right();ys<<safe.top()<<safe.bottom();
+                        }
+                    }
+                }
+                for(const auto &o:m_m->design.objects)if(!m_m->sel.contains(o.id)&&o.isRenderable()&&m_m->design.effectiveVisible(o)){
+                    auto box=objectBounds(o,cam,r);if(box.isEmpty())continue;
+                    xs<<box.left()<<box.center().x()<<box.right();ys<<box.top()<<box.center().y()<<box.bottom();
+                }
                 // Match the entire selection's edges and centre, using the gesture's
                 // original bounds so snapping never accumulates on repeated moves.
                 const auto moving=m_modal.moveBounds.translated(target-m_modal.pivotScreen);
                 double dx=7,dy=7,gx=target.x(),gy=target.y();
                 for(double x:xs)for(double anchor:{moving.left(),moving.center().x(),moving.right()})if(qAbs(x-anchor)<qAbs(dx)){dx=x-anchor;gx=x;}
                 for(double y:ys)for(double anchor:{moving.top(),moving.center().y(),moving.bottom()})if(qAbs(y-anchor)<qAbs(dy)){dy=y-anchor;gy=y;}
+                if(showGrid && showOverlays && snapToGrid && r.contains(target)){
+                    const auto *camera=m_m->design.camera();
+                    const auto step=visibleGridStep(r,camera?camera->style:QJsonObject{},m_lib->display.resX());
+                    const double gridX=r.left()+qRound((target.x()-r.left())/step)*step;
+                    const double gridY=r.top()+qRound((target.y()-r.top())/step)*step;
+                    if(qAbs(dx)>=7 && gridX<=r.right()){gx=gridX;dx=gx-target.x();}
+                    if(qAbs(dy)>=7 && gridY<=r.bottom()){gy=gridY;dy=gy-target.y();}
+                }
                 if(qAbs(dx)<7)target.rx()+=dx;if(qAbs(dy)<7)target.ry()+=dy;
                 m_modal.snapX=qAbs(dx)<7;m_modal.snapY=qAbs(dy)<7;m_modal.snapPoint=QPointF(gx,gy);
                 bool ok=false;auto snapped=rayPlane(target,m_modal.pivot,fwd,&ok);if(ok)delta=snapped-m_modal.pivot;

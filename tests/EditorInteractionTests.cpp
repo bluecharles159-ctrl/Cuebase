@@ -142,6 +142,41 @@ private slots:
         QVERIFY(library.undoProgramCut());QCOMPARE(library.programs.size(),1);QCOMPARE(library.programs[0].lengthMs(),12000);QVERIFY(library.redoProgramCut());QCOMPARE(library.programs[1].id,second);
         library.programs[0].title="New edit";library.commitPrograms();QVERIFY(!library.undoProgramCut());QCOMPARE(library.programs[0].title,QString("New edit"));
     }
+    void snappingUsesVisibleBroadcastMargins(){
+        Library library;BuildModel model;
+        auto design=scene();design.find("plate")->tracks.clear();
+        design.camera()->style["editor.titleSafe"]=.19;
+        model.reset(design);model.select("plate");
+        BuildCanvas canvas(&model,&library);
+        canvas.resize(900,650);canvas.setShading(BuildCanvas::Solid);canvas.show();
+        canvas.showActionSafe=false;canvas.showGrid=false;QTest::qWait(30);canvas.grab();
+        const auto frame=canvas.property("compositionFrame").toRectF();
+        const auto camera=model.design.sceneCamera(0,library.display.aspect());
+        QPointF pivot,edge;
+        QVERIFY(camera.toScreen(QVector3D(),frame,&pivot));
+        QVERIFY(camera.toScreen(QVector3D(-2,0,0),frame,&edge));
+        const double safeLeft=frame.left()+.19*frame.width();
+        auto move=[&](QPointF p){
+            QMouseEvent event(QEvent::MouseMove,p,QPointF(canvas.mapToGlobal(p.toPoint())),Qt::NoButton,Qt::NoButton,Qt::NoModifier);
+            QApplication::sendEvent(&canvas,&event);
+        };
+        for(bool visible:{true,false}){
+            model.reset(design);model.select("plate");canvas.showTitleSafe=visible;
+            move(pivot);canvas.startMove();move(pivot+QPointF(safeLeft-edge.x()+3,0));
+            QTest::keyClick(&canvas,Qt::Key_Return);
+            QPointF actual;QVERIFY(camera.toScreen(model.byId("plate")->at(0).loc+QVector3D(-2,0,0),frame,&actual));
+            QVERIFY2(qAbs(actual.x()-(safeLeft+(visible?0:3)))<.7,qPrintable(QString::number(actual.x()-safeLeft)));
+        }
+        canvas.showGrid=true;canvas.showTitleSafe=false;
+        const double grid=frame.left()+3*120.*frame.width()/library.display.resX();
+        for(bool snap:{true,false}){
+            model.reset(design);model.select("plate");canvas.snapToGrid=snap;
+            move(pivot);canvas.startMove();move(QPointF(grid+3,pivot.y()));
+            QTest::keyClick(&canvas,Qt::Key_Return);
+            QPointF actual;QVERIFY(camera.toScreen(model.byId("plate")->at(0).loc,frame,&actual));
+            QVERIFY2(qAbs(actual.x()-(grid+(snap?0:3)))<.7,qPrintable(QString::number(actual.x()-grid)));
+        }
+    }
     void snappingAlignsEdgesAndOffCameraPicking(){
         Library library;BuildModel model;auto design=scene();design.find("plate")->tracks.clear();auto second=*design.find("plate");second.id="target";second.base.loc={5,0,0};design.objects.append(second);model.reset(design);model.select("plate");
         BuildCanvas canvas(&model,&library);canvas.resize(900,650);canvas.setShading(BuildCanvas::Solid);canvas.show();QTest::qWait(30);canvas.grab();

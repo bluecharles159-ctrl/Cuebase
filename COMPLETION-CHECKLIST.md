@@ -89,7 +89,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 - [x] 55. Shared text/logo appearance effects, reflections, bevel/extrusion, glass and light sweeps (Build 49).
 - [x] 56. Nondestructive surface painting, brush controls, ordered layers, masks and undo (Build 47).
 - [ ] 57. Drawable editable effect splines, handles, moving-object attachment and animated paths.
-- [ ] 58. Particle/mesh emitters, sparks, fire, smoke, fog, dust, debris, liquid and atmospheric presets.
+- [ ] 58. Particle/mesh emitters, sparks, fire, smoke, fog, dust, debris, liquid and atmospheric presets. Build 78 verified the surface reveal particle controls, seven particle sources, repeatable scrubbed frames, and a portable mesh stamp after the source mesh was removed. Independent scene emitters remain open.
 - [x] 59. Pixel/block/liquid/scattered-piece reveals with smooth/constant/step/flicker timing. Actual Inspector controls, undo/redo, saved settings, repeatable backward scrubbing and exact PNG parity for five surface styles × five timing modes pass in `reveal-workflow-results.txt` (5 cases). Rendered proof sheet inspected. These are 2D surface effects; 3D emitters/fluid simulation remain in task 58.
 - [ ] 60. Arbitrary transformed rigid bodies, collision filtering, custom shapes and simulation caches.
 - [x] 61. Stable reusable components, :: registration, search/quick insert and linked source revisions. Actual Build/browser workflow and saved-library reopening verified in `component-verified-results.txt`; individual renderable objects, with explicit updates in the open scene.
