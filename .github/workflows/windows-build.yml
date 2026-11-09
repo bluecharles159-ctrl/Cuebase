@@ -81,7 +81,7 @@ jobs:
           ctest --test-dir build-cloud --output-on-failure --parallel 1 --timeout 300 --output-junit cloud-tests.xml || test_status=$?
           build-cloud/CuebaseEditorInteractionTests.exe -platform windows -o native-editor-results.txt,txt || test_status=$?
           build-cloud/CuebaseCreativeWorkflowTests.exe -platform windows -o native-creative-results.txt,txt || test_status=$?
-          build-cloud/CuebaseBuildTests.exe -platform windows buildAppearanceModes lightingModesHierarchyAndExport adaptiveQualityFollowsFrameBudget buildPreviewQualityAndBackdrop meshEmitterUsesTheSelectedGeometry compositionGuidesPersistAndUndo explicitGuideProofExports -o native-build-preview-results.txt,txt || test_status=$?
+          build-cloud/CuebaseBuildTests.exe -platform windows buildAppearanceModes lightingModesHierarchyAndExport adaptiveQualityFollowsFrameBudget buildPreviewQualityAndBackdrop meshEmitterUsesTheSelectedGeometry compositionGuidesPersistAndUndo explicitGuideProofExports responsiveFramePinsFollowOutputFormat -o native-build-preview-results.txt,txt || test_status=$?
           grep -F 'median render (ms)' native-build-preview-results.txt || true
           build-cloud/CuebaseStreamTests.exe -platform windows studioMeshLightMatchesSceneRenderer -o native-studio-lighting-results.txt,txt || test_status=$?
           build-cloud/CuebaseStreamTests.exe -platform windows duplicateTrimAndExtendCuePlacement nestedBoardNavigationEditsAndDelayedPlacement livePlacementEditorProtectsIndividualPlays chooseWorkspaceAtFirstLaunchAndSwitchInSettings scheduleAndBroadcastSplitLayouts -o native-cue-board-results.txt,txt || test_status=$?

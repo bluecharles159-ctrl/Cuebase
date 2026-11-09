@@ -30,10 +30,10 @@ save/reopen. The same evaluator feeds Build, Studio and PNG rendering.
 Text, images and shapes retain their source appearance and relevant Inspector
 controls when converted to editable surfaces. Entering the mode preserves output
 pixels, including padded shadows. Convex planar four-corner forms warp the full
-padded texture, retaining outward shadow and blur during deformation. Other
-deformed surfaces map content to individual faces; outward effects on those
-faces and combined surface materials remain part of the open surface workflow.
-These features are not complete 3D material support.
+padded texture. Bent outlines, subdivided faces and extruded caps follow the
+editable surface coordinates, carrying shadows and blur beyond the silhouette.
+Perspective views clip textured faces at the near plane. New extrusion walls
+with zero area in the original image use the object's material color.
 
 ## Try the editable example
 

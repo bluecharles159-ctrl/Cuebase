@@ -203,6 +203,9 @@ struct ElementDesign {
     int durationMs = 5000;
     int startMs = 0;
     bool loop = true;
+    // Current view/output format for layout and picking. Each pin separately
+    // stores the aspect it was authored at; this runtime value is never saved.
+    double layoutAspect = 16./9.;
 
     bool isEmpty() const;  // nothing to draw
     QString toJson() const;
@@ -220,6 +223,8 @@ struct ElementDesign {
     QMatrix4x4 physicsWorldMatrix(const DObject &o,qint64 ms) const;
     QMatrix4x4 worldMatrix(const DObject &o, qint64 ms) const;
     QMatrix4x4 parentMatrix(const DObject &o, qint64 ms) const;
+    QMatrix4x4 attachmentMatrix(const DObject &child, const DObject *parent, qint64 ms) const;
+    QMatrix4x4 positionMatrix(const DObject &o, qint64 ms) const;
     bool effectiveVisible(const DObject &o) const;
     QPainterPath overflowClip(const DObject &o, qint64 ms, const ViewCam &cam, const QRectF &rect, const QRectF &viewport = {}) const;
     const Mesh &evalMesh(const DObject &o, qint64 ms) const;  // modifiers applied
@@ -237,6 +242,8 @@ struct ElementDesign {
     mutable int m_evalDepth = 0;
 
 private:
+    QMatrix4x4 authoredWorldMatrix(const DObject &object,qint64 ms,const DObject **pin=nullptr) const;
+    QMatrix4x4 framePinTransform(const DObject &pin,qint64 ms) const;
     QImage baseTexture(const DObject &object) const;
     QImage booleanTexture(const DObject &object,qint64 ms,QSet<QString> &visiting) const;
     void ensurePhysics(qint64 ms) const;

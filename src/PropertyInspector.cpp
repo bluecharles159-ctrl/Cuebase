@@ -35,6 +35,7 @@ PropertyInspector::PropertyInspector(BuildModel *model,Library *library,QWidget 
     connect(m,&BuildModel::selectionChanged,this,[this]{rebuild();});
     connect(m,&BuildModel::changed,this,[this]{rebuild();refresh();});
     connect(m,&BuildModel::timeChanged,this,[this]{refresh();});
+    connect(lib,&Library::displayChanged,this,[this]{refresh();});
     rebuild();
 }
 void PropertyInspector::apply(const std::function<void()> &operation){if(syncing)return;m->pushUndo();operation();m->notify();}
@@ -57,7 +58,7 @@ void PropertyInspector::number(QFormLayout *form,const QString &label,const QStr
         if(syncing)return;m->pushUndo();
         for(auto *o:m->inspected()) {
             if (path == "position.x" || path == "position.z") {
-                auto p=o->at(m->t);const auto basis=m->design.parentMatrix(*o,m->t);const auto world=basis.map(p.loc); const auto camera=m->design.sceneCamera(m->t,lib->display.aspect());
+                auto p=o->at(m->t);const auto basis=m->design.positionMatrix(*o,m->t);const auto world=basis.map(p.loc); const auto camera=m->design.sceneCamera(m->t,lib->display.aspect());
                 const QRectF frame(0,0,lib->display.resX(),lib->display.resY());QPointF pixel;
                 if (!camera.toScreen(world,frame,&pixel)) continue;
                 if (path=="position.x")pixel.setX(v);else pixel.setY(v);
@@ -300,6 +301,33 @@ void PropertyInspector::rebuild(){
     }
     if(!multi && (o->surfaceType()=="Text"||o->surfaceType()=="Image"||o->surfaceType()=="Shape")){
         auto *size=section("LAYOUT");number(size,"Width","layout.width",1,8192,1," px");number(size,"Height","layout.height",1,8192,1," px");
+        auto *pin = new QComboBox;
+        pin->setObjectName("framePin");
+        pin->addItem("As authored",QString());
+        pin->addItem("Top edge","Top");
+        pin->addItem("Bottom edge","Bottom");
+        pin->addItem("Relative height","Relative");
+        pin->setToolTip("Keep the edge margin or relative height when the output aspect ratio changes.");
+        size->addRow("Frame pin",pin);
+        connect(pin,&QComboBox::activated,this,[=,this](int index){
+            apply([&]{
+                auto *object = m->active();
+                if (!object || object->locked) return;
+                const auto mode = pin->itemData(index).toString();
+                if (mode.isEmpty()) {
+                    object->style.remove("layout.framePin");
+                    object->style.remove("layout.pinAspect");
+                } else {
+                    if (!object->style.contains("layout.framePin")) object->style["layout.pinAspect"] = lib->display.aspect();
+                    object->style["layout.framePin"] = mode;
+                }
+            });
+        });
+        sync.append([=,this]{if (auto *object=m->active()) {
+            QSignalBlocker blocker(pin);
+            pin->setCurrentIndex(qMax(0,pin->findData(object->style.value("layout.framePin").toString())));
+            pin->setEnabled(!object->locked);
+        }});
         if(o->surfaceType()=="Text"){
             auto *fit=new QCheckBox("Fit background to text");fit->setObjectName("textAutoFit");size->addRow(fit);
             auto *axes=new QWidget;auto *row=new QHBoxLayout(axes);row->setContentsMargins(0,0,0,0);auto *x=new QCheckBox("X"),*y=new QCheckBox("Y");row->addWidget(x);row->addWidget(y);row->addStretch();size->addRow("Adapt axes",axes);

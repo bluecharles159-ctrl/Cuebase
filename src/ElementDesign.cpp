@@ -163,7 +163,7 @@ ViewCam ElementDesign::sceneCamera(qint64 ms, double aspect) const {
     ViewCam v;
     v.aspect = aspect;
     if (const DObject *c = camera()) {
-        v.view = worldMatrix(*c, ms).inverted();
+        v.view = authoredWorldMatrix(*c, ms).inverted();
         const auto camera = c->evaluated(ms);
         v.ortho = camera.cam.ortho;
         v.orthoScale = camera.cam.orthoScale;
@@ -615,6 +615,13 @@ QColor toColor(float r, float g, float b) {
 } // namespace
 
 void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, qint64 ms, const PaintOpts &o) const {
+    if (cam.aspect>0 && !qFuzzyCompare(cam.aspect,layoutAspect) &&
+        std::any_of(objects.cbegin(),objects.cend(),[](const DObject &obj){return obj.style.contains("layout.framePin");})) {
+        ElementDesign view = *this;
+        view.layoutAspect = cam.aspect;
+        view.paint(p,rect,cam,ms,o);
+        return;
+    }
     if(p.device()->devType()!=QInternal::Image){bool needs=false;for(const auto &object:objects)needs|=object.propertyValue("backdrop.blur",ms)>0||object.propertyValue("backdrop.brightness",ms)!=1;
         if(needs){QImage image(rect.size().toSize(),QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);QPainter composite(&image);composite.translate(-rect.topLeft());paint(composite,rect,cam,ms,o);composite.end();p.drawImage(rect.topLeft(),image);return;}}
     p.save();

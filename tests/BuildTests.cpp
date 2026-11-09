@@ -156,6 +156,86 @@ private slots:
         QCOMPARE(render(),output);
         QVERIFY(canvas->grab().save("artifacts/composition-guides.png"));model->reset(ElementDesign::defaultScene());QVERIFY(guides().isEmpty());
     }
+    void responsiveFramePinsFollowOutputFormat_data(){
+        QTest::addColumn<bool>("perspective");
+        QTest::newRow("orthographic") << false;
+        QTest::newRow("perspective") << true;
+    }
+    void responsiveFramePinsFollowOutputFormat(){
+        QFETCH(bool,perspective);
+        Library library;
+        library.display.resolution = "320x180";
+        BuildWorkspace workspace(&library);
+        auto *model = workspace.findChild<BuildModel*>();
+        auto scene = ElementDesign::defaultScene();
+        scene.world.transparent = true;
+        scene.camera()->cam.ortho = !perspective;
+        DObject plate;
+        plate.id = "pinned"; plate.type = "Shape";
+        plate.w = 2; plate.h = 1;
+        plate.base.loc = {-1,0,1};
+        plate.base.rot = {90,0,0};
+        plate.mat.shadeless = true;
+        plate.mat.color = Qt::red;
+        plate.keyChannel("position.x",0,-1);
+        plate.keyChannel("position.x",1000,1);
+        scene.objects.append(plate);
+        DObject child = plate;
+        child.id = "attached"; child.parentId = plate.id;
+        child.tracks.clear(); child.keys.clear();
+        child.base.loc = {2,0,0}; child.base.rot = {};
+        child.mat.color = Qt::blue;
+        scene.objects.append(child);
+        model->reset(scene); model->select(plate.id);
+        auto *pin = workspace.findChild<QComboBox*>("framePin");
+        QVERIFY(pin);
+        auto choose = [&](const QString &name){
+            const int index = pin->findData(name);
+            QVERIFY(index>=0);
+            pin->setCurrentIndex(index);
+            emit pin->activated(index);
+        };
+        auto bounds = [](const ElementDesign &design,QSize size,qint64 ms,bool blue){
+            QImage image(size,QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::transparent);
+            QPainter painter(&image);
+            design.render(painter,image.rect(),ms,true,nullptr,false);
+            painter.end();
+            QRect result;
+            for(int y=0;y<size.height();++y) for(int x=0;x<size.width();++x){
+                const auto c = image.pixelColor(x,y);
+                if (c.alpha()>220 && (blue?c.blue()>200:c.red()>200)) result |= QRect(x,y,1,1);
+            }
+            return result;
+        };
+        const QSize wide(320,180), tall(320,568);
+        for(const auto &name:QStringList{"Top","Bottom","Relative"}){
+            choose(name);
+            const auto restored=ElementDesign::fromJson(model->design.toJson());
+            for (int time : {0,1000}) for (bool blue : {false,true}) {
+                const auto ref=bounds(restored,wide,time,blue), adapted=bounds(restored,tall,time,blue);
+                QVERIFY(!ref.isEmpty() && !adapted.isEmpty());
+                QVERIFY(qAbs(adapted.width()-ref.width())<=1 && qAbs(adapted.height()-ref.height())<=1);
+                QCOMPARE(ref.left(),adapted.left());
+                if (name=="Top") QVERIFY(qAbs(ref.top()-adapted.top())<=1);
+                if (name=="Bottom") QVERIFY(qAbs((wide.height()-ref.bottom())-(tall.height()-adapted.bottom()))<=1);
+                if (name=="Relative") QVERIFY(qAbs(double(ref.center().y())/wide.height()-double(adapted.center().y())/tall.height())<.012);
+            }
+        }
+        library.display.resolution="320x568"; emit library.displayChanged();
+        auto *canvasY=workspace.findChild<QDoubleSpinBox*>("property_position.z");
+        QVERIFY(canvasY);
+        const double requested=qRound(canvasY->value())+18;
+        canvasY->setValue(requested);
+        const auto world=model->design.worldMatrix(*model->active(),0).map(QVector3D());
+        QPointF actual;
+        QVERIFY(model->design.sceneCamera(0,library.display.aspect()).toScreen(world,QRectF(0,0,320,568),&actual));
+        QVERIFY(qAbs(actual.y()-requested)<.05);
+        choose(QString());
+        QVERIFY(!model->active()->style.contains("layout.framePin"));
+        QVERIFY(model->undo());
+        QCOMPARE(model->active()->style.value("layout.framePin").toString(),QString("Relative"));
+    }
     void explicitGuideProofExports(){
         struct DialogMode {
             bool previous = QApplication::testAttribute(Qt::AA_DontUseNativeDialogs);

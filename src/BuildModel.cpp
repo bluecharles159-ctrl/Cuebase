@@ -337,7 +337,7 @@ void BuildModel::deleteSelected() {
     if (kill.isEmpty()) return;
     pushUndo();
     // Detach surviving children before removing a parent, preserving their world transform.
-    for(auto &o:design.objects)if(kill.contains(o.parentId)&&!kill.contains(o.id)){o.parentInverse=design.parentMatrix(o,t);o.parentId.clear();}
+    for(auto &o:design.objects)if(kill.contains(o.parentId)&&!kill.contains(o.id)){o.parentInverse=design.attachmentMatrix(o,byId(o.parentId),t)*o.parentInverse;o.parentId.clear();}
     for (const QString &id : kill)
         for (int i = 0; i < design.objects.size(); ++i)
             if (design.objects[i].id == id) {
@@ -474,7 +474,7 @@ void BuildModel::setProps(const QString &id, const DProps &p) {
     if (DObject *o = byId(id)) {
         if (o->locked) return;
         const DProps old = o->at(t);
-        QHash<QString,QMatrix4x4> children;if(isolateParents)for(const auto &child:design.objects)if(child.parentId==id)children[child.id]=design.parentMatrix(child,t);
+        QHash<QString,QMatrix4x4> children;if(isolateParents)for(const auto &child:design.objects)if(child.parentId==id)children[child.id]=design.attachmentMatrix(child,o,t)*child.parentInverse;
         if(!children.isEmpty()){
             // A singular parent cannot be counter-transformed to hold a child in place.
             bool invertible=false;
@@ -491,9 +491,8 @@ void BuildModel::setProps(const QString &id, const DProps &p) {
             }
         }
         if(!children.isEmpty()){
-            const auto inverse=design.worldMatrix(*o,t).inverted();
             for(auto it=children.begin();it!=children.end();++it)
-                if(auto *child=byId(it.key()))child->parentInverse=inverse*it.value();
+                if(auto *child=byId(it.key()))child->parentInverse=design.attachmentMatrix(*child,o,t).inverted()*it.value();
         }
     }
 }
@@ -538,11 +537,16 @@ bool BuildModel::parentSelected(bool clear){
         children.append(id);
     }
     if(children.isEmpty())return false;
-    bool invertible=true;QMatrix4x4 inverse;
-    if(!clear)inverse=design.worldMatrix(*parent,t).inverted(&invertible);
-    if(!invertible)return false;
+    QHash<QString,QMatrix4x4> bindings;
+    for(const auto &id:children){
+        const auto *child=byId(id);
+        bool invertible=true;
+        const auto inverse=design.attachmentMatrix(*child,clear?nullptr:parent,t).inverted(&invertible);
+        if(!invertible)return false;
+        bindings[id]=inverse*design.attachmentMatrix(*child,byId(child->parentId),t)*child->parentInverse;
+    }
     pushUndo();
-    for(const auto &id:children){auto *o=byId(id);const auto oldBasis=design.parentMatrix(*o,t);o->parentInverse=inverse*oldBasis;o->parentId=clear?QString():activeId;}
+    for(const auto &id:children){auto *o=byId(id);o->parentInverse=bindings.value(id);o->parentId=clear?QString():activeId;}
     emit changed();return true;
 }
 

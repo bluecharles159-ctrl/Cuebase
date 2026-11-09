@@ -112,6 +112,7 @@ BuildCanvas::BuildCanvas(BuildModel *m, Library *lib, QWidget *parent) : QWidget
     setFocusPolicy(Qt::StrongFocus);
     setMinimumSize(380, 240);
     auto loadGuides=[this]{
+        m_m->design.layoutAspect = m_lib->display.aspect();
         m_verticalGuides.clear();m_horizontalGuides.clear();m_dragGuide=-1;
         if(const auto *camera=m_m->design.camera()){
             auto load=[](const QJsonArray &items,QVector<double> &values){for(auto item:items){const double value=item.toDouble(-1);if(value>=0&&value<=1)values.append(value);}};
@@ -121,7 +122,10 @@ BuildCanvas::BuildCanvas(BuildModel *m, Library *lib, QWidget *parent) : QWidget
         update();
     };
     connect(m, &BuildModel::changed, this, loadGuides);loadGuides();
-    connect(lib,&Library::displayChanged,this,qOverload<>(&QWidget::update));
+    connect(lib,&Library::displayChanged,this,[this]{
+        m_m->design.layoutAspect = m_lib->display.aspect();
+        update();
+    });
     connect(m, &BuildModel::timeChanged, this, [this] { update(); });
     connect(m, &BuildModel::selectionChanged, this, [this] { update(); });
     connect(m, &BuildModel::modeChanged, this, [this] {
@@ -261,7 +265,7 @@ void BuildCanvas::alignSelection(const QString &operation){
         else if(operation=="Bottom")delta.setY(total.bottom()-r.bottom());
         else if(horizontal)delta.setX(total.center().x()-r.center().x());
         else delta.setY(total.center().y()-r.center().y());
-        DProps p=o->at(m_m->t);const auto basis=m_m->design.parentMatrix(*o,m_m->t);const auto world=basis.map(p.loc);QPointF origin;cam.toScreen(world,frame,&origin);bool ok=false;
+        DProps p=o->at(m_m->t);const auto basis=m_m->design.positionMatrix(*o,m_m->t);const auto world=basis.map(p.loc);QPointF origin;cam.toScreen(world,frame,&origin);bool ok=false;
         p.loc=basis.inverted().map(rayPlane(origin+delta,world,cam.forward(),&ok));if(ok)m_m->setProps(o->id,p);
     }
     m_m->notify();
@@ -1057,7 +1061,7 @@ void BuildCanvas::applyModal(const QPointF &mouse) {
         const auto anchor=cam.view.map(m_modal.pivot);
         for(auto it=m_modal.origProps.begin();it!=m_modal.origProps.end();++it){
             auto *o=m_m->byId(it.key());if(!o)continue;
-            auto p=it.value();const auto basis=m_m->design.parentMatrix(*o,m_m->t);auto position=cam.view.map(basis.map(p.loc));
+            auto p=it.value();const auto basis=m_m->design.positionMatrix(*o,m_m->t);auto position=cam.view.map(basis.map(p.loc));
             position.setX(anchor.x()+(position.x()-anchor.x())*float(fx));
             position.setY(anchor.y()+(position.y()-anchor.y())*float(fy));
             p.loc=basis.inverted().map(viewInverse.map(position));
@@ -1187,7 +1191,7 @@ void BuildCanvas::applyModal(const QPointF &mouse) {
         for (auto it = m_modal.origProps.begin(); it != m_modal.origProps.end(); ++it) {
             DProps p = it.value();
             auto *object=m_m->byId(it.key());if(!object)continue;
-            const auto basis=m_m->design.parentMatrix(*object,m_m->t),inverse=basis.inverted();
+            const auto basis=(m_modal.kind==Modal::Move ? m_m->design.positionMatrix(*object,m_m->t) : m_m->design.parentMatrix(*object,m_m->t)),inverse=basis.inverted();
             if (m_modal.kind == Modal::Move) {
                 p.loc = inverse.map(xf(basis.map(p.loc)));
             } else if (m_modal.kind == Modal::Rotate) {

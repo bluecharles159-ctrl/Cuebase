@@ -1,6 +1,6 @@
 # Cuebase completion counter
 
-Updated 2026-11-09. **60 of 84 tasks completed — 24 remaining.**
+Updated 2026-11-09. **61 of 84 tasks completed — 23 remaining.**
 
 The Claude transcript adds four distinct acceptance groups (81–84). Row 06 remains
 open: converted surfaces now retain their Inspector controls and unchanged
@@ -25,7 +25,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 - [x] 03. Mirror reference-object picker and cancel; modifier-card interaction. Actual card button, viewport selection, Escape, undo/redo and saved reference verified in `mirror-card-results.txt`.
 - [x] 04. Enter/Return commits numeric values and releases input focus.
 - [x] 05. Select All feedback without unintended transforms or hidden selection.
-- [ ] 06. Parented Edit Mode world coordinates and full shape appearance preservation, including Background/Effects controls and rendering after conversion.
+- [x] 06. Parented Form Animation vertex picking, retained Background/Effects controls and shape appearance through conversion. Build 87 verified textured perspective clipping, shadows on bent triangles, ellipses, subdivided surfaces and extruded caps, scene reload and PNG pixel equality.
 - [x] 07. Independent per-object inspector expansion, including text Typography defaults. Verified selection/default/persistence workflow in `portable-editor-results.txt`.
 - [x] 08. Independent frame-range cues, empty state, extraction and timeline highlighting. Build 42 verifies the selected play's range in Build and Studio, the selected-key dialog, cancel cleanup and source isolation. The native graph capture shows the highlight between the selected keys. Save, undo and restricted playback also pass in the Build suite.
 - [x] 09. Rounded cue creation/edit modal and cue-board cards/padding. Build 64 verified selected-frame modal entry and cancellation, filtered cue selection, board playback and independent per-play controls. Windows captures reviewed.

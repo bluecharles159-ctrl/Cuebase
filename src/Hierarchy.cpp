@@ -3,15 +3,65 @@
 #include <QPolygonF>
 #include <algorithm>
 
-QMatrix4x4 ElementDesign::worldMatrix(const DObject &o,qint64 ms) const {
+QMatrix4x4 ElementDesign::authoredWorldMatrix(const DObject &o,qint64 ms,const DObject **pin) const {
+    auto visit = [&](const DObject &object) {
+        if (pin && !*pin && object.style.contains("layout.framePin")) *pin = &object;
+    };
+    visit(o);
     if(o.phys.enabled&&o.phys.active&&o.isRenderable())return physicsWorldMatrix(o,ms);
     QMatrix4x4 result=o.parentInverse*matrixOf(o.at(ms));
     QSet<QString> visited{o.id};const DObject *p=find(o.parentId);
-    while(p&&!visited.contains(p->id)){visited.insert(p->id);if(p->phys.enabled&&p->phys.active&&p->isRenderable()){result=physicsWorldMatrix(*p,ms)*result;break;}result=p->parentInverse*matrixOf(p->at(ms))*result;p=find(p->parentId);}
+    while(p&&!visited.contains(p->id)){visited.insert(p->id);visit(*p);if(p->phys.enabled&&p->phys.active&&p->isRenderable()){result=physicsWorldMatrix(*p,ms)*result;break;}result=p->parentInverse*matrixOf(p->at(ms))*result;p=find(p->parentId);}
     return result;
 }
+QMatrix4x4 ElementDesign::framePinTransform(const DObject &pin,qint64 ms) const {
+    const double reference = pin.style.value("layout.pinAspect").toDouble();
+    if (!(reference>0 && layoutAspect>0) || qFuzzyCompare(reference,layoutAspect)) return {};
+    const auto camera = sceneCamera(ms,layoutAspect);
+    const auto mode = pin.style.value("layout.framePin").toString();
+    QMatrix4x4 adjust;
+    if (mode=="Relative") {
+        adjust(1,1) = reference/layoutAspect;
+    } else {
+        if (mode!="Top" && mode!="Bottom") return {};
+        const double delta = (1./layoutAspect-1./reference)*(mode=="Top" ? 1. : -1.);
+        if (camera.ortho) adjust.translate(0,delta*camera.orthoScale/2.,0);
+        else adjust(1,2) = -delta/camera.f;
+    }
+    return camera.view.inverted()*adjust*camera.view;
+}
+QMatrix4x4 ElementDesign::worldMatrix(const DObject &o,qint64 ms) const {
+    const DObject *pin = nullptr;
+    const auto world = authoredWorldMatrix(o,ms,&pin);
+    if (!pin || o.type=="Camera") return world;
+    const auto center = (pin==&o ? world : authoredWorldMatrix(*pin,ms)).map(QVector3D());
+    QMatrix4x4 offset;
+    offset.translate(framePinTransform(*pin,ms).map(center)-center);
+    return offset*world;
+}
 QMatrix4x4 ElementDesign::parentMatrix(const DObject &o,qint64 ms) const {
-    const auto *p=find(o.parentId);return p?worldMatrix(*p,ms)*o.parentInverse:o.parentInverse;
+    const DObject *pin = o.style.contains("layout.framePin") ? &o : nullptr;
+    const auto *parent = find(o.parentId);
+    const auto basis = parent ? authoredWorldMatrix(*parent,ms,&pin)*o.parentInverse : o.parentInverse;
+    if (!pin || o.type=="Camera") return basis;
+    QMatrix4x4 offset;
+    const auto center = authoredWorldMatrix(*pin,ms).map(QVector3D());
+    offset.translate(framePinTransform(*pin,ms).map(center)-center);
+    return offset*basis;
+}
+QMatrix4x4 ElementDesign::positionMatrix(const DObject &o,qint64 ms) const {
+    // An object's own pin changes the mapping of authored translations. Its
+    // rendered geometry, and the local offsets of its children, keep their size.
+    if (!o.style.contains("layout.framePin") || o.type=="Camera") return parentMatrix(o,ms);
+    const auto *parent = find(o.parentId);
+    const auto basis = parent ? authoredWorldMatrix(*parent,ms)*o.parentInverse : o.parentInverse;
+    return framePinTransform(o,ms)*basis;
+}
+QMatrix4x4 ElementDesign::attachmentMatrix(const DObject &child,const DObject *parent,qint64 ms) const {
+    if (!parent) return {};
+    // A separately pinned child applies its own correction after parenting.
+    // Keep that correction out of the saved parent inverse.
+    return child.style.contains("layout.framePin") ? authoredWorldMatrix(*parent,ms) : worldMatrix(*parent,ms);
 }
 bool ElementDesign::effectiveVisible(const DObject &o) const {
     if(!o.visible)return false;QSet<QString> seen{o.id};const DObject *p=find(o.parentId);
