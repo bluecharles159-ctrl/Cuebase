@@ -378,6 +378,7 @@ private slots:
         const auto handle=project(before[1].outgoing),shifted=handle+QPoint(8,-22);
         QTest::mousePress(overlay,Qt::LeftButton,Qt::NoModifier,handle);
         drag(overlay,shifted);QTest::mouseRelease(overlay,Qt::LeftButton,Qt::NoModifier,shifted);
+        QDir().mkpath("artifacts");QVERIFY(canvas.grab().save("artifacts/particle-path-editor.png"));
         QTest::keyClick(overlay,Qt::Key_Return);QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
         const auto after=ParticlePath::read(object->style["effects.particlePath"].toArray());
         QCOMPARE(after[1].point,before[1].point);QVERIFY(after[1].outgoing!=before[1].outgoing);
@@ -386,6 +387,27 @@ private slots:
         QTest::mouseDClick(overlay,Qt::LeftButton,Qt::NoModifier,midCurve);
         QTest::keyClick(overlay,Qt::Key_Return);
         QCOMPARE(object->style["effects.particlePath"].toArray().size(),4);
+        QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
+        auto *pose=inspector.findChild<QComboBox*>("particlePathPose");QVERIFY(pose);
+        pose->setCurrentIndex(1);edit->click();overlay=canvas.findChild<QWidget*>("particlePathEditor");QVERIFY(overlay);
+        const auto startPath=object->style["effects.particlePath"].toArray();
+        const auto startKnot=project(ParticlePath::read(startPath).last().point);
+        QTest::mousePress(overlay,Qt::LeftButton,Qt::NoModifier,startKnot);
+        drag(overlay,startKnot+QPoint(-40,-85));QTest::mouseRelease(overlay,Qt::LeftButton,Qt::NoModifier,startKnot+QPoint(-40,-85));
+        QTest::keyClick(overlay,Qt::Key_Return);
+        QCOMPARE(object->style["effects.particlePath"].toArray(),startPath);
+        const auto endPath=object->style["effects.particleEndPath"].toArray();
+        QVERIFY(!endPath.isEmpty() && endPath!=startPath);
+        object->keyChannel("effects.pathMix",0,0);object->keyChannel("effects.pathMix",1000,1);
+        const auto animated=ElementDesign::fromJson(model.design.toJson());
+        auto sample=[&](qint64 ms){
+            auto evaluated=animated.find(title.id)->evaluated(ms);
+            evaluated.setPropertyBase("effects.particleTurbulence",1.);
+            return animated.textureFor(evaluated,ms);
+        };
+        const auto firstPose=sample(0),between=sample(500),lastPose=sample(1000);
+        QVERIFY(firstPose!=lastPose && between!=firstPose && between!=lastPose);
+        QCOMPARE(sample(500),between);
     }
     void standaloneEmittersFollowSceneTime(){
         Library library;BuildWorkspace workspace(&library);

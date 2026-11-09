@@ -78,6 +78,8 @@ inline void paintParticles(QImage &image,const QImage &surface,const DObject &o,
     const double gravity=qBound(-8.,o.propertyBase("effects.particleGravity"),8.);
     QTransform emission;emission.rotate(o.propertyBase("effects.particleAngle"));
     const auto path=ParticlePath::curve(ParticlePath::read(o.style.value("effects.particlePath").toArray()));
+    const auto pathMix=qBound(0.,o.propertyBase("effects.pathMix"),1.);
+    const auto endPath=pathMix>0?ParticlePath::curve(ParticlePath::read(o.style.value("effects.particleEndPath").toArray())):QPainterPath{};
     const bool onPath=!path.isEmpty();
     const bool reverse=o.style.value("effects.pathDirection").toString()=="Reverse";
     QPainter painter(&image);painter.setPen(Qt::NoPen);painter.setRenderHint(QPainter::Antialiasing);
@@ -100,7 +102,9 @@ inline void paintParticles(QImage &image,const QImage &surface,const DObject &o,
         if(age<=0 || age>=1)continue;
         if(onPath){
             const double along=qMin(1.,age*speed);
-            const auto uv=path.pointAtPercent(reverse?1-along:along);
+            const double fraction=reverse?1-along:along;
+            auto uv=path.pointAtPercent(fraction);
+            if(!endPath.isEmpty())uv+=(endPath.pointAtPercent(fraction)-uv)*pathMix;
             origin=area.topLeft()+QPointF(uv.x()*(area.width()-1),uv.y()*(area.height()-1));
         }else if(emitter && o.style.value("effects.emitterSource").toString()=="Point"){
             origin=QPointF(area.center())+QPointF((x-.5)*area.width()*.06,(y-.5)*area.height()*.06);

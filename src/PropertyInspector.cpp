@@ -409,9 +409,17 @@ void PropertyInspector::rebuild(){
         pathActions->addWidget(pathEdit,1);pathActions->addWidget(pathClear);effects->addRow("Motion path",pathRow);
         const int directionRow=effects->rowCount();
         choice(effects,"Path direction","effects.pathDirection",{"Forward","Reverse"},"Forward");
-        connect(pathEdit,&QPushButton::clicked,this,[this]{emit m->particlePathRequested();});
-        connect(pathClear,&QPushButton::clicked,this,[this]{
-            if(auto *target=m->active();target && !target->locked)apply([&]{target->style.remove("effects.particlePath");});
+        auto *pose=new QComboBox;pose->addItems({"Start path","End path"});pose->setObjectName("particlePathPose");
+        effects->addRow("Edit pose",pose);
+        const int blendRow=effects->rowCount();
+        number(effects,"Path blend","effects.pathMix",0,1,.01);
+        connect(pose,&QComboBox::currentIndexChanged,this,[this]{refresh();});
+        connect(pathEdit,&QPushButton::clicked,this,[this,pose]{emit m->particlePathRequested(pose->currentIndex()==1);});
+        connect(pathClear,&QPushButton::clicked,this,[this,pose]{
+            if(auto *target=m->active();target && !target->locked)apply([&]{
+                if(pose->currentIndex()==0)target->style.remove("effects.particlePath");
+                target->style.remove("effects.particleEndPath");
+            });
         });
         connect(stamps,&QMenu::aboutToShow,this,[this,stamps]{
             stamps->clear();
@@ -437,9 +445,15 @@ void PropertyInspector::rebuild(){
                 stampButton->setEnabled(!active->locked);
                 stampButton->setText(active->style.value("effects.revealStampName").toString("Choose mesh…"));
                 const bool hasPath=!active->style.value("effects.particlePath").toArray().isEmpty();
+                const bool hasEnd=!active->style.value("effects.particleEndPath").toArray().isEmpty();
+                if(!hasPath){QSignalBlocker block(pose);pose->setCurrentIndex(0);}
+                effects->setRowVisible(pose,kind!="None" && hasPath);
+                effects->setRowVisible(blendRow,kind!="None" && hasPath && hasEnd);
                 effects->setRowVisible(pathRow,kind!="None");pathRow->setEnabled(!active->locked);
                 effects->setRowVisible(directionRow,kind!="None" && hasPath);
-                pathEdit->setText(hasPath?"Edit in viewport…":"Draw in viewport…");pathClear->setVisible(hasPath);
+                pathEdit->setText(hasPath?"Edit in viewport…":"Draw in viewport…");
+                pathClear->setVisible(pose->currentIndex()==1?hasEnd:hasPath);
+                pathClear->setToolTip(pose->currentIndex()==1?"Remove the end pose.":"Remove both path poses.");
             }
         });
         for(const auto &path:QStringList{"brightness","contrast","saturation"})number(effects,path,"effects."+path,0,3,.05);

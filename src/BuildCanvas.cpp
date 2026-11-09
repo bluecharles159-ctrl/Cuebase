@@ -82,11 +82,15 @@ QVector3D axisOf(int a) { return a == 0 ? QVector3D(1, 0, 0) : a == 1 ? QVector3
 } // namespace
 
 BuildCanvas::BuildCanvas(BuildModel *m, Library *lib, QWidget *parent) : QWidget(parent), m_m(m), m_lib(lib) {
-    connect(m,&BuildModel::particlePathRequested,this,[this,m]{
+    connect(m,&BuildModel::particlePathRequested,this,[this,m](bool endPose){
         auto *owner=m->active();
         if(!owner || owner->locked || !owner->hasSurface() || modalActive())return;
         const QString id=owner->id;
-        const auto original=owner->style.value("effects.particlePath");
+        const QString field=endPose?"effects.particleEndPath":"effects.particlePath";
+        const auto original=owner->style.value(field);
+        const auto start=owner->style.value("effects.particlePath").toArray();
+        if(endPose && start.isEmpty())return;
+        const auto initial=endPose && original.toArray().isEmpty()?start:original.toArray();
         if(auto *existing=findChild<QWidget*>("particlePathEditor")){existing->raise();existing->setFocus();return;}
         auto projection=[this,m,id]{
             const auto *source=m->byId(id);
@@ -106,13 +110,14 @@ BuildCanvas::BuildCanvas(BuildModel *m, Library *lib, QWidget *parent) : QWidget
             return QTransform::quadToQuad(unit,screen,transform)?transform:invalid;
         };
         if(!projection().isInvertible()){emit message("Face the surface in the Work viewport to draw a particle path.");return;}
-        auto *editor=new ParticlePathEditor(this,original.toArray(),projection,[this,m,id,original](QJsonArray path){
+        auto *editor=new ParticlePathEditor(this,initial,projection,[this,m,id,field,original,start,endPose](QJsonArray path){
             auto *source=m->byId(id);
-            if(!source || source->locked || m->activeId!=id || source->style.value("effects.particlePath")!=original){
+            if(!source || source->locked || m->activeId!=id || source->style.value(field)!=original ||
+               (endPose && source->style.value("effects.particlePath").toArray()!=start)){
                 emit message("The surface changed. Reopen its particle path.");return;
             }
             if(original.toArray()==path)return;
-            m->pushUndo(true);source->style["effects.particlePath"]=path;m->notify();
+            m->pushUndo(true);source->style[field]=path;m->notify();
         });
         connect(m,&BuildModel::selectionChanged,editor,[editor,m,id]{if(m->activeId!=id)editor->close();});
         connect(m,&BuildModel::timeChanged,editor,qOverload<>(&QWidget::update));
