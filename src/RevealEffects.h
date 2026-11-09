@@ -69,8 +69,15 @@ inline void paintParticles(QImage &image,const QImage &surface,const DObject &o,
     const double radiusMax=qMax(1.,std::hypot(qMax(center.x(),1-center.x())*area.width(),qMax(center.y(),1-center.y())*area.height()));
     const bool smoke=kind=="Smoke",fog=kind=="Fog",fire=kind=="Fire",sparks=kind=="Sparks";
     const double travel=o.propertyBase("effects.particleTravel");
+    const double speed=qBound(.05,o.propertyBase("effects.particleSpeed"),8.);
+    const double lifetime=qBound(1.,o.propertyBase("effects.particleLifetime"),100.)/100.;
+    const double randomness=qBound(0.,o.propertyBase("effects.particleRandomness"),1.);
+    const double turbulence=qBound(0.,o.propertyBase("effects.particleTurbulence"),8.);
+    const double gravity=qBound(-8.,o.propertyBase("effects.particleGravity"),8.);
+    QTransform emission;emission.rotate(o.propertyBase("effects.particleAngle"));
     const auto path=ParticlePath::curve(ParticlePath::read(o.style.value("effects.particlePath").toArray()));
     const bool onPath=!path.isEmpty();
+    const bool reverse=o.style.value("effects.pathDirection").toString()=="Reverse";
     QPainter painter(&image);painter.setPen(Qt::NoPen);painter.setRenderHint(QPainter::Antialiasing);
     painter.setRenderHint(QPainter::SmoothPixmapTransform);
     for(int i=0;i<count;++i){
@@ -84,21 +91,25 @@ inline void paintParticles(QImage &image,const QImage &surface,const DObject &o,
         else if(style=="Liquid")birth=(1.15-y)/1.3;
         else if(radial)birth=std::hypot((x-center.x())*area.width(),(y-center.y())*area.height())/radiusMax;
         else birth=.5+QPointF::dotProduct(QPointF(x-.5,y-.5),direction)/(qAbs(direction.x())+qAbs(direction.y()));
-        const double life=.13+.13*noise(i,2,seed);
+        const double life=lifetime*(1+randomness*(.65*noise(i,2,seed)-.35));
         const double age=(p-birth)/life;
         if(age<=0 || age>=1)continue;
         if(onPath){
-            const auto uv=path.pointAtPercent(qBound(0.,birth+age*life*.75,1.));
+            const double along=qMin(1.,age*speed);
+            const auto uv=path.pointAtPercent(reverse?1-along:along);
             origin=area.topLeft()+QPointF(uv.x()*(area.width()-1),uv.y()*(area.height()-1));
         }
         const QColor sample=surface.rect().contains(origin.toPoint())?surface.pixelColor(origin.toPoint()):QColor(Qt::transparent);
         const double coverage=onPath?1.:sample.alphaF();
         if(coverage==0)continue;
-        const double radius=size*(.5+noise(i,4,seed))*(smoke||fog?1+2*age:1);
-        QPointF drift((noise(i,5,seed)-.5)*size*9*age,-size*(2+5*noise(i,6,seed))*age);
+        const double radius=size*(1+randomness*(noise(i,4,seed)-.5))*(smoke||fog?1+2*age:1);
+        QPointF drift((noise(i,5,seed)-.5)*randomness*size*9*age,-size*(4.5+5*randomness*(noise(i,6,seed)-.5))*age);
         if(fog)drift=QPointF(size*age*6,drift.y()*.2);
         if(kind=="Debris")drift.ry()+=size*11*age*age;
-        drift*=travel;
+        drift=emission.map(drift*travel*speed);
+        const double phase=noise(i,8,seed)*2*M_PI;
+        drift+=size*age*turbulence*QPointF(qSin(phase+age*9),qCos(phase-age*7));
+        drift.ry()+=size*8*gravity*age*age;
         painter.save();painter.translate(origin+drift);painter.setOpacity(coverage*qSin(age*M_PI)*qMin(1.,(1-p)*10));
         if(!stamp.isNull()){
             painter.rotate(noise(i,7,seed)*360+age*90);

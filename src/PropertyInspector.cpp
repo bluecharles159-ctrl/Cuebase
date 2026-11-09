@@ -368,10 +368,27 @@ void PropertyInspector::rebuild(){
         number(effects,"Reveal center X","effects.revealX",0,1,.01);
         number(effects,"Reveal center Y","effects.revealY",0,1,.01);
         choice(effects,"Reveal particles","effects.revealParticles",{"None","Dust","Sparks","Fire","Smoke","Fog","Debris","Mesh stamp"},"None");
-        const int countRow=effects->rowCount();
-        number(effects,"Particle count","effects.particleCount",1,1024,1);
-        number(effects,"Particle size","effects.particleSize",.5,128,.5," px");
-        number(effects,"Particle travel","effects.particleTravel",0,8,.05);
+        const auto dynamicsKey="inspector/objects/"+o->id+"/particleDynamics";
+        auto *dynamics=new QToolButton;dynamics->setText("Particle settings");dynamics->setCheckable(true);
+        dynamics->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        dynamics->setChecked(QSettings().value(dynamicsKey,false).toBool());
+        effects->addRow(dynamics);
+        auto *controls=new QWidget;auto *particleForm=new QFormLayout(controls);
+        particleForm->setContentsMargins(12,2,0,4);particleForm->setSpacing(4);effects->addRow(controls);
+        auto expandDynamics=[=](bool open){
+            dynamics->setIcon(uiIcon(open?"down":"right"));controls->setVisible(open);
+        };
+        expandDynamics(dynamics->isChecked());
+        connect(dynamics,&QToolButton::toggled,this,[=](bool open){expandDynamics(open);QSettings().setValue(dynamicsKey,open);});
+        number(particleForm,"Count","effects.particleCount",1,1024,1);
+        number(particleForm,"Size","effects.particleSize",.5,128,.5," px");
+        number(particleForm,"Travel","effects.particleTravel",0,8,.05);
+        number(particleForm,"Movement speed","effects.particleSpeed",.05,8,.05," ×");
+        number(particleForm,"Lifetime (% of reveal)","effects.particleLifetime",1,100,1," %");
+        number(particleForm,"Emission angle","effects.particleAngle",-180,180,1,"°");
+        number(particleForm,"Size and drift variation","effects.particleRandomness",0,1,.05);
+        number(particleForm,"Turbulence","effects.particleTurbulence",0,8,.05);
+        number(particleForm,"Gravity","effects.particleGravity",-8,8,.05);
         auto *stampButton=new QToolButton;
         stampButton->setObjectName("revealMeshStamp");stampButton->setPopupMode(QToolButton::InstantPopup);
         stampButton->setToolTip("Capture a mesh silhouette and its material color for these particles.");
@@ -381,6 +398,8 @@ void PropertyInspector::rebuild(){
         auto *pathEdit=new QPushButton;pathEdit->setObjectName("editParticlePath");
         auto *pathClear=new QPushButton("Clear");pathClear->setObjectName("clearParticlePath");
         pathActions->addWidget(pathEdit,1);pathActions->addWidget(pathClear);effects->addRow("Motion path",pathRow);
+        const int directionRow=effects->rowCount();
+        choice(effects,"Path direction","effects.pathDirection",{"Forward","Reverse"},"Forward");
         connect(pathEdit,&QPushButton::clicked,this,[this]{emit m->particlePathRequested();});
         connect(pathClear,&QPushButton::clicked,this,[this]{
             if(auto *target=m->active();target && !target->locked)apply([&]{target->style.remove("effects.particlePath");});
@@ -403,12 +422,14 @@ void PropertyInspector::rebuild(){
         sync.append([=,this]{
             if(const auto *active=m->active()){
                 const auto kind=active->style.value("effects.revealParticles").toString("None");
-                for(int row=countRow;row<countRow+3;++row)effects->setRowVisible(row,kind!="None");
+                effects->setRowVisible(dynamics,kind!="None");
+                effects->setRowVisible(controls,kind!="None" && dynamics->isChecked());
                 effects->setRowVisible(stampButton,kind=="Mesh stamp");
                 stampButton->setEnabled(!active->locked);
                 stampButton->setText(active->style.value("effects.revealStampName").toString("Choose mesh…"));
                 const bool hasPath=!active->style.value("effects.particlePath").toArray().isEmpty();
                 effects->setRowVisible(pathRow,kind!="None");pathRow->setEnabled(!active->locked);
+                effects->setRowVisible(directionRow,kind!="None" && hasPath);
                 pathEdit->setText(hasPath?"Edit in viewport…":"Draw in viewport…");pathClear->setVisible(hasPath);
             }
         });

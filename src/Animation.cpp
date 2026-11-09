@@ -159,6 +159,9 @@ double DObject::propertyBase(const QString &path) const {
     if(path=="effects.particleCount")return style[path].toDouble(180);
     if(path=="effects.particleSize")return style[path].toDouble(4);
     if(path=="effects.particleTravel")return style[path].toDouble(1);
+    if(path=="effects.particleSpeed")return style[path].toDouble(1);
+    if(path=="effects.particleLifetime")return style[path].toDouble(20);
+    if(path=="effects.particleRandomness")return style[path].toDouble(1);
     if(path=="effects.revealSpread")return style[path].toDouble(1);
     if(path=="effects.revealSteps")return style[path].toDouble(8);
     if(path=="media.speed"||path=="media.volume"||path=="audio.volume"||path=="audio.speed")return style[path].toDouble(1);

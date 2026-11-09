@@ -31,6 +31,7 @@
 #include <QPlainTextEdit>
 #include "BuildModel.h"
 #include "BuildCanvas.h"
+#include "ParticlePath.h"
 #include "BuildWorkspace.h"
 #include "AnimationEditor.h"
 #include "Data.h"
@@ -346,6 +347,45 @@ private slots:
         QVERIFY(model.design.textureFor(*model.byId(title.id))!=image);
         QVERIFY(model.undo());QCOMPARE(model.byId(title.id)->style["effects.particlePath"].toArray(),stored);
         QVERIFY(model.redo());QVERIFY(model.byId(title.id)->style["effects.particlePath"].toArray()!=stored);
+        auto *object=model.byId(title.id);
+        const auto forward=model.design.textureFor(*object);
+        object->style["effects.pathDirection"]="Reverse";
+        QVERIFY(model.design.textureFor(*object)!=forward);
+        object->style["effects.pathDirection"]="Forward";
+        for(const auto &field:QStringList{"particleSpeed","particleLifetime","particleAngle","particleRandomness","particleTurbulence","particleGravity"}){
+            const QString property="effects."+field;
+            const auto original=object->propertyBase(property);
+            object->setPropertyBase(property,field=="particleLifetime"?65.:field=="particleAngle"?90.:field=="particleRandomness"?0.:3.);
+            QVERIFY2(model.design.textureFor(*object)!=forward,qPrintable(property));
+            object->setPropertyBase(property,original);
+        }
+        object->keyChannel("effects.particleTurbulence",0,0);object->keyChannel("effects.particleTurbulence",1000,4);
+        const auto keyed=model.design.textureFor(object->evaluated(500),500);
+        const auto restored=ElementDesign::fromJson(model.design.toJson());
+        QCOMPARE(restored.textureFor(restored.find(title.id)->evaluated(500),500),keyed);
+        // A path is authored in surface space. The viewport handles follow its animated parent.
+        DObject rig;rig.id="rig";rig.type="Group";rig.keyChannel("position.x",0,0);rig.keyChannel("position.x",1000,1);
+        model.design.objects.append(rig);object=model.byId(title.id);object->parentId=rig.id;model.setTime(1000);
+        const auto cam=model.design.sceneCamera(1000,library.display.aspect());
+        const auto world=model.design.worldMatrix(*object,1000);
+        auto project=[&](QPointF uv){
+            QPointF screen;cam.toScreen(world.map(QVector3D((uv.x()-.5)*object->w,(.5-uv.y())*object->h,0)),frame,&screen);
+            return screen.toPoint();
+        };
+        const auto before=ParticlePath::read(object->style["effects.particlePath"].toArray());
+        edit->click();overlay=canvas.findChild<QWidget*>("particlePathEditor");QVERIFY(overlay);
+        QTest::mouseClick(overlay,Qt::LeftButton,Qt::NoModifier,project(before[1].point));
+        const auto handle=project(before[1].outgoing),shifted=handle+QPoint(8,-22);
+        QTest::mousePress(overlay,Qt::LeftButton,Qt::NoModifier,handle);
+        drag(overlay,shifted);QTest::mouseRelease(overlay,Qt::LeftButton,Qt::NoModifier,shifted);
+        QTest::keyClick(overlay,Qt::Key_Return);QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
+        const auto after=ParticlePath::read(object->style["effects.particlePath"].toArray());
+        QCOMPARE(after[1].point,before[1].point);QVERIFY(after[1].outgoing!=before[1].outgoing);
+        edit->click();overlay=canvas.findChild<QWidget*>("particlePathEditor");QVERIFY(overlay);
+        const auto midCurve=project(ParticlePath::curve(after).pointAtPercent(.3));
+        QTest::mouseDClick(overlay,Qt::LeftButton,Qt::NoModifier,midCurve);
+        QTest::keyClick(overlay,Qt::Key_Return);
+        QCOMPARE(object->style["effects.particlePath"].toArray().size(),4);
     }
     void revealParticleSources(){
         Library library;BuildModel model;

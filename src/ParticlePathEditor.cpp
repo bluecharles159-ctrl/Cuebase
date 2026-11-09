@@ -5,6 +5,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
+#include <QtMath>
 #include <utility>
 
 ParticlePathEditor::ParticlePathEditor(QWidget *canvas,const QJsonArray &initial,
@@ -79,6 +80,30 @@ void ParticlePathEditor::mouseMoveEvent(QMouseEvent *event){
     else if(handle==2)k.incoming=point;
     else k.outgoing=point;
     update();
+}
+void ParticlePathEditor::mouseDoubleClickEvent(QMouseEvent *event){
+    if(draw || event->button()!=Qt::LeftButton || knots.size()>=128)return;
+    const auto transform=project();
+    double closest=8.,fraction=0;
+    int segment=-1;
+    for(int i=1;i<knots.size();++i){
+        QPainterPath part(knots[i-1].point);
+        part.cubicTo(knots[i-1].outgoing,knots[i].incoming,knots[i].point);
+        const int samples=qBound(12,qCeil(transform.map(part).length()/3.),512);
+        for(int n=1;n<samples;++n){
+            const double t=double(n)/samples;
+            const double distance=QLineF(transform.map(part.pointAtPercent(t)),event->position()).length();
+            if(distance<closest){closest=distance;fraction=t;segment=i;}
+        }
+    }
+    if(segment<0)return;
+    auto &left=knots[segment-1],&right=knots[segment];
+    auto between=[fraction](QPointF a,QPointF b){return a+(b-a)*fraction;};
+    const auto a=between(left.point,left.outgoing),b=between(left.outgoing,right.incoming),c=between(right.incoming,right.point);
+    const auto d=between(a,b),e=between(b,c);
+    left.outgoing=a;right.incoming=c;
+    knots.insert(segment,ParticlePath::Knot{between(d,e),d,e});
+    active=segment;handle=0;update();
 }
 void ParticlePathEditor::mouseReleaseEvent(QMouseEvent *event){
     if(event->button()!=Qt::LeftButton)return;

@@ -116,7 +116,7 @@ BuildCanvas::BuildCanvas(BuildModel *m, Library *lib, QWidget *parent) : QWidget
         });
         connect(m,&BuildModel::selectionChanged,editor,[editor,m,id]{if(m->activeId!=id)editor->close();});
         connect(m,&BuildModel::timeChanged,editor,qOverload<>(&QWidget::update));
-        emit message("Drag to draw. Drag points and handles to edit. Enter saves the path.");
+        emit message("Drag to draw or move handles. Double-click the curve to add a point. Enter saves.");
     });
     m_layerHold.setSingleShot(true);m_layerHold.setInterval(1000);
     connect(&m_layerHold,&QTimer::timeout,this,[this]{
