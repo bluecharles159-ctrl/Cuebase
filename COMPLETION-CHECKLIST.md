@@ -1,6 +1,6 @@
 # Cuebase completion counter
 
-Updated 2026-11-09. **59 of 84 tasks completed — 25 remaining.**
+Updated 2026-11-09. **60 of 84 tasks completed — 24 remaining.**
 
 The Claude transcript adds four distinct acceptance groups (81–84). Row 06 remains
 open: converted surfaces now retain their Inspector controls and unchanged
@@ -81,7 +81,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 
 ## Creative expansion
 
-- [ ] 50. Solid/Material/Rendered mode semantics, lighting/render parity and adaptive quality. Work/Material/Final selector, plain structural appearance, local persistence and unchanged final output verified in `build-modes-results.txt` (48 passing editor cases); captures inspected. Auto/Full/Half/Quarter quality, bounded buffers and backdrop reference comparison pass in the subsequent 50-case suite. Shared display grading for Final/clean preview/PNG, Work invariance and alpha preservation pass in `color-parity-editor-results.txt` (54 cases); Studio output passes 6 cases. Complete lighting/performance acceptance remains.
+- [x] 50. Work, Material and Final appearance, lighting parity and adaptive quality. Build 86 passed native Windows tests for all four light types in Build Final, PNG export and Studio output. Auto responds to measured render time at the project frame rate. The zoomed backdrop fixture recorded median times of 112.4 ms at Full, 26.5 ms at Half and 7.7 ms at Quarter on the GitHub runner. See `native-build-preview-results.txt` and `native-studio-lighting-results.txt`.
 - [ ] 51. Configurable composition guides, margins, colors, responsive layout, dragging and snapping. Normalized persistent guides, ruler dragging, undo/redo, Clear, safe insets/grid/color dialog and JSON round-trip pass in `composition-guides-results.txt` (50 cases); captures inspected. Responsive object-layout constraints and full native acceptance remain open.
 - [x] 52. Texture library, collections/favorites, reusable presets, missing-file repair and portability. Material panel, managed image imports, stable IDs, search/filtering, favorites, scene drag/drop, presets, undo/redo, save/reopen, missing repair, portable sharing and failed-save rollback pass 9 focused cases in `texture-library-verified-results.txt`; pixel blend checks and animated PNG equality pass. Full editor suite: 55 passing cases in `texture-editor-regression-results.txt`. Captures inspected. This covers 2D text/shape/image surface materials; layered/PBR materials remain task 53.
 - [ ] 53. Ordered material layers, mapping/blends, shared styles and evaluated surface properties.

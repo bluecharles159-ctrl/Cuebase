@@ -34,8 +34,7 @@ Build previews render into an image buffer so backdrop effects can sample earlie
 surfaces. Final, PNG stills and PNG sequences use the project's motion-blur
 settings. The sequence shutter interval follows the exported frame rate.
 The 53-case editor suite verifies blurred animation export and exact
-Solid/Gradient/Media preview-to-PNG comparisons. Measured performance budgets and complete Build/Studio/export
-lighting acceptance remain part of checklist item 50.
+Solid/Gradient/Media preview-to-PNG comparisons.
 
 Final and the clean preview also apply the project's display view, contrast look,
 exposure and gamma after rendering, matching the transform used by Studio and
@@ -47,4 +46,7 @@ The subsequent 55-case suite verifies Point, Sun, Spot and Area lighting across
 Work/Material/Final, including parent-hidden lights, light-color changes and animated
 light-power export. The proof sheet is `artifacts/build-lighting-modes.png`. Native
 Windows CI records median render times for the zoomed backdrop scene at all three
-resolutions in `native-build-preview-results.txt`.
+resolutions in `native-build-preview-results.txt`. Build 86 recorded 112.4 ms at
+1920×1080, 26.5 ms at 960×540 and 7.7 ms at 480×270 on the GitHub runner.
+Its native Studio test also compared the program output with the scene renderer
+for each light type, with the light visible and hidden.
