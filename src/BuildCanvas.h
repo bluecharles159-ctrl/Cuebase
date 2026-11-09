@@ -7,6 +7,7 @@
 
 #include "BuildModel.h"
 #include "PreviewQuality.h"
+#include "CompositionGuides.h"
 
 class Library;
 
@@ -42,6 +43,13 @@ public:
     bool showOverlays=true,showCursor=true,showLights=true,showCamera=true,showOrigins=true;
     bool showTitleSafe = true, showActionSafe = true, showRulers = true, snapping = true;
     bool snapToGrid = true;
+    CompositionGuides::Visibility guideVisibility() const {
+        return {showGrid,showAxes,showTitleSafe,showActionSafe};
+    }
+    CompositionGuides::Proof guideProof() const {
+        const auto *camera = m_m->design.camera();
+        return {camera ? camera->style : QJsonObject{}, guideVisibility(), m_verticalGuides, m_horizontalGuides};
+    }
 
     void startMove() { startModal(Modal::Move); }
     void startRotate() { startModal(Modal::Rotate); }

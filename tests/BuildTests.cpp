@@ -156,6 +156,64 @@ private slots:
         QCOMPARE(render(),output);
         QVERIFY(canvas->grab().save("artifacts/composition-guides.png"));model->reset(ElementDesign::defaultScene());QVERIFY(guides().isEmpty());
     }
+    void explicitGuideProofExports(){
+        struct DialogMode {
+            bool previous = QApplication::testAttribute(Qt::AA_DontUseNativeDialogs);
+            DialogMode(){ QApplication::setAttribute(Qt::AA_DontUseNativeDialogs,true); }
+            ~DialogMode(){ QApplication::setAttribute(Qt::AA_DontUseNativeDialogs,previous); }
+        } dialogMode;
+        QTemporaryDir folder;
+        QVERIFY(folder.isValid());
+        Library library;
+        library.display.resolution = "320x180";
+        BuildWorkspace workspace(&library);
+        auto *canvas = workspace.findChild<BuildCanvas*>();
+        auto *model = workspace.findChild<BuildModel*>();
+        QVERIFY(canvas && model);
+        auto scene = ElementDesign::defaultScene();
+        scene.world.transparent = true;
+        scene.durationMs = 40;
+        auto &style = scene.camera()->style;
+        style["editor.guides.vertical"] = QJsonArray{.25};
+        style["editor.guides.horizontal"] = QJsonArray{.75};
+        style["editor.guideColor"] = "#ff00ff";
+        model->reset(scene);
+        const auto before = model->design.toJson();
+        canvas->showGrid = canvas->showAxes = canvas->showTitleSafe = canvas->showActionSafe = false;
+        auto exportFile = [&](const QString &filter, const QString &filename){
+            bool accepted = false;
+            QTimer::singleShot(0,&workspace,[&]{
+                auto *picker = qobject_cast<QFileDialog*>(QApplication::activeModalWidget());
+                if (!picker) return;
+                QTimer::singleShot(3000,picker,&QDialog::reject);
+                if (!picker->nameFilters().contains(filter)) { picker->reject(); return; }
+                picker->selectNameFilter(filter);
+                picker->setDirectory(folder.path());
+                picker->selectFile(filename);
+                accepted = QMetaObject::invokeMethod(picker,"accept",Qt::DirectConnection);
+            });
+            workspace.exportFile();
+            return accepted;
+        };
+        QVERIFY(exportFile("PNG image (*.png)","clean.png"));
+        QVERIFY(exportFile("Guide proof image (*.png)","layout.png"));
+        QVERIFY(exportFile("Guide proof animation folder (*.frames)","layout.frames"));
+        const auto load = [&](const QString &name){
+            return QImage(folder.filePath(name)).convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        };
+        const auto clean = load("clean.png"), proof = load("layout.png");
+        QCOMPARE(proof.size(),QSize(320,180));
+        QCOMPARE(clean.size(),proof.size());
+        QVERIFY(clean != proof);
+        QCOMPARE(load("layout.frames/frame_000000.png"),proof);
+        int vertical = 0, horizontal = 0;
+        for (int y=0;y<180;++y) vertical += proof.pixelColor(80,y).alpha()>0;
+        for (int x=0;x<320;++x) horizontal += proof.pixelColor(x,135).alpha()>0;
+        QVERIFY(vertical>30 && horizontal>60);
+        QCOMPARE(proof.pixelColor(20,20),clean.pixelColor(20,20));
+        QCOMPARE(model->design.toJson(),before);
+        QVERIFY(proof.save("artifacts/composition-guide-proof.png"));
+    }
     void buildPreviewQualityAndBackdrop(){
         Library library;BuildModel model;auto scene=ElementDesign::defaultScene();scene.durationMs=1000;
         DObject left;left.id="left";left.type="Shape";left.w=4;left.h=5;left.base.rot={90,0,0};left.base.loc.setX(-2);left.mat.color=Qt::red;left.mat.shadeless=true;

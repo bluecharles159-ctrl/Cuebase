@@ -51,6 +51,7 @@ static FrameExportResult writeFrames(const QString &directory,const FrameExportO
          paint(painter,image.rect(),qRound64(double(frame)*1000*o.fpsBase/o.fps),settings);}
         if(colorManagementActive(o.colorView,o.colorLook,o.exposure,o.gamma))
             applyColorManagement(image,o.colorView,o.colorLook,o.exposure,o.gamma);
+        if (o.guideProof) o.guideProof->draw(image);
         QSaveFile file(output.filePath(QString("frame_%1.png").arg(frame,6,10,QChar('0'))));
         if(!file.open(QIODevice::WriteOnly)||!image.save(&file,"PNG")||!file.commit())
             return fail("Could not write frame "+QString::number(frame)+". Check free disk space and folder permissions.");
@@ -59,7 +60,7 @@ static FrameExportResult writeFrames(const QString &directory,const FrameExportO
     const QJsonObject manifest{{"format","Cuebase PNG sequence"},{"version",1},{"width",o.size.width()},
         {"height",o.size.height()},{"fps",o.fps},{"fpsBase",o.fpsBase},{"firstFrame",o.firstFrame},
         {"endFrameExclusive",o.endFrame},{"frames",result.written},{"pattern","frame_%06d.png"},
-        {"alpha","straight"},{"audio",false}};
+        {"alpha","straight"},{"audio",false},{"compositionGuides",o.guideProof.has_value()}};
     QSaveFile file(output.filePath("sequence.json"));
     const auto data=QJsonDocument(manifest).toJson();
     if(!file.open(QIODevice::WriteOnly)||file.write(data)!=data.size()||!file.commit())

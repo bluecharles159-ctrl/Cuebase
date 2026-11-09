@@ -29,32 +29,10 @@
 namespace {
 const QColor kOrange("#ff9f43"), kOrangeLight("#ffd08a"), kGizmo("#e6c84a");
 
-QRectF safeFrame(const QRectF &frame,const QJsonObject &style,bool title){
-    const double inset=qBound(0.,title?style["editor.titleSafe"].toDouble(.05):style["editor.actionSafe"].toDouble(.035),.45);
-    return frame.adjusted(frame.width()*inset,frame.height()*inset,-frame.width()*inset,-frame.height()*inset);
-}
-
-double visibleGridStep(const QRectF &frame,const QJsonObject &style,int outputWidth){
-    const double spacing=qBound(1.,style["editor.gridSpacing"].toDouble(120),4096.);
-    double step=spacing*frame.width()/qMax(1,outputWidth);
-    if(step<=0)return 12;
-    while(step<12)step*=2;
-    return step;
-}
-
-QRectF compositionReference(const QRectF &frame,const QJsonObject &style){
-    const double aspect=style.value("editor.referenceAspect").toDouble();
-    if(!(aspect>0) || frame.isEmpty())return {};
-    QSizeF size(aspect,1);
-    size.scale(frame.size(),Qt::KeepAspectRatio);
-    QRectF reference(QPointF(),size);reference.moveCenter(frame.center());
-    return reference;
-}
-
-double gridSubdivision(double major,const QJsonObject &style){
-    const double minor=major/qBound(1,style.value("editor.gridDivisions").toInt(1),16);
-    return minor>=6 ? minor : major;
-}
+using CompositionGuides::safeFrame;
+using CompositionGuides::visibleGridStep;
+using CompositionGuides::gridSubdivision;
+using CompositionGuides::compositionReference;
 
 QPointF projectView(const ViewCam &cam, const QRectF &r, const QVector3D &c) {
     const double d = -c.z();
@@ -559,40 +537,9 @@ void BuildCanvas::paintEvent(QPaintEvent *) {
     p.setBrush(Qt::NoBrush);
     p.drawRect(r);
     const auto guideStyle=d.camera()?d.camera()->style:QJsonObject{};
-    p.save();p.setOpacity(qBound(0.,guideStyle.value("editor.guideOpacity").toDouble(1.),1.));
-    const QRectF titleSafe = safeFrame(r,guideStyle,true);
-    const QRectF actionSafe = safeFrame(r,guideStyle,false);
-    p.setPen(QPen(QColor(96,165,250,45), 1, Qt::DashLine));
-    if(showActionSafe&&m_cameraView) p.drawRect(actionSafe);
-    p.setPen(QPen(QColor(250,204,21,38), 1, Qt::DashLine));
-    if(showTitleSafe&&m_cameraView) p.drawRect(titleSafe);
-    p.setPen(QPen(QColor(148,163,184,28), 1));
-    if(showAxes) p.drawLine(QPointF(r.center().x(), r.top()), QPointF(r.center().x(), r.bottom()));
-    if(showAxes) p.drawLine(QPointF(r.left(), r.center().y()), QPointF(r.right(), r.center().y()));
-
-    p.save();p.setClipRect(r);
-    if(showGrid){
-        p.setPen(QColor(148,163,184,25));
-        const double step=visibleGridStep(r,guideStyle,m_lib->display.resX());
-        const double minor=gridSubdivision(step,guideStyle);
-        if(minor<step){
-            p.setPen(QColor(148,163,184,13));
-            for(double x=r.left();x<r.right();x+=minor)p.drawLine(QPointF(x,r.top()),QPointF(x,r.bottom()));
-            for(double y=r.top();y<r.bottom();y+=minor)p.drawLine(QPointF(r.left(),y),QPointF(r.right(),y));
-            p.setPen(QColor(148,163,184,25));
-        }
-        for(double x=r.left();x<r.right();x+=step)p.drawLine(QPointF(x,r.top()),QPointF(x,r.bottom()));
-        for(double y=r.top();y<r.bottom();y+=step)p.drawLine(QPointF(r.left(),y),QPointF(r.right(),y));
-    }
-    QColor guideColor(guideStyle["editor.guideColor"].toString("#22d3ee"));if(!guideColor.isValid())guideColor=QColor("#22d3ee");
-    p.setPen(QPen(guideColor,1,Qt::DashLine));
-    const auto reference=m_cameraView?compositionReference(r,guideStyle):QRectF();
-    if(!reference.isEmpty())p.drawRect(reference);
-    setProperty("compositionReferenceFrame",reference);
-    for(double guide:m_verticalGuides){double x=r.left()+guide*r.width();p.drawLine(QPointF(x,r.top()),QPointF(x,r.bottom()));}
-    for(double guide:m_horizontalGuides){double y=r.top()+guide*r.height();p.drawLine(QPointF(r.left(),y),QPointF(r.right(),y));}
-    p.restore();
-    p.restore();
+    CompositionGuides::paint(p, r, guideStyle, m_lib->display.resX(), guideVisibility(),
+                             m_verticalGuides, m_horizontalGuides, m_cameraView);
+    setProperty("compositionReferenceFrame",m_cameraView?compositionReference(r,guideStyle):QRectF());
     if(showRulers){
         p.fillRect(QRectF(0,0,width(),20),palette().color(QPalette::Window));p.fillRect(QRectF(0,0,20,height()),palette().color(QPalette::Window));
         QFont f=font();f.setPixelSize(9);p.setFont(f);p.setPen(palette().color(QPalette::PlaceholderText));
@@ -1460,7 +1407,12 @@ void BuildCanvas::mouseReleaseEvent(QMouseEvent *e) {
         m_drawShape.clear();m_drawingShape=false;unsetCursor();update();return;
     }
     if(m_dragGuide>=0){
-        QRectF frame;activeCam(&frame);if(!frame.contains(e->position())){auto &guides=m_guideVertical?m_verticalGuides:m_horizontalGuides;guides.removeAt(m_dragGuide);}
+        QRectF frame;
+        activeCam(&frame);
+        auto &guides = m_guideVertical ? m_verticalGuides : m_horizontalGuides;
+        if (!frame.contains(e->position())) guides.removeAt(m_dragGuide);
+        else guides[m_dragGuide] = m_guideVertical ? (e->position().x()-frame.left())/frame.width()
+                                                   : (e->position().y()-frame.top())/frame.height();
         if(auto *camera=m_m->design.camera()){
             auto json=[](const QVector<double> &values){QJsonArray array;for(double value:values)array.append(value);return array;};
             camera->style["editor.guides.vertical"]=json(m_verticalGuides);camera->style["editor.guides.horizontal"]=json(m_horizontalGuides);

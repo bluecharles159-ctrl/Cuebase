@@ -1567,7 +1567,12 @@ bool BuildWorkspace::importFile(const QString &path){
 }
 void BuildWorkspace::exportFile(){
     QString selectedFilter;
-    QString path=QFileDialog::getSaveFileName(this,"Export Build composition",m_name->text(),"Cuebase composition (*.cuebuild);;Portable composition with media (*.cuebuild);;Graphic with cues and media (*.cuegraphic);;Wavefront mesh geometry (*.obj);;PNG image (*.png);;PNG animation folder (*.frames)",&selectedFilter);if(path.isEmpty())return;
+    QString path=QFileDialog::getSaveFileName(this,"Export Build composition",m_name->text(),"Cuebase composition (*.cuebuild);;Portable composition with media (*.cuebuild);;Graphic with cues and media (*.cuegraphic);;Wavefront mesh geometry (*.obj);;PNG image (*.png);;PNG animation folder (*.frames);;Guide proof image (*.png);;Guide proof animation folder (*.frames)",&selectedFilter);if(path.isEmpty())return;
+    const bool guideProof = selectedFilter.startsWith("Guide proof");
+    if (guideProof) {
+        const QString extension = selectedFilter.contains("*.frames") ? ".frames" : ".png";
+        if (!path.endsWith(extension, Qt::CaseInsensitive)) path += extension;
+    }
     if(selectedFilter.startsWith("Graphic with") || path.endsWith(".cuegraphic",Qt::CaseInsensitive)){
         if(!path.endsWith(".cuegraphic",Qt::CaseInsensitive)) path+=".cuegraphic";
         Element element;
@@ -1593,6 +1598,7 @@ void BuildWorkspace::exportFile(){
     if(selectedFilter.startsWith("PNG animation")&&!path.endsWith(".frames",Qt::CaseInsensitive))path+=".frames";
     if(QFileInfo(path).suffix().compare("frames",Qt::CaseInsensitive)==0){
         FrameExportOptions options;options.size={m_lib->display.resX(),m_lib->display.resY()};options.setProjectFrameRate(m_model->fps,m_model->fpsBase);
+        if (guideProof) options.guideProof = m_canvas->guideProof();
         options.renderSettings.motionBlur=m_lib->display.motionBlur;options.renderSettings.shutter=m_lib->display.shutter;options.renderSettings.samples=m_lib->display.mbSamples;
         options.colorView=m_lib->display.colorView;options.colorLook=m_lib->display.colorLook;options.exposure=m_lib->display.exposure;options.gamma=m_lib->display.gamma;
         options.firstFrame=qMax(0,qFloor(double(m_model->design.startMs)*options.fps/(1000.*options.fpsBase)));
@@ -1604,7 +1610,26 @@ void BuildWorkspace::exportFile(){
         else if(result.cancelled)say(QString("Export cancelled; %1 completed frames remain in %2").arg(result.written).arg(path));
         else say(result.error,true);return;
     }
-    if(QFileInfo(path).suffix().compare("png",Qt::CaseInsensitive)==0){QImage image(m_lib->display.resX(),m_lib->display.resY(),QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);QPainter painter(&image);painter.setRenderHint(QPainter::Antialiasing);painter.setRenderHint(QPainter::SmoothPixmapTransform);RenderSettings settings;settings.motionBlur=m_lib->display.motionBlur;settings.shutter=m_lib->display.shutter;settings.samples=m_lib->display.mbSamples;settings.frameMs=1000.*m_model->fpsBase/qMax(1,m_model->fps);m_model->design.render(painter,QRectF(image.rect()),m_model->t,true,&settings);painter.end();const auto &display=m_lib->display;if(colorManagementActive(display.colorView,display.colorLook,display.exposure,display.gamma))applyColorManagement(image,display.colorView,display.colorLook,display.exposure,display.gamma);if(!image.save(path))say("Could not save the image.",true);return;}
+    if (QFileInfo(path).suffix().compare("png",Qt::CaseInsensitive)==0) {
+        QImage image(m_lib->display.resX(),m_lib->display.resY(),QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        QPainter painter(&image);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform);
+        const auto &display = m_lib->display;
+        RenderSettings settings;
+        settings.motionBlur = display.motionBlur;
+        settings.shutter = display.shutter;
+        settings.samples = display.mbSamples;
+        settings.frameMs = 1000.*m_model->fpsBase/qMax(1,m_model->fps);
+        m_model->design.render(painter,image.rect(),m_model->t,true,&settings);
+        painter.end();
+        if (colorManagementActive(display.colorView,display.colorLook,display.exposure,display.gamma))
+            applyColorManagement(image,display.colorView,display.colorLook,display.exposure,display.gamma);
+        if (guideProof) m_canvas->guideProof().draw(image);
+        if (!image.save(path)) say("Could not save the image.",true);
+        return;
+    }
     QSaveFile file(path);if(!file.open(QIODevice::WriteOnly)){say(file.errorString(),true);return;}file.write(m_model->design.toJson().toUtf8());if(!file.commit())say(file.errorString(),true);
 }
 
