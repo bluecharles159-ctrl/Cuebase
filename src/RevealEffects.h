@@ -48,7 +48,9 @@ inline QString meshStamp(const Mesh &mesh,const QColor &color){
 
 inline void paintParticles(QImage &image,const QImage &surface,const DObject &o,const QRect &area,double p){
     const auto kind=o.style.value("effects.revealParticles").toString("None");
-    if(kind=="None" || p<=0 || p>=1)return;
+    const bool emitter=o.style.value("effects.emitter").toBool();
+    const double seconds=o.style.value("effects.emitterTimeMs").toDouble()/1000.-o.propertyBase("effects.emitterStart");
+    if(kind=="None" || (emitter?seconds<0:(p<=0 || p>=1)))return;
     QImage stamp;
     if(kind=="Mesh stamp"){
         const auto encoded=o.style.value("effects.revealStamp").toString();
@@ -70,7 +72,7 @@ inline void paintParticles(QImage &image,const QImage &surface,const DObject &o,
     const bool smoke=kind=="Smoke",fog=kind=="Fog",fire=kind=="Fire",sparks=kind=="Sparks";
     const double travel=o.propertyBase("effects.particleTravel");
     const double speed=qBound(.05,o.propertyBase("effects.particleSpeed"),8.);
-    const double lifetime=qBound(1.,o.propertyBase("effects.particleLifetime"),100.)/100.;
+    const double lifetime=emitter?qBound(.05,o.propertyBase("effects.emitterLifetime"),120.):qBound(1.,o.propertyBase("effects.particleLifetime"),100.)/100.;
     const double randomness=qBound(0.,o.propertyBase("effects.particleRandomness"),1.);
     const double turbulence=qBound(0.,o.propertyBase("effects.particleTurbulence"),8.);
     const double gravity=qBound(-8.,o.propertyBase("effects.particleGravity"),8.);
@@ -92,15 +94,19 @@ inline void paintParticles(QImage &image,const QImage &surface,const DObject &o,
         else if(radial)birth=std::hypot((x-center.x())*area.width(),(y-center.y())*area.height())/radiusMax;
         else birth=.5+QPointF::dotProduct(QPointF(x-.5,y-.5),direction)/(qAbs(direction.x())+qAbs(direction.y()));
         const double life=lifetime*(1+randomness*(.65*noise(i,2,seed)-.35));
-        const double age=(p-birth)/life;
+        const double phaseAge=emitter?seconds/life-x:(p-birth)/life;
+        if(phaseAge<0)continue;
+        const double age=emitter?phaseAge-std::floor(phaseAge):phaseAge;
         if(age<=0 || age>=1)continue;
         if(onPath){
             const double along=qMin(1.,age*speed);
             const auto uv=path.pointAtPercent(reverse?1-along:along);
             origin=area.topLeft()+QPointF(uv.x()*(area.width()-1),uv.y()*(area.height()-1));
+        }else if(emitter && o.style.value("effects.emitterSource").toString()=="Point"){
+            origin=QPointF(area.center())+QPointF((x-.5)*area.width()*.06,(y-.5)*area.height()*.06);
         }
         const QColor sample=surface.rect().contains(origin.toPoint())?surface.pixelColor(origin.toPoint()):QColor(Qt::transparent);
-        const double coverage=onPath?1.:sample.alphaF();
+        const double coverage=onPath || emitter?1.:sample.alphaF();
         if(coverage==0)continue;
         const double radius=size*(1+randomness*(noise(i,4,seed)-.5))*(smoke||fog?1+2*age:1);
         QPointF drift((noise(i,5,seed)-.5)*randomness*size*9*age,-size*(4.5+5*randomness*(noise(i,6,seed)-.5))*age);
@@ -110,7 +116,7 @@ inline void paintParticles(QImage &image,const QImage &surface,const DObject &o,
         const double phase=noise(i,8,seed)*2*M_PI;
         drift+=size*age*turbulence*QPointF(qSin(phase+age*9),qCos(phase-age*7));
         drift.ry()+=size*8*gravity*age*age;
-        painter.save();painter.translate(origin+drift);painter.setOpacity(coverage*qSin(age*M_PI)*qMin(1.,(1-p)*10));
+        painter.save();painter.translate(origin+drift);painter.setOpacity(coverage*qSin(age*M_PI)*(emitter?1.:qMin(1.,(1-p)*10)));
         if(!stamp.isNull()){
             painter.rotate(noise(i,7,seed)*360+age*90);
             painter.drawImage(QRectF(-radius,-radius,2*radius,2*radius),stamp);
@@ -125,6 +131,18 @@ inline void paintParticles(QImage &image,const QImage &surface,const DObject &o,
         }else if(sparks){
             painter.rotate(-25+50*noise(i,7,seed));painter.setBrush(QColor(255,177,68));
             painter.drawEllipse(QPointF(),radius*.27,radius*1.7);
+        }else if(kind=="Energy trails"){
+            painter.rotate(30*noise(i,7,seed)-15);
+            painter.setPen(QPen(QColor(49,171,255,95),radius,Qt::SolidLine,Qt::RoundCap));
+            painter.drawLine(QPointF(),QPointF(0,3*radius));
+            painter.setPen(QPen(QColor(193,246,255),radius*.25,Qt::SolidLine,Qt::RoundCap));
+            painter.drawLine(QPointF(),QPointF(0,3*radius));
+        }else if(kind=="Water droplets" || kind=="Embers"){
+            const bool water=kind=="Water droplets";
+            painter.setBrush(water?QColor(100,180,235,180):QColor(255,110,33));
+            painter.drawEllipse(QPointF(),radius*.55,radius*(water?.9:.58));
+            painter.setBrush(water?QColor(226,251,255,210):QColor(255,232,137));
+            painter.drawEllipse(QPointF(-radius*.14,-radius*.23),radius*.15,radius*.2);
         }else if(kind=="Debris"){
             painter.rotate(noise(i,7,seed)*360+age*150);
             painter.setBrush(sample.alpha()>0?sample:o.mat.color);

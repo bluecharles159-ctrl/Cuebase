@@ -250,7 +250,10 @@ private slots:
         canvas.finishEditing();QTextDocument text;text.setHtml(doc.cards.first().html);
         QTextCursor cursor(&text);cursor.movePosition(QTextCursor::NextCharacter);
         QVERIFY(cursor.charFormat().fontWeight()>=QFont::Bold);
-        drag({316,337},{350,370});QVERIFY(doc.cards.first().rect.width()>255);
+        // A fast drag may deliver its final pointer position only on release.
+        QTest::mousePress(canvas.viewport(),Qt::LeftButton,{},canvas.mapFromScene({316,337}));
+        QTest::mouseRelease(canvas.viewport(),Qt::LeftButton,{},canvas.mapFromScene({350,370}));
+        QVERIFY(doc.cards.first().rect.width()>255);
         const auto bounds=doc.cards.first().rect;
         const QPointF port(bounds.right(),bounds.center().y());
         drag(port,{480,272.5});drag(port,{78,116});QCOMPARE(doc.links.size(),2);

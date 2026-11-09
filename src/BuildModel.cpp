@@ -179,6 +179,26 @@ QString BuildModel::addMesh(const QString &kind) {
     return o.id;
 }
 
+QString BuildModel::addParticleEmitter(const QString &preset) {
+    pushUndo(true);
+    DObject object;
+    object.id=newId();
+    object.name=uniqueName(preset+" emitter");
+    object.type="Shape";
+    object.w=8;object.h=4.5;
+    object.base.rot={90,0,0};object.mat.shadeless=true;
+    object.style["effects.emitter"]=true;
+    object.style["effects.revealParticles"]=preset;
+    object.style["effects.emitterStart"]=t/1000.;
+    object.style["effects.emitterSource"]=(preset=="Fog" || preset=="Dust")?"Area":"Point";
+    object.style["effects.particleSize"]=preset=="Fog"?18.:preset=="Smoke"?12.:5.;
+    object.style["effects.particleTravel"]=preset=="Fog"?1.:2.5;
+    if(preset=="Water droplets")object.style["effects.particleGravity"]=2.;
+    if(preset=="Smoke" || preset=="Embers")object.style["effects.particleTurbulence"]=1.;
+    design.objects.append(object);finishAdd(this,object.id);
+    return object.id;
+}
+
 QString BuildModel::addText() {
     pushUndo();
     DObject o;

@@ -357,6 +357,8 @@ void PropertyInspector::rebuild(){
         });
         number(effects,"Backdrop blur","backdrop.blur",0,80,1," px");number(effects,"Backdrop brightness","backdrop.brightness",0,3,.05);
         number(effects,"Blur","effects.blur",0,80,1," px");
+        const bool emitter=o->style.value("effects.emitter").toBool();
+        if(!emitter){
         number(effects,"Reveal","effects.reveal",0,1,.01);
         choice(effects,"Reveal style","effects.revealStyle",{"Wipe","Pixels","Blocks","Liquid","Assemble"},"Wipe");
         choice(effects,"Reveal timing","effects.revealTiming",{"Linear","Smooth","Constant","Steps","Flicker"},"Linear");
@@ -367,7 +369,13 @@ void PropertyInspector::rebuild(){
         number(effects,"Reveal direction","effects.revealAngle",-180,180,1);
         number(effects,"Reveal center X","effects.revealX",0,1,.01);
         number(effects,"Reveal center Y","effects.revealY",0,1,.01);
-        choice(effects,"Reveal particles","effects.revealParticles",{"None","Dust","Sparks","Fire","Smoke","Fog","Debris","Mesh stamp"},"None");
+        }else{
+            number(effects,"Start time","effects.emitterStart",0,86400,.1," s");
+            choice(effects,"Emit from","effects.emitterSource",{"Point","Area"},"Point");
+            number(effects,"Seed","effects.revealSeed",0,10000,1);
+        }
+        choice(effects,emitter?"Particles":"Reveal particles","effects.revealParticles",
+               {"None","Dust","Sparks","Embers","Fire","Smoke","Fog","Debris","Water droplets","Energy trails","Mesh stamp"},"None");
         const auto dynamicsKey="inspector/objects/"+o->id+"/particleDynamics";
         auto *dynamics=new QToolButton;dynamics->setText("Particle settings");dynamics->setCheckable(true);
         dynamics->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
@@ -384,7 +392,8 @@ void PropertyInspector::rebuild(){
         number(particleForm,"Size","effects.particleSize",.5,128,.5," px");
         number(particleForm,"Travel","effects.particleTravel",0,8,.05);
         number(particleForm,"Movement speed","effects.particleSpeed",.05,8,.05," ×");
-        number(particleForm,"Lifetime (% of reveal)","effects.particleLifetime",1,100,1," %");
+        if(emitter)number(particleForm,"Lifetime","effects.emitterLifetime",.05,120,.05," s");
+        else number(particleForm,"Lifetime (% of reveal)","effects.particleLifetime",1,100,1," %");
         number(particleForm,"Emission angle","effects.particleAngle",-180,180,1,"°");
         number(particleForm,"Size and drift variation","effects.particleRandomness",0,1,.05);
         number(particleForm,"Turbulence","effects.particleTurbulence",0,8,.05);

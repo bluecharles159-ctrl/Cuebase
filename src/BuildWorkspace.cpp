@@ -852,6 +852,10 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
         QMenu *mesh = addMenu->addMenu("3D Mesh");
         for (const QString &k : Mesh::primitiveKinds()) ((k=="Plane"||k=="Circle")?shapes:mesh)->addAction(k, this, [m, k] { m->addMesh(k); });
         addMenu->addAction("Text", this, [m] { m->addText(); });
+        auto *particles=addMenu->addMenu(uiIcon("effects"),"Particle emitter");
+        particles->setObjectName("addParticleEmitterMenu");
+        for(const auto &preset:QStringList{"Dust","Sparks","Embers","Fire","Smoke","Fog","Debris","Water droplets","Energy trails","Mesh stamp"})
+            particles->addAction(preset,this,[m,preset]{m->addParticleEmitter(preset);});
         auto *media=addMenu->addMenu(uiIcon("image"),"Media");
         media->addAction(uiIcon("folder"),"Composition media…",this,[this]{createDesignMediaDialog(m_model,this)->open();});
         media->addSeparator();

@@ -161,6 +161,7 @@ double DObject::propertyBase(const QString &path) const {
     if(path=="effects.particleTravel")return style[path].toDouble(1);
     if(path=="effects.particleSpeed")return style[path].toDouble(1);
     if(path=="effects.particleLifetime")return style[path].toDouble(20);
+    if(path=="effects.emitterLifetime")return style[path].toDouble(1.8);
     if(path=="effects.particleRandomness")return style[path].toDouble(1);
     if(path=="effects.revealSpread")return style[path].toDouble(1);
     if(path=="effects.revealSteps")return style[path].toDouble(8);
@@ -221,6 +222,7 @@ void DObject::setPropertyBase(const QString &path, double value) {
 DObject DObject::evaluated(qint64 ms) const {
     DObject result = *this;
     if(style["media.kind"].toString()=="Video")result.style["media.time"]=double(ms);
+    if(style.value("effects.emitter").toBool())result.style["effects.emitterTimeMs"]=double(ms);
     for (const auto &tr : tracks) result.setPropertyBase(tr.property, propertyValue(tr.property, ms));
     for (auto it = overrides.begin(); it != overrides.end(); ++it) result.setPropertyBase(it.key(), it.value());
     result.fitTextLayout();

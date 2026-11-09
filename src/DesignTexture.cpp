@@ -203,7 +203,9 @@ QImage ElementDesign::baseTexture(const DObject &source) const {
     }}
     // A stable object-space threshold makes a keyed reveal reversible and deterministic.
     const double reveal=RevealEffects::progress(o);
-    const bool revealHandled=RevealEffects::apply(pixels,o,padding,w,h,reveal);
+    const bool emitter=o.style.value("effects.emitter").toBool();
+    if(emitter)pixels.fill(Qt::transparent);
+    const bool revealHandled=emitter || RevealEffects::apply(pixels,o,padding,w,h,reveal);
     if(!revealHandled&&reveal<1){
         const double rough=qBound(0.,o.propertyBase("effects.revealRoughness"),1.),soft=qMax(.00001,o.propertyBase("effects.revealSoftness"));
         const double angle=qDegreesToRadians(o.propertyBase("effects.revealAngle")),dx=qCos(angle),dy=qSin(angle),span=qMax(.00001,qAbs(dx)+qAbs(dy));

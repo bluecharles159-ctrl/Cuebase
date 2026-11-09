@@ -48,6 +48,7 @@ public:
     QString uniqueName(const QString &base) const;
     QString addMesh(const QString &kind);
     QString addText();
+    QString addParticleEmitter(const QString &preset);
     QString addImage(const QString &path);
     QString addLight(const QString &kind);
     QStringList duplicateSelected();

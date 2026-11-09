@@ -387,6 +387,29 @@ private slots:
         QTest::keyClick(overlay,Qt::Key_Return);
         QCOMPARE(object->style["effects.particlePath"].toArray().size(),4);
     }
+    void standaloneEmittersFollowSceneTime(){
+        Library library;BuildWorkspace workspace(&library);
+        auto *model=workspace.findChild<BuildModel*>();
+        auto *menu=workspace.findChild<QMenu*>("addParticleEmitterMenu");QVERIFY(model && menu);
+        model->reset(ElementDesign::defaultScene());model->setTime(300);
+        const auto before=model->design.toJson();const auto count=model->design.objects.size();
+        const auto actions=menu->actions();
+        for(const auto &name:QStringList{"Smoke","Water droplets","Energy trails","Embers"}){
+            auto action=std::find_if(actions.begin(),actions.end(),[&](auto *a){return a->text()==name;});
+            QVERIFY(action!=actions.end());(*action)->trigger();
+            const auto *source=model->active();QVERIFY(source && source->style.value("effects.emitter").toBool());
+            QCOMPARE(source->style["effects.revealParticles"].toString(),name);
+            QCOMPARE(model->design.objects.size(),count+1);
+            auto frame=[&](qint64 ms){return model->design.textureFor(source->evaluated(ms),ms);};
+            const auto early=frame(150),mid=frame(1300),late=frame(6300);
+            QImage clear=early;clear.fill(Qt::transparent);QCOMPARE(early,clear);
+            QVERIFY(mid!=early && late!=mid && late!=early);QCOMPARE(frame(1300),mid);
+            QVERIFY(mid.pixelColor(0,0).alpha()==0);
+            const auto restored=ElementDesign::fromJson(model->design.toJson());
+            QCOMPARE(restored.textureFor(restored.find(source->id)->evaluated(1300),1300),mid);
+            QVERIFY(model->undo());QCOMPARE(model->design.toJson(),before);
+        }
+    }
     void revealParticleSources(){
         Library library;BuildModel model;
         auto scene=ElementDesign::defaultScene();

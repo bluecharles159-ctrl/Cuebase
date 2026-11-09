@@ -77,6 +77,17 @@ struct PlanningCanvas::Impl {
     void geometry(){timeline.clear();double x=20;for(const auto &e:doc.entries){const double width=qBound(120.,double(e.durationMs)*.006*timelineScale,700.);timeline.append(QRectF(x,38,width-4,78));x+=width;}band={20,34,qMax(400.,x-20+44),86};plus={band.right()-34,64,26,26};QRectF bounds=band.united(QRectF(0,0,1000,650));for(const auto &c:doc.cards)bounds=bounds.united(c.rect.adjusted(-30,-30,80,80));q->setSceneRect(bounds.adjusted(-30,-20,60,50));q->viewport()->update();}
     double xAt(qint64 ms)const{qint64 start=0;for(int i=0;i<doc.entries.size();++i){const auto duration=doc.entries[i].durationMs;if(ms<start+duration)return timeline[i].left()+timeline[i].width()*qBound(0.,double(ms-start)/duration,1.);start+=duration;}return timeline.isEmpty()?20:timeline.last().right();}
     void publish(){geometry();emit q->documentEdited(doc);}
+    void positionCard(QPointF point,bool resize){
+        const auto delta=point-press;
+        auto rect=original;
+        if(resize){
+            if(edges&1)rect.setLeft(qMin(rect.right()-100,rect.left()+delta.x()));
+            if(edges&2)rect.setRight(qMax(rect.left()+100,rect.right()+delta.x()));
+            if(edges&4)rect.setTop(qBound(ProductionPlan::cardTop,rect.top()+delta.y(),rect.bottom()-70));
+            if(edges&8)rect.setBottom(qMax(rect.top()+70,rect.bottom()+delta.y()));
+        }else rect.translate(delta);
+        doc.setCardRect(dragId,rect);
+    }
     void edit(const QString &id){q->finishEditing();auto *c=card(id);if(!c)return;selected=id;editingId=id;auto *box=new QWidget;box->setObjectName("planNoteEditor");box->setAutoFillBackground(true);auto *layout=new QVBoxLayout(box);layout->setContentsMargins(5,5,5,5);layout->setSpacing(3);auto *bar=new QHBoxLayout;bar->setSpacing(2);layout->addLayout(bar);editor=new QTextEdit;editor->setObjectName("planNoteText");editor->setAcceptRichText(true);editor->setFrameShape(QFrame::NoFrame);editor->setHtml(c->html);layout->addWidget(editor);
         auto button=[&](QString text,QString tip){auto *b=new QToolButton;b->setText(text);b->setToolTip(tip);b->setAccessibleName(tip);b->setObjectName("noteTool"+tip);b->setFixedSize(22,22);bar->addWidget(b);return b;};
         auto *bold=button("B","Bold");bold->setCheckable(true);QObject::connect(bold,&QToolButton::clicked,q,[this](bool on){if(editor){editor->setFontWeight(on?QFont::Bold:QFont::Normal);editor->setFocus();}});
@@ -228,15 +239,14 @@ void PlanningCanvas::mouseMoveEvent(QMouseEvent *event){
     const auto point=mapToScene(event->pos());d->last=point;
     if(d->gesture==Impl::Pan){const auto delta=event->pos()-d->mouseStart;horizontalScrollBar()->setValue(d->scrollStart.x()-delta.x());verticalScrollBar()->setValue(d->scrollStart.y()-delta.y());return;}
     if(d->gesture==Impl::Create)d->rubber=QRectF(d->press,QPointF(point.x(),qMax(ProductionPlan::cardTop,point.y()))).normalized();
-    if(d->gesture==Impl::Move)d->doc.setCardRect(d->dragId,d->original.translated(point-d->press));
-    if(d->gesture==Impl::Resize){auto r=d->original;const auto delta=point-d->press;if(d->edges&1)r.setLeft(qMin(r.right()-100,r.left()+delta.x()));if(d->edges&2)r.setRight(qMax(r.left()+100,r.right()+delta.x()));if(d->edges&4)r.setTop(qBound(ProductionPlan::cardTop,r.top()+delta.y(),r.bottom()-70));if(d->edges&8)r.setBottom(qMax(r.top()+70,r.bottom()+delta.y()));d->doc.setCardRect(d->dragId,r);}
+    if(d->gesture==Impl::Move || d->gesture==Impl::Resize)d->positionCard(point,d->gesture==Impl::Resize);
     d->hover=d->cardAt(point);
     if(d->gesture==Impl::None){auto cursor=Qt::ArrowCursor;if(!d->hitPort(point).id.isEmpty())cursor=Qt::CrossCursor;else if(auto *c=d->card(d->hover);c&&!c->locked){const bool x=qAbs(point.x()-c->rect.left())<7||qAbs(point.x()-c->rect.right())<7,y=qAbs(point.y()-c->rect.top())<7||qAbs(point.y()-c->rect.bottom())<7;cursor=x&&y?Qt::SizeFDiagCursor:x?Qt::SizeHorCursor:y?Qt::SizeVerCursor:Qt::OpenHandCursor;}setCursor(cursor);QGraphicsView::mouseMoveEvent(event);}viewport()->update();
 }
 void PlanningCanvas::mouseReleaseEvent(QMouseEvent *event){
     const auto mode=d->gesture;d->gesture=Impl::None;setCursor(Qt::ArrowCursor);const auto point=mapToScene(event->pos());
     if(mode==Impl::Create){auto r=d->rubber;if(r.width()<12||r.height()<12)return;r.setWidth(qMax(220.,r.width()));r.setHeight(qMax(110.,r.height()));PlanCard card;card.id=newPlanId();card.rect=r;card.background=palette().color(QPalette::AlternateBase);d->doc.cards.append(card);const auto id=card.id;d->publish();d->edit(id);}
-    else if(mode==Impl::Move||mode==Impl::Resize){if(d->doc.toJson()!=d->before.toJson())d->publish();}
+    else if(mode==Impl::Move||mode==Impl::Resize){d->positionCard(point,mode==Impl::Resize);if(d->doc.toJson()!=d->before.toJson())d->publish();}
     else if(mode==Impl::Link){auto target=d->hitPort(point);if(!target.id.isEmpty()&&d->doc.addLink({{},d->origin,target,"Solid"}))d->publish();}
     else if(mode==Impl::Entry){const int at=d->entryAt(point);if(QLineF(point,d->press).length()>8){if(d->doc.moveEntry(d->dragId,at<0?d->doc.entries.size()-1:at))d->publish();}else if(at>=0){const auto &e=d->doc.entries[at];emit seekRequested(d->doc.startMs(e.id)+qint64(qBound(0.,(point.x()-d->timeline[at].left())/d->timeline[at].width(),1.)*qMax<qint64>(0,e.durationMs-1)));}}
     else if(mode==Impl::None)QGraphicsView::mouseReleaseEvent(event);viewport()->update();
