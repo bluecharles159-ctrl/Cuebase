@@ -169,6 +169,42 @@ private slots:
         canvas.setProperty("previewQuality","Auto");model.playing=true;canvas.grab();const QSize playing=canvas.property("previewPixelSize").toSize();QVERIFY(qAbs(playing.width()*2-fullSize.width())<=1);model.playing=false;canvas.grab();QCOMPARE(canvas.property("previewPixelSize").toSize(),fullSize);
         canvas.setProperty("previewQuality","Quarter");canvas.grab();QVERIFY(qAbs(canvas.property("previewPixelSize").toSize().width()*4-fullSize.width())<=3);QCOMPARE(model.design.toJson(),before);
         canvas.setProperty("previewQuality","Full");const QPointF anchor(canvas.rect().center());for(int i=0;i<24;++i){QWheelEvent wheel(anchor,canvas.mapToGlobal(anchor.toPoint()),QPoint(),QPoint(0,120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);QApplication::sendEvent(&canvas,&wheel);}canvas.grab();const QSize zoomed=canvas.property("previewPixelSize").toSize();QVERIFY(qint64(zoomed.width())*zoomed.height()<=2073600);QVERIFY(canvas.property("previewRenderMs").toLongLong()>=0);QCOMPARE(model.design.toJson(),before);
+        for (const QString &quality : QStringList{"Full", "Half", "Quarter"}) {
+            canvas.setProperty("previewQuality", quality);
+            QList<double> times;
+            for (int i = 0; i < 5; ++i) {
+                canvas.grab();
+                times.append(canvas.property("previewRenderMs").toDouble());
+            }
+            std::sort(times.begin(), times.end());
+            const int divisor = quality == "Full" ? 1 : quality == "Half" ? 2 : 4;
+            const QSize pixels = canvas.property("previewPixelSize").toSize();
+            QVERIFY(qAbs(pixels.width() * divisor - zoomed.width()) < divisor);
+            QVERIFY(qAbs(pixels.height() * divisor - zoomed.height()) < divisor);
+            qInfo() << "Backdrop preview" << quality << pixels << "median render (ms)" << times.at(2);
+        }
+    }
+    void adaptiveQualityFollowsFrameBudget(){
+        AdaptivePreviewQuality quality;
+        QCOMPARE(quality.scale(), .5);
+        quality.record(39, 40);
+        quality.record(39, 40);
+        quality.record(20, 40); // One fast frame interrupts the slow streak.
+        quality.record(39, 40);
+        quality.record(39, 40);
+        QCOMPARE(quality.scale(), .5);
+        quality.record(39, 40);
+        QCOMPARE(quality.scale(), .25);
+        for (int i = 0; i < 8; ++i) quality.record(10, 40);
+        QCOMPARE(quality.scale(), .25);
+        for (int i = 0; i < 7; ++i) quality.record(5, 40);
+        QCOMPARE(quality.scale(), .25);
+        quality.record(5, 40);
+        QCOMPARE(quality.scale(), .5);
+        for (int i = 0; i < 3; ++i) quality.record(20, 16);
+        QCOMPARE(quality.scale(), .25);
+        quality.reset();
+        QCOMPARE(quality.scale(), .5);
     }
     void buildAppearanceModes(){
         QSettings settings;const auto previous=settings.value("build/viewMode");

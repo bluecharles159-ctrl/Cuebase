@@ -1504,7 +1504,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     viewButton->setMenu(viewMenu);tb->insertWidget(0,viewButton);
     canvas->setShading(qBound(0,QSettings().value("build/viewMode",int(BuildCanvas::Solid)).toInt(),3));
     viewButton->setText(modeNames[canvas->shading()]);for(auto *action:viewMenu->actions())action->setChecked(action->text()==viewButton->text());
-    auto *qualityButton=new QToolButton;qualityButton->setObjectName("buildPreviewQuality");qualityButton->setPopupMode(QToolButton::InstantPopup);qualityButton->setToolTip("Preview resolution only. Auto uses half resolution during playback and transforms; full resolution when idle. Buffers are limited to 1080p pixel count.");
+    auto *qualityButton=new QToolButton;qualityButton->setObjectName("buildPreviewQuality");qualityButton->setPopupMode(QToolButton::InstantPopup);qualityButton->setToolTip("Auto adjusts between half and quarter resolution during playback and transforms, then restores full detail when idle.");
     auto *qualityMenu=new QMenu(qualityButton);qualityButton->setMenu(qualityMenu);
     QString quality=QSettings().value("build/previewQuality","Auto").toString();const QStringList qualities{"Auto","Full","Half","Quarter"};if(!qualities.contains(quality))quality="Auto";
     canvas->setProperty("previewQuality",quality);qualityButton->setText(quality);

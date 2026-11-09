@@ -23,9 +23,11 @@ handles and the gray working appearance are editor-only. Work intentionally hide
 finishing effects, so check Final before judging a reveal, shadow or material.
 
 The adjacent quality menu offers **Auto**, **Full**, **Half** and **Quarter**.
-Auto uses half resolution during playback and modal transforms and full resolution
-when idle. All modes limit their image buffers to 2,073,600 pixels (1080p pixel
-count), including at high zoom. The limit is for the editor preview, not export.
+Auto starts playback and modal transforms at half resolution. Three consecutive
+renders above 85% of the project frame interval switch it to quarter resolution.
+Eight renders below 18% restore half resolution. Pausing or finishing a transform
+restores full detail. At high zoom, Full uses at most 2,073,600 pixels and the
+other levels scale down from that cap. Export uses its own output resolution.
 Guides and editing handles are drawn afterward at widget resolution.
 
 Build previews render into an image buffer so backdrop effects can sample earlier
@@ -44,4 +46,5 @@ alpha preservation. See COLOR-MANAGEMENT.md for scope and compositing details.
 The subsequent 55-case suite verifies Point, Sun, Spot and Area lighting across
 Work/Material/Final, including parent-hidden lights, light-color changes and animated
 light-power export. The proof sheet is `artifacts/build-lighting-modes.png`. Native
-interaction review and measured performance budgets remain open.
+Windows CI records median render times for the zoomed backdrop scene at all three
+resolutions in `native-build-preview-results.txt`.

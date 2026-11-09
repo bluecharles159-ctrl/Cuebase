@@ -81,6 +81,9 @@ jobs:
           ctest --test-dir build-cloud --output-on-failure --parallel 1 --timeout 300 --output-junit cloud-tests.xml || test_status=$?
           build-cloud/CuebaseEditorInteractionTests.exe -platform windows -o native-editor-results.txt,txt || test_status=$?
           build-cloud/CuebaseCreativeWorkflowTests.exe -platform windows -o native-creative-results.txt,txt || test_status=$?
+          build-cloud/CuebaseBuildTests.exe -platform windows buildAppearanceModes lightingModesHierarchyAndExport adaptiveQualityFollowsFrameBudget buildPreviewQualityAndBackdrop meshEmitterUsesTheSelectedGeometry -o native-build-preview-results.txt,txt || test_status=$?
+          grep -F 'median render (ms)' native-build-preview-results.txt || true
+          build-cloud/CuebaseStreamTests.exe -platform windows studioMeshLightMatchesSceneRenderer -o native-studio-lighting-results.txt,txt || test_status=$?
           build-cloud/CuebaseStreamTests.exe -platform windows duplicateTrimAndExtendCuePlacement nestedBoardNavigationEditsAndDelayedPlacement livePlacementEditorProtectsIndividualPlays chooseWorkspaceAtFirstLaunchAndSwitchInSettings scheduleAndBroadcastSplitLayouts -o native-cue-board-results.txt,txt || test_status=$?
           build-cloud/CuebaseStreamTests.exe -platform windows plannerCardFormattingAndSharedConnections plannerMediaRecoveryAndPreview plannerSourceGesturesKeepPlayingEntry planningPreviewIsolation planningSurvivesCrewEdit planningRecoveryPreservesOriginal -o native-planner-results.txt,txt || test_status=$?
           build-cloud/CuebaseStreamTests.exe -platform windows auditionAndReopenAudioEffectChain renderedPitchTempoSidechainAndKeys studioAudioMeterAndWheelFader privatePreviewPreservesLivePicture scrubDuringAnAdKeepsTheProgramInPrivatePreview editableStandbyErrorsAndLoopedVideo continuityOverrideAndReturn -o native-monitor-results.txt,txt || test_status=$?
@@ -149,6 +152,8 @@ jobs:
             build-cloud/artifacts/
             native-editor-results.txt
             native-creative-results.txt
+            native-build-preview-results.txt
+            native-studio-lighting-results.txt
             native-planner-results.txt
             native-monitor-results.txt
             native-channel-and-timeline-results.txt

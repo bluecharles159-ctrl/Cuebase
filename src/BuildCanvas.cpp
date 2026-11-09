@@ -501,8 +501,16 @@ void BuildCanvas::paintEvent(QPaintEvent *) {
 
     // Work/material views retain the off-camera workspace. Only the camera frame
     // is exported; the dimmed surround helps position incoming/outgoing objects.
+    const QString quality = property("previewQuality").toString();
+    const bool adaptive = (quality.isEmpty() || quality == "Auto") && (m_m->playing || modalActive());
+    if (!adaptive) m_adaptiveQuality.reset();
+    const double scale = adaptive ? m_adaptiveQuality.scale() :
+                         quality == "Quarter" ? 0.25 : quality == "Half" ? 0.5 : 1.;
+    constexpr double pixelLimit = 2073600.;
+    QElapsedTimer renderClock;
+    renderClock.start();
     if(m_cameraView && m_shading!=Rendered && !r.contains(QRectF(rect()))){
-        const double factor=qMin(1.,qSqrt(2073600./qMax(1.,double(width())*height())));
+        const double factor=scale*qMin(1.,qSqrt(pixelLimit/qMax(1.,double(width())*height())));
         QImage surround(QSize(qMax(2,int(width()*factor)),qMax(2,int(height()*factor))),QImage::Format_ARGB32_Premultiplied);surround.fill(Qt::transparent);
         if(!surround.isNull()){
             QPainter editor(&surround);PaintOpts options;options.shade=PaintOpts::Shade(m_shading);options.clip=false;options.background=false;
@@ -518,15 +526,11 @@ void BuildCanvas::paintEvent(QPaintEvent *) {
     p.fillRect(r,QColor("#393939"));
     // Render into an image so backdrop effects can sample already drawn pixels.
     // Bound the buffer independently of editor zoom; previews never change output.
-    const QString quality=property("previewQuality").toString();
-    const double scale=quality=="Quarter"?.25:quality=="Half"?.5:
-        (quality.isEmpty()||quality=="Auto")&&(m_m->playing||modalActive())?.5:1.;
-    QSizeF requested=r.size()*devicePixelRatioF()*scale;
-    const double limit=2073600.;
-    if(requested.width()*requested.height()>limit)requested*=qSqrt(limit/(requested.width()*requested.height()));
+    QSizeF requested=r.size()*devicePixelRatioF();
+    if(requested.width()*requested.height()>pixelLimit)requested*=qSqrt(pixelLimit/(requested.width()*requested.height()));
+    requested *= scale;
     const QSize previewSize(qMax(2,int(requested.width())),qMax(2,int(requested.height())));
     setProperty("previewPixelSize",previewSize);
-    QElapsedTimer renderClock;renderClock.start();
     QImage frame(previewSize,QImage::Format_ARGB32_Premultiplied);frame.fill(Qt::transparent);
     if(!frame.isNull()){
         if(m_cameraView&&m_shading==Rendered&&sceneEffect(d))frame=sceneEffectPreview(d,previewSize,m_m->t);
@@ -544,7 +548,9 @@ void BuildCanvas::paintEvent(QPaintEvent *) {
             applyColorManagement(frame,display.colorView,display.colorLook,display.exposure,display.gamma);
         p.setRenderHint(QPainter::SmoothPixmapTransform);p.drawImage(r,frame);
     }
-    setProperty("previewRenderMs",renderClock.elapsed());
+    const double renderMs = renderClock.nsecsElapsed() / 1000000.;
+    if (adaptive) m_adaptiveQuality.record(renderMs, m_m->frameMs());
+    setProperty("previewRenderMs",renderMs);
     p.restore();
 
     // Broadcast-safe overlays are editor-only.

@@ -6,6 +6,7 @@
 #include <QWidget>
 
 #include "BuildModel.h"
+#include "PreviewQuality.h"
 
 class Library;
 
@@ -141,6 +142,7 @@ private:
     BuildModel *m_m;
     Library *m_lib;
     int m_shading = Rendered;
+    AdaptivePreviewQuality m_adaptiveQuality;
     bool m_cameraView = true, m_ortho = true;
     int m_workDirection = 0; // Front, Right, Top. Independent of broadcast camera.
     // Navigation never changes the saved broadcast camera.

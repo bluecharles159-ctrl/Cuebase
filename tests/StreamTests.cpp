@@ -2,6 +2,7 @@
 #include "UiTheme.h"
 #include <QtTest>
 #include "ColorManagement.h"
+#include <algorithm>
 #include <QDataStream>
 #include <cmath>
 #include <QTemporaryDir>
@@ -715,6 +716,64 @@ private slots:
         QCOMPARE(viewport.programFrame({320,180}).pixelColor(160,90),QColor(Qt::red));
         play.triggerElementAnimation("program:"+p.id,{});QCOMPARE(viewport.programFrame({320,180}).pixelColor(160,90),QColor(Qt::black));QTRY_VERIFY(players[0].isNull());
         play.seekTo(0);play.togglePause();QList<QPointer<QMediaPlayer>> cuePlayers;for(const auto &player:players)if(player&&player->source()==QUrl::fromLocalFile(file.fileName()))cuePlayers.append(player);QCOMPARE(cuePlayers.size(),1);QCOMPARE(viewport.programFrame({320,180}).pixelColor(160,90),QColor(Qt::red));play.stop();QTRY_VERIFY(cuePlayers[0].isNull());
+    }
+    void studioMeshLightMatchesSceneRenderer(){
+        Library library;
+        library.display.watermarkOn = false;
+        ProgramItem program;
+        program.id = "lighting-show";
+        library.programs = {program};
+
+        auto scene = ElementDesign::defaultScene();
+        scene.world.transparent = false;
+        scene.world.color = QColor("#393939");
+        scene.world.ambient = .02;
+        DObject cube;
+        cube.id = "subject";
+        cube.type = "Mesh";
+        cube.mesh = Mesh::primitive("Cube");
+        cube.base.scl = {2, 2, 2};
+        cube.base.rot = {20, 0, 25};
+        scene.objects.append(cube);
+        auto lamp = std::find_if(scene.objects.begin(), scene.objects.end(), [](const DObject &o) {
+            return o.type == "Light";
+        });
+        QVERIFY(lamp != scene.objects.end());
+        lamp->base.loc = {0, -6, 0};
+        lamp->base.rot = {90, 0, 0};
+
+        Element element;
+        element.id = "lit-scene";
+        element.type = "Custom";
+        element.live = true;
+        library.elements = {element};
+        Playout play(&library);
+        ViewportWidget monitor(&library, &play);
+        play.start();
+        play.togglePause();
+        for (const QString &kind : QStringList{"Sun", "Point", "Spot", "Area"}) {
+            lamp->light.kind = kind;
+            lamp->light.energy = kind == "Sun" ? 3 : 600;
+            QImage dark;
+            for (bool visible : {false, true}) {
+                lamp->visible = visible;
+                library.elements[0].design = scene.toJson();
+                QImage expected(320, 180, QImage::Format_ARGB32);
+                expected.fill(Qt::transparent);
+                QPainter painter(&expected);
+                painter.setRenderHint(QPainter::Antialiasing);
+                painter.setRenderHint(QPainter::SmoothPixmapTransform);
+                scene.render(painter, expected.rect(), 0);
+                painter.end();
+                QCOMPARE(monitor.programFrame(expected.size()), expected);
+                if (visible) {
+                    QVERIFY2(dark != expected, qPrintable(kind));
+                } else {
+                    dark = expected;
+                }
+            }
+        }
+        play.stop();
     }
     void studioBackgroundRenderParity(){
         QTemporaryDir temporary;QVERIFY(temporary.isValid());QImage media(64,32,QImage::Format_ARGB32);media.fill(Qt::blue);{QPainter painter(&media);painter.fillRect(0,0,32,32,Qt::red);}const auto path=temporary.filePath("background.png");QVERIFY(media.save(path));
