@@ -154,7 +154,7 @@ double DObject::propertyBase(const QString &path) const {
         const double fallback=field=="x"||field=="y"?.5:field=="opacity"?1.:field=="width"||field=="height"?.75:0.;
         return style[path].toDouble(fallback);
     }
-    if(path=="texture.scaleX"||path=="texture.scaleY"||path=="texture.opacity")return style[path].toDouble(1);
+    if(path.startsWith("texture.") && (path.endsWith(".scaleX")||path.endsWith(".scaleY")||path.endsWith(".opacity")))return style[path].toDouble(1);
     if(path=="effects.revealBlock")return style[path].toDouble(32);
     if(path=="effects.particleCount")return style[path].toDouble(180);
     if(path=="effects.particleSize")return style[path].toDouble(4);
@@ -178,6 +178,7 @@ double DObject::propertyBase(const QString &path) const {
     if (path == "text.size") return fontPx;
     if (path == "material.alpha") return mat.alpha;
     if (path == "material.roughness") return mat.roughness;
+    if (path == "material.metallic") return mat.metallic;
     if (path == "material.emission") return mat.emission;
     if (path == "light.power") return light.energy;
     if (path == "light.angle") return light.spotSize;
@@ -217,6 +218,7 @@ void DObject::setPropertyBase(const QString &path, double value) {
     else if (path == "text.size") fontPx = qMax(1, qRound(value));
     else if (path == "material.alpha") mat.alpha = value;
     else if (path == "material.roughness") mat.roughness = value;
+    else if (path == "material.metallic") mat.metallic = qBound(0.,value,1.);
     else if (path == "material.emission") mat.emission = value;
     else if (path == "light.power") light.energy = value;
     else if (path == "light.angle") light.spotSize = value;

@@ -3,6 +3,7 @@
 #include "SurfaceEffects.h"
 #include "SurfacePaint.h"
 #include "SurfaceMasks.h"
+#include "TextureLayers.h"
 #include "SurfaceTreatments.h"
 #include "RevealEffects.h"
 #include <QPainter>
@@ -19,6 +20,22 @@
 #include <QtMath>
 
 namespace {
+QImage cachedLayerImage(const QFileInfo &surfaceFile){
+    // Animated mapping changes should not decode the same source on every frame.
+    // Each rendering thread owns a bounded cache, so export and preview do not race.
+    static thread_local QCache<QString,QImage> sources(32768);
+    const auto sourceKey=surfaceFile.absoluteFilePath()+QString("|%1|%2|%3").arg(surfaceFile.exists()).arg(surfaceFile.size()).arg(surfaceFile.lastModified().toMSecsSinceEpoch());
+    QImage texture;
+    if(const auto *cached=sources.object(sourceKey))texture=*cached;
+    else {
+        QImageReader reader(surfaceFile.filePath());reader.setAutoTransform(true);const auto original=reader.size();
+        if(original.isValid()&&(original.width()>2048||original.height()>2048))reader.setScaledSize(original.scaled(2048,2048,Qt::KeepAspectRatio));
+        texture=reader.read().convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        if(!texture.isNull())sources.insert(sourceKey,new QImage(texture),qMax(1,int(texture.sizeInBytes()/1024)));
+    }
+    return texture;
+}
+
 void prepareText(QTextDocument &doc,const DObject &o,double width){
     QFont font(o.style["text.family"].toString("Segoe UI"));font.setPixelSize(qBound(1,o.fontPx,1000));
     font.setWeight(QFont::Weight(o.style["text.weight"].toInt(600)));font.setItalic(o.style["text.italic"].toBool());
@@ -81,11 +98,14 @@ void DObject::fitTextLayout(){
 }
 QImage ElementDesign::baseTexture(const DObject &source) const {
     DObject o=source;if(o.type=="Mesh"&&o.hasSurface())o.type=o.surfaceType();o.fitTextLayout();
-    const QFileInfo media(o.image),surfaceFile(o.style["texture.file"].toString());
-    const QString signature=SurfaceMasks::fileSignature(o)+QString::fromUtf8(QJsonDocument(o.style).toJson(QJsonDocument::Compact))+
+    const QFileInfo media(o.image);
+    QString signature=SurfaceMasks::fileSignature(o)+QString::fromUtf8(QJsonDocument(o.style).toJson(QJsonDocument::Compact))+
         QString("|%1|%2|%3|%4|%5|%6|%7").arg(o.type,o.text).arg(o.fontPx).arg(o.mat.color.name(QColor::HexArgb)).arg(o.w).arg(o.h).arg(o.image)+
-        (o.image.isEmpty()?QString():QString("|%1|%2|%3").arg(media.exists()).arg(media.size()).arg(media.lastModified().toMSecsSinceEpoch()))+
-        (surfaceFile.filePath().isEmpty()?QString():QString("|%1|%2|%3").arg(surfaceFile.exists()).arg(surfaceFile.size()).arg(surfaceFile.lastModified().toMSecsSinceEpoch()));
+        (o.image.isEmpty()?QString():QString("|%1|%2|%3").arg(media.exists()).arg(media.size()).arg(media.lastModified().toMSecsSinceEpoch()));
+    for (const auto &key : TextureLayers::files(o)) {
+        const QFileInfo file(o.style.value(key).toString());
+        signature += QString("|%1|%2|%3").arg(file.exists()).arg(file.size()).arg(file.lastModified().toMSecsSinceEpoch());
+    }
     auto cache=m_texCache.constFind(o.id);
     if(cache!=m_texCache.constEnd() && cache->first==signature)return cache->second;
     const int w=qBound(1,qRound(o.w*kPxPerUnit),4096),h=qBound(1,qRound(o.h*kPxPerUnit),4096);
@@ -113,34 +133,7 @@ QImage ElementDesign::baseTexture(const DObject &source) const {
         if(fill=="Radial") {QRadialGradient g(bounds.center(),qMax(w,h)/2.0);g.setStops(stops);brush=g;}
         if(fill=="Conic") {QConicalGradient g(bounds.center(),o.propertyBase("fill.angle"));g.setStops(stops);brush=g;}
     }
-    if(!surfaceFile.filePath().isEmpty()&&o.style["texture.enabled"].toBool(true)){
-        // Animated mapping changes should not decode the same source on every frame.
-        // Each rendering thread owns a bounded cache, so export and preview do not race.
-        static thread_local QCache<QString,QImage> sources(32768);
-        const auto sourceKey=surfaceFile.absoluteFilePath()+QString("|%1|%2|%3").arg(surfaceFile.exists()).arg(surfaceFile.size()).arg(surfaceFile.lastModified().toMSecsSinceEpoch());
-        QImage texture;
-        if(const auto *cached=sources.object(sourceKey))texture=*cached;
-        else {
-            QImageReader reader(surfaceFile.filePath());reader.setAutoTransform(true);const auto original=reader.size();
-            if(original.isValid()&&(original.width()>2048||original.height()>2048))reader.setScaledSize(original.scaled(2048,2048,Qt::KeepAspectRatio));
-            texture=reader.read().convertToFormat(QImage::Format_ARGB32_Premultiplied);
-            if(!texture.isNull())sources.insert(sourceKey,new QImage(texture),qMax(1,int(texture.sizeInBytes()/1024)));
-        }
-        if(!texture.isNull()){
-            QColor tint(o.style["texture.tint"].toString("#ffffff"));if(!tint.isValid())tint=Qt::white;
-            const double opacity=qBound(0.,o.propertyBase("texture.opacity"),1.)*tint.alphaF();
-            if(opacity!=1||tint!=QColor(Qt::white))for(int y=0;y<texture.height();++y){auto *row=reinterpret_cast<QRgb*>(texture.scanLine(y));for(int x=0;x<texture.width();++x){const auto c=row[x];row[x]=qRgba(qRound(qRed(c)*tint.redF()*opacity),qRound(qGreen(c)*tint.greenF()*opacity),qRound(qBlue(c)*tint.blueF()*opacity),qRound(qAlpha(c)*opacity));}}
-            QBrush mapped(texture);QTransform transform;transform.translate(o.propertyBase("texture.offsetX"),o.propertyBase("texture.offsetY"));transform.rotate(o.propertyBase("texture.rotation"));
-            const bool tile=o.style["texture.mapping"].toString("Fit")=="Tile";
-            transform.scale((tile?1.:double(w)/texture.width())*qMax(.001,o.propertyBase("texture.scaleX")),(tile?1.:double(h)/texture.height())*qMax(.001,o.propertyBase("texture.scaleY")));mapped.setTransform(transform);
-            // Composite the mapped image over the authored fill. Text uses this same brush for its glyphs.
-            QImage surface(w,h,QImage::Format_ARGB32_Premultiplied);surface.fill(Qt::transparent);QPainter sp(&surface);sp.setRenderHint(QPainter::SmoothPixmapTransform);sp.fillRect(surface.rect(),brush);
-            const auto blend=o.style["texture.blend"].toString("Normal");sp.setCompositionMode(blend=="Multiply"?QPainter::CompositionMode_Multiply:blend=="Screen"?QPainter::CompositionMode_Screen:blend=="Overlay"?QPainter::CompositionMode_Overlay:QPainter::CompositionMode_SourceOver);
-            if(tile)sp.fillRect(surface.rect(),mapped);else {sp.setTransform(transform);sp.drawImage(QPointF(0,0),texture);}sp.end();brush=QBrush(surface);
-        }
-    }
-    if((o.type=="Shape"||o.type=="Image")&&background!="Media")p.fillPath(outline,brush);
-    if(background=="Media") {
+    auto drawMedia = [&](QPainter &p){
         qint64 time=o.style["media.time"].toDouble()*o.style["media.speed"].toDouble(1)+o.style["media.offset"].toDouble();
         const qint64 duration=o.style["media.duration"].toDouble();if(duration>0)time=o.style["media.loop"].toBool(true)?time%duration:qMin(time,duration-1);
         const QImage source=o.style["media.kind"].toString()=="Video"?MediaFrames::frame(o.image,time,o.id):QImage(o.image);
@@ -154,7 +147,51 @@ QImage ElementDesign::baseTexture(const DObject &source) const {
             const double x=o.style["image.x"].toDouble(.5),y=o.style["image.y"].toDouble(.5);
             p.drawImage(QRectF((w-size.width())*x,(h-size.height())*y,size.width(),size.height()),source);p.restore();
         }
+    };
+    const auto ids = TextureLayers::order(o);
+    bool mediaBase = false;
+    for (const auto &id : ids) {
+        const auto layer = TextureLayers::prefix(id);
+        const QFileInfo surfaceFile(o.style.value(layer+"file").toString());
+        if (surfaceFile.filePath().isEmpty() || !o.style.value(layer+"enabled").toBool(true)) continue;
+        QImage texture=cachedLayerImage(surfaceFile);
+        if(!texture.isNull()){
+            QColor tint(o.style[layer+"tint"].toString("#ffffff"));if(!tint.isValid())tint=Qt::white;
+            const double opacity=qBound(0.,o.propertyBase(layer+"opacity"),1.)*tint.alphaF();
+            if(opacity!=1||tint!=QColor(Qt::white))for(int y=0;y<texture.height();++y){auto *row=reinterpret_cast<QRgb*>(texture.scanLine(y));for(int x=0;x<texture.width();++x){const auto c=row[x];row[x]=qRgba(qRound(qRed(c)*tint.redF()*opacity),qRound(qGreen(c)*tint.greenF()*opacity),qRound(qBlue(c)*tint.blueF()*opacity),qRound(qAlpha(c)*opacity));}}
+            const auto maskPath = o.style.value(layer+"maskFile").toString();
+            if (!maskPath.isEmpty()) {
+                const auto mask = cachedLayerImage(QFileInfo(maskPath)).scaled(texture.size(),Qt::IgnoreAspectRatio,Qt::SmoothTransformation);
+                if (mask.isNull()) continue;
+                const auto mode = o.style.value(layer+"maskMode").toString("Alpha");
+                for (int y=0;y<texture.height();++y) {
+                    auto *pixels=reinterpret_cast<QRgb*>(texture.scanLine(y));
+                    const auto *maskRow=reinterpret_cast<const QRgb*>(mask.constScanLine(y));
+                    for(int x=0;x<texture.width();++x) {
+                        int coverage = mode.contains("luminance",Qt::CaseInsensitive) ? qGray(maskRow[x]) : qAlpha(maskRow[x]);
+                        if(mode.startsWith("Inverse"))coverage=255-coverage;
+                        const auto p=pixels[x];
+                        pixels[x]=qRgba((qRed(p)*coverage+127)/255,(qGreen(p)*coverage+127)/255,
+                                        (qBlue(p)*coverage+127)/255,(qAlpha(p)*coverage+127)/255);
+                    }
+                }
+            }
+            QBrush mapped(texture);QTransform transform;transform.translate(o.propertyBase(layer+"offsetX"),o.propertyBase(layer+"offsetY"));transform.rotate(o.propertyBase(layer+"rotation"));
+            const bool tile=o.style[layer+"mapping"].toString("Fit")=="Tile";
+            transform.scale((tile?1.:double(w)/texture.width())*qMax(.001,o.propertyBase(layer+"scaleX")),(tile?1.:double(h)/texture.height())*qMax(.001,o.propertyBase(layer+"scaleY")));mapped.setTransform(transform);
+            // Composite the mapped image over the authored fill. Text uses this same brush for its glyphs.
+            QImage surface(w,h,QImage::Format_ARGB32_Premultiplied);surface.fill(Qt::transparent);
+            QPainter sp(&surface);sp.setRenderHint(QPainter::SmoothPixmapTransform);
+            if (background=="Media" && o.type!="Text" && !mediaBase) {
+                drawMedia(sp);
+                mediaBase=true;
+            } else sp.fillRect(surface.rect(),brush);
+            const auto blend=o.style[layer+"blend"].toString("Normal");sp.setCompositionMode(blend=="Multiply"?QPainter::CompositionMode_Multiply:blend=="Screen"?QPainter::CompositionMode_Screen:blend=="Overlay"?QPainter::CompositionMode_Overlay:QPainter::CompositionMode_SourceOver);
+            if(tile)sp.fillRect(surface.rect(),mapped);else {sp.setTransform(transform);sp.drawImage(QPointF(0,0),texture);}sp.end();brush=QBrush(surface);
+        }
     }
+    if((o.type=="Shape"||o.type=="Image")&&(background!="Media"||mediaBase))p.fillPath(outline,brush);
+    if(background=="Media" && !mediaBase) drawMedia(p);
     if(o.type=="Text") {
         if(o.style["text.background"].toBool())p.fillPath(outline,QColor(o.style["text.backgroundColor"].toString("#cc202020")));
         const double inset=qBound(0.,o.propertyBase("text.padding"),512.),contentWidth=qMax(1.,w-2*inset),contentHeight=qMax(1.,h-2*inset);

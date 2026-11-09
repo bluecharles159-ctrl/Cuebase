@@ -1,4 +1,5 @@
 #include "DesignAssets.h"
+#include "TextureLayers.h"
 #include <QDir>
 #include <QDateTime>
 #include <QFile>
@@ -13,8 +14,8 @@ QList<DesignAsset> designAssets(const ElementDesign &design){
         if(!object.image.isEmpty())assets.append({object.id,object.name,"image",object.image});
         const auto audio=object.style["audio.file"].toString();
         if(!audio.isEmpty())assets.append({object.id,object.name,"audio",audio});
-        const auto texture=object.style["texture.file"].toString();
-        if(!texture.isEmpty())assets.append({object.id,object.name,"texture",texture});
+        for (const auto &key : TextureLayers::files(object))
+            assets.append({object.id,object.name,key=="texture.file"?QString("texture"):key,object.style.value(key).toString()});
         for(auto id:object.style.value("mask.stack").toArray()){
             const auto key="mask."+id.toString()+".file";
             const auto file=object.style.value(key).toString();
@@ -27,6 +28,8 @@ void setDesignAsset(ElementDesign &design,const DesignAsset &asset,const QString
     if(auto *object=design.find(asset.objectId)){
         if(asset.role=="image")object->image=path;
         else if(asset.role=="texture")object->style["texture.file"]=path;
+        else if(asset.role.startsWith("texture.") &&
+                (asset.role.endsWith(".file") || asset.role.endsWith(".maskFile")))object->style[asset.role]=path;
         else if(asset.role=="audio")object->style["audio.file"]=path;
         else if(asset.role.startsWith("mask.") && asset.role.endsWith(".file"))object->style[asset.role]=path;
     }

@@ -1,6 +1,6 @@
 # Cuebase completion counter
 
-Updated 2026-11-09. **61 of 84 tasks completed — 23 remaining.**
+Updated 2026-11-09. **62 of 84 tasks completed — 22 remaining.**
 
 The Claude transcript adds four distinct acceptance groups (81–84). Row 06 remains
 open: converted surfaces now retain their Inspector controls and unchanged
@@ -82,7 +82,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 ## Creative expansion
 
 - [x] 50. Work, Material and Final appearance, lighting parity and adaptive quality. Build 86 passed native Windows tests for all four light types in Build Final, PNG export and Studio output. Auto responds to measured render time at the project frame rate. The zoomed backdrop fixture recorded median times of 112.4 ms at Full, 26.5 ms at Half and 7.7 ms at Quarter on the GitHub runner. See `native-build-preview-results.txt` and `native-studio-lighting-results.txt`.
-- [ ] 51. Configurable composition guides, margins, colors, responsive layout, dragging and snapping. Normalized persistent guides, ruler dragging, undo/redo, Clear, safe insets/grid/color dialog and JSON round-trip pass in `composition-guides-results.txt` (50 cases); captures inspected. Responsive object-layout constraints and full native acceptance remain open.
+- [x] 51. Configurable composition guides, margins, colors, responsive layout, dragging and snapping. Builds 79–80 verified guide snapping and responsive references. Build 88 passed native guide dragging, undo, portrait references and optional PNG guide-proof exports. Build 89 verified keyed artwork and child alignment, editable frame pins, and preserved object sizes in portrait with both camera types.
 - [x] 52. Texture library, collections/favorites, reusable presets, missing-file repair and portability. Material panel, managed image imports, stable IDs, search/filtering, favorites, scene drag/drop, presets, undo/redo, save/reopen, missing repair, portable sharing and failed-save rollback pass 9 focused cases in `texture-library-verified-results.txt`; pixel blend checks and animated PNG equality pass. Full editor suite: 55 passing cases in `texture-editor-regression-results.txt`. Captures inspected. This covers 2D text/shape/image surface materials; layered/PBR materials remain task 53.
 - [ ] 53. Ordered material layers, mapping/blends, shared styles and evaluated surface properties.
 - [x] 54. Editable shape/alpha/luma/gradient/text/brush masks, combinations, feathering and animation (Build 48).

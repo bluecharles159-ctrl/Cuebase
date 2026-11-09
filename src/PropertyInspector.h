@@ -4,6 +4,7 @@
 #include <QVector>
 #include <QHash>
 class BuildModel;
+struct DObject;
 class Library;
 class QVBoxLayout;
 class QFormLayout;
@@ -16,6 +17,7 @@ private:
     void refresh();
     void maskControls();
     void particlePathControls(QFormLayout *form);
+    void textureControls(const DObject &object);
     QFormLayout *section(const QString &title, bool open = true);
     void number(QFormLayout *form, const QString &label, const QString &path, double low, double high, double step = 1, const QString &suffix = {});
     void choice(QFormLayout *form, const QString &label, const QString &path, const QStringList &options, const QString &fallback);
@@ -28,4 +30,5 @@ private:
     QString signature;
     bool syncing = false;
     QHash<QString,bool> expanded;
+    QHash<QString,QString> selectedTextureLayers;
 };

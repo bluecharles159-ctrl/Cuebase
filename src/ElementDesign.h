@@ -70,7 +70,7 @@ void setChannelValue(DProps &p, const QString &path, double value);
 
 struct Material {
     QColor color{Qt::white};
-    double alpha = 1.0, emission = 0.0, roughness = 0.5;
+    double alpha = 1.0, emission = 0.0, roughness = 0.5, metallic = 0.0;
     bool shadeless = false;  // flat colour, ignores lights
 };
 

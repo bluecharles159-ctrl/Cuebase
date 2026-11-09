@@ -50,3 +50,13 @@ resolutions in `native-build-preview-results.txt`. Build 86 recorded 112.4 ms at
 1920×1080, 26.5 ms at 960×540 and 7.7 ms at 480×270 on the GitHub runner.
 Its native Studio test also compared the program output with the scene renderer
 for each light type, with the light visible and hidden.
+
+In **Inspector → Layout → Frame pin**, choose **Top edge** or **Bottom edge**
+at the original composition aspect to preserve that margin as the frame grows
+or shrinks vertically. **Relative height** keeps the same fractional position.
+Child artwork follows a pinned parent. The object keeps its scale and keys.
+
+For a layout review, choose **Guide proof image** or **Guide proof animation
+folder** in Build's export dialog. These formats include your saved ruler guides,
+reference frame and enabled safe areas, grid and axes. Ordinary PNG exports
+and Studio output stay clean.

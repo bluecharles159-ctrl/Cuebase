@@ -2,6 +2,7 @@
 #include "PropertyInspector.h"
 #include "RevealEffects.h"
 #include "MeshEmitter.h"
+#include "TextureLayers.h"
 #include "ElementLibrary.h"
 #include "BuildModel.h"
 #include "Data.h"
@@ -238,9 +239,90 @@ void PropertyInspector::maskControls(){
         number(fields,"Feather",prefix+"feather",0,100,1," px");number(fields,"Strength",prefix+"opacity",0,1,.01);
     }
 }
+void PropertyInspector::textureControls(const DObject &object) {
+    auto *texture=section("SURFACE TEXTURE",false);
+    const auto order=TextureLayers::order(object);
+    QString id=selectedTextureLayers.value(object.id,order.last());
+    if(!order.contains(id))id=order.last();
+    const auto key=TextureLayers::prefix(id);
+    auto *layers=new QComboBox;
+    layers->setObjectName("surfaceTextureLayers");
+    texture->addRow("Layer",layers);
+    for(const auto &layer:order)layers->addItem(QString(),layer);
+    layers->setCurrentIndex(order.indexOf(id));
+    sync.append([=,this]{if(const auto *current=m->active()){
+        for(int index=0;index<layers->count();++index){
+            const auto path=current->style.value(TextureLayers::prefix(layers->itemData(index).toString())+"file").toString();
+            layers->setItemText(index,QString::number(index+1)+"  "+(path.isEmpty()?QString("Base fill"):QFileInfo(path).fileName()));
+        }
+    }});
+    connect(layers,&QComboBox::activated,this,[=,this](int index){
+        if(const auto *current=m->active()){
+            selectedTextureLayers[current->id]=layers->itemData(index).toString();
+            rebuild();refresh();
+        }
+    });
+    auto *orderRow=new QWidget;
+    auto *row=new QHBoxLayout(orderRow);row->setContentsMargins(0,0,0,0);
+    for(int delta:{-1,1}){
+        auto *move=new QPushButton(delta<0?"Move back":"Move forward");
+        move->setObjectName(delta<0?"textureLayerBack":"textureLayerForward");
+        const int index=order.indexOf(id);
+        move->setEnabled(!object.locked && index+delta>=0 && index+delta<order.size());
+        connect(move,&QPushButton::clicked,this,[=,this]{
+            apply([&]{auto *current=m->active();if(!current || current->locked)return;
+                auto latest=TextureLayers::order(*current);const int from=latest.indexOf(id);
+                if(from<0 || from+delta<0 || from+delta>=latest.size())return;
+                latest.move(from,from+delta);selectedTextureLayers[current->id]=id;
+                current->style["texture.stack"]=QJsonArray::fromStringList(latest);
+            });
+        });
+        row->addWidget(move);
+    }
+    orderRow->setVisible(order.size()>1);texture->addRow(orderRow);
+    auto *enabled=new QCheckBox("Use texture");texture->addRow(enabled);
+    connect(enabled,&QCheckBox::toggled,this,[=,this](bool on){apply([&]{if(auto *object=m->active())object->style[key+"enabled"]=on;});});
+    auto *path=new QLabel;path->setWordWrap(true);texture->addRow(path);
+    sync.append([=,this]{if(auto *object=m->active()){QSignalBlocker block(enabled);enabled->setChecked(object->style.value(key+"enabled").toBool(true));const auto file=object->style.value(key+"file").toString();path->setText(file.isEmpty()?"Apply a texture from the Material tab.":QFileInfo(file).fileName());path->setToolTip(file);}});
+    choice(texture,"Mapping",key+"mapping",{"Fit","Tile"},"Fit");
+    choice(texture,"Blend",key+"blend",{"Normal","Multiply","Screen","Overlay"},"Normal");
+    number(texture,"Scale X",key+"scaleX",.01,100,.05);number(texture,"Scale Y",key+"scaleY",.01,100,.05);
+    number(texture,"Offset X",key+"offsetX",-10000,10000,1," px");number(texture,"Offset Y",key+"offsetY",-10000,10000,1," px");
+    number(texture,"Rotation",key+"rotation",-3600,3600,1,"°");number(texture,"Opacity",key+"opacity",0,1,.05);color(texture,"Tint",key+"tint","#ffffff");
+    auto *mask=new QPushButton("Choose mask image…");texture->addRow("Layer mask",mask);
+    connect(mask,&QPushButton::clicked,this,[=,this]{
+        const QString path=QFileDialog::getOpenFileName(this,"Choose a texture layer mask",{},"Images (*.png *.jpg *.jpeg *.bmp *.webp *.tif *.tiff)");
+        if(!path.isEmpty())apply([&]{if(auto *current=m->active();current&&!current->locked)current->style[key+"maskFile"]=path;});
+    });
+    auto *clearMask=new QPushButton("Clear mask");texture->addRow(clearMask);
+    choice(texture,"Mask channel",key+"maskMode",{"Alpha","Luminance","Inverse alpha","Inverse luminance"},"Alpha");
+    sync.append([=,this]{if(auto *current=m->active()){
+        const auto file=current->style.value(key+"maskFile").toString();
+        mask->setText(file.isEmpty()?"Choose mask image…":QFileInfo(file).fileName());
+        clearMask->setVisible(!file.isEmpty());
+    }});
+    connect(clearMask,&QPushButton::clicked,this,[=,this]{
+        apply([&]{if(auto *current=m->active();current&&!current->locked)current->style.remove(key+"maskFile");});
+    });
+    auto *clear=new QPushButton("Remove texture");clear->setObjectName("removeSurfaceTexture");texture->addRow(clear);
+    connect(clear,&QPushButton::clicked,this,[=,this]{apply([&]{
+        auto *current=m->active();if(!current || current->locked)return;
+        if(id=="base"){current->style.remove("texture.file");return;}
+        auto latest=TextureLayers::order(*current);latest.removeAll(id);
+        current->style["texture.stack"]=QJsonArray::fromStringList(latest);
+        for(const auto &field:current->style.keys())if(field.startsWith(key))current->style.remove(field);
+        for(const auto &field:current->defaults.keys())if(field.startsWith(key))current->defaults.remove(field);
+        for(const auto &field:current->overrides.keys())if(field.startsWith(key))current->overrides.remove(field);
+        current->tracks.removeIf([&](const PropertyTrack &track){return track.property.startsWith(key);});
+        current->refreshLegacyKeys();
+        selectedTextureLayers[current->id]=latest.last();
+    });});
+}
+
 void PropertyInspector::rebuild(){
     auto *o=m->active();QString sig=o?o->id+o->type+QString::number(m->sel.size()):QString("none");
     if(o && o->hasSurface())sig+=QString::fromUtf8(QJsonDocument(o->style.value("mask.stack").toArray()).toJson(QJsonDocument::Compact))+QString::number(o->locked);
+    if(o && o->hasSurface())sig+=QString::fromUtf8(QJsonDocument(o->style.value("texture.stack").toArray()).toJson(QJsonDocument::Compact))+selectedTextureLayers.value(o->id);
     if(sig==signature)return;signature=sig;sync.clear();
     while(auto *item=layout->takeAt(0)){if(item->widget())item->widget()->deleteLater();delete item;}
     if(!o){layout->addWidget(new QLabel("Select a layer to inspect its properties."));layout->addStretch();return;}
@@ -555,21 +637,12 @@ void PropertyInspector::rebuild(){
         choice(image,"Fit","image.fit",{"Fill","Contain","Cover","None","Scale Down"},"Contain");number(image,"Horizontal","image.x",0,1,.05);number(image,"Vertical","image.y",0,1,.05);
     }
     if(!multi&&(o->surfaceType()=="Shape"||o->surfaceType()=="Text"||o->surfaceType()=="Image")){
-        auto *texture=section("SURFACE TEXTURE",false);
-        auto *enabled=new QCheckBox("Use texture");texture->addRow(enabled);
-        connect(enabled,&QCheckBox::toggled,this,[=,this](bool on){apply([&]{if(auto *object=m->active())object->style["texture.enabled"]=on;});});
-        auto *path=new QLabel;path->setWordWrap(true);texture->addRow(path);
-        sync.append([=,this]{if(auto *object=m->active()){QSignalBlocker block(enabled);enabled->setChecked(object->style.value("texture.enabled").toBool(true));const auto file=object->style.value("texture.file").toString();path->setText(file.isEmpty()?"Apply a texture from the Material tab.":QFileInfo(file).fileName());path->setToolTip(file);}});
-        choice(texture,"Mapping","texture.mapping",{"Fit","Tile"},"Fit");
-        choice(texture,"Blend","texture.blend",{"Normal","Multiply","Screen","Overlay"},"Normal");
-        number(texture,"Scale X","texture.scaleX",.01,100,.05);number(texture,"Scale Y","texture.scaleY",.01,100,.05);
-        number(texture,"Offset X","texture.offsetX",-10000,10000,1," px");number(texture,"Offset Y","texture.offsetY",-10000,10000,1," px");
-        number(texture,"Rotation","texture.rotation",-3600,3600,1,"°");number(texture,"Opacity","texture.opacity",0,1,.05);color(texture,"Tint","texture.tint","#ffffff");
-        auto *clear=new QPushButton("Remove texture");texture->addRow(clear);connect(clear,&QPushButton::clicked,this,[this]{apply([&]{if(auto *object=m->active())object->style.remove("texture.file");});});
+        textureControls(*o);
         auto *overflow=section("OVERFLOW",false);choice(overflow,"X","overflow.x",{"Visible","Hidden"},"Visible");choice(overflow,"Y","overflow.y",{"Visible","Hidden"},"Visible");
     }
     if(!multi && o->type=="Mesh" && !o->hasSurface()){
         auto *material=section("MATERIAL");color(material,"Base color","fill.color","#c8ccd4");number(material,"Roughness","material.roughness",0,1,.05);number(material,"Emission","material.emission",0,5,.1);number(material,"Alpha","material.alpha",0,1,.05);
+        number(material,"Metallic","material.metallic",0,1,.05);
         auto *shadeless=new QCheckBox("Ignore lighting");material->addRow(shadeless);connect(shadeless,&QCheckBox::toggled,this,[=, this](bool v){apply([&]{m->active()->mat.shadeless=v;});});sync.append([=, this]{shadeless->setChecked(m->active()->mat.shadeless);});
     }
     if(!multi && o->type=="Light"){

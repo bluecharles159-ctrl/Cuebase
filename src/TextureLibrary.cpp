@@ -1,4 +1,5 @@
 #include "TextureLibrary.h"
+#include "TextureLayers.h"
 #include "BuildModel.h"
 #include "Data.h"
 #include "DesignAssets.h"
@@ -42,22 +43,42 @@ DObject appearance(const DObject &source){
 }
 QString serialize(const DObject &object){ElementDesign design;design.objects.append(object);return design.toJson();}
 DObject surface(const QJsonObject &item){const auto design=ElementDesign::fromJson(item["surface"].toString());for(const auto &object:design.objects)if(compatible(object))return appearance(object);return appearance(DObject());}
-QString append(Library &library,QJsonObject item,const QString &createdFile,QString *error){
+QString repairKey(const DObject &object){
+    const auto files=TextureLayers::files(object);
+    for(const auto &key:files)if(!QFileInfo::exists(object.style.value(key).toString()))return key;
+    return files.value(0,"texture.file");
+}
+QString append(Library &library,QJsonObject item,const QStringList &createdFiles,QString *error){
     const auto id=QUuid::createUuid().toString(QUuid::WithoutBraces);item["id"]=id;item["collection"]="Unsorted";item["favorite"]=false;
     auto items=entries(library);items.append(item);
-    if(!commit(library,items,error)){if(!createdFile.isEmpty())QFile::remove(createdFile);return {};}
+    if(!commit(library,items,error)){for(const auto &path:createdFiles)QFile::remove(path);return {};}
     return id;
+}
+bool copyLayerFiles(DObject &object,QStringList &created,QString *error) {
+    QHash<QString,QString> copies;
+    for(const auto &key : TextureLayers::files(object)) {
+        const auto path = object.style.value(key).toString();
+        auto copy = copies.value(path);
+        if(copy.isEmpty()) {
+            copy = managedCopy(path,error);
+            if(copy.isEmpty()) {for(const auto &file:created)QFile::remove(file);return false;}
+            copies[path] = copy;
+            created.append(copy);
+        }
+        object.style[key] = copy;
+    }
+    return true;
 }
 }
 QJsonArray entries(const Library &library){return library.production["textureLibrary"].toObject()["entries"].toArray();}
 QJsonObject entry(const Library &library,const QString &id){for(auto value:entries(library)){const auto item=value.toObject();if(item["id"].toString()==id)return item;}return {};}
-QString file(const QJsonObject &item){return surface(item).style["texture.file"].toString();}
+QString file(const QJsonObject &item){const auto object=surface(item);return object.style.value(repairKey(object)).toString();}
 QImage thumbnail(const QJsonObject &item){
     const auto path=file(item);if(!path.isEmpty()&&(item["kind"].toString()=="Texture"||!QFileInfo::exists(path)))return readImage(path,160);
     ElementDesign design;return design.textureFor(surface(item)).scaled(160,120,Qt::KeepAspectRatio,Qt::SmoothTransformation);
 }
 QString importFile(Library &library,const QString &path,QString *error){
-    DObject object;QString kind="Texture",name=QFileInfo(path).completeBaseName(),copied;
+    DObject object;QString kind="Texture",name=QFileInfo(path).completeBaseName();QStringList copied;
     if(QFileInfo(path).suffix().compare("cuemat",Qt::CaseInsensitive)==0){
         QFile input(path);if(!input.open(QIODevice::ReadOnly)){fail(error,input.errorString());return {};}
         if(input.size()>4*1024*1024){fail(error,"This material preset is too large.");return {};}
@@ -65,18 +86,16 @@ QString importFile(Library &library,const QString &path,QString *error){
         design.objects.erase(std::remove_if(design.objects.begin(),design.objects.end(),[](const DObject &object){return object.type=="Camera";}),design.objects.end());
         if(design.objects.size()!=1||!compatible(design.objects.first())){fail(error,"This is not a Cuebase surface material preset.");return {};}
         resolveDesignAssets(design,QFileInfo(path).absolutePath());object=appearance(design.objects.first());kind="Preset";
-        const auto texture=object.style["texture.file"].toString();
-        if(!texture.isEmpty()){copied=managedCopy(texture,error);if(copied.isEmpty())return {};object.style["texture.file"]=copied;}
     }else{
-        copied=managedCopy(path,error);if(copied.isEmpty())return {};
-        object=appearance(object);object.style["texture.file"]=copied;
+        object=appearance(object);object.style["texture.file"]=path;
     }
+    if(!copyLayerFiles(object,copied,error))return {};
     object.name=name;return append(library,{{"name",name},{"kind",kind},{"surface",serialize(object)}},copied,error);
 }
 QString savePreset(Library &library,const DObject &source,const QString &name,QString *error){
     if(!compatible(source)||name.trimmed().isEmpty()){fail(error,"Select a text, shape or image and enter a preset name.");return {};}
-    auto object=appearance(source);QString copied;const auto path=object.style["texture.file"].toString();
-    if(!path.isEmpty()){copied=managedCopy(path,error);if(copied.isEmpty())return {};object.style["texture.file"]=copied;}
+    auto object=appearance(source);QStringList copied;
+    if(!copyLayerFiles(object,copied,error))return {};
     object.name=name.trimmed();return append(library,{{"name",object.name},{"kind","Preset"},{"surface",serialize(object)}},copied,error);
 }
 bool update(Library &library,const QString &id,const QString &name,const QString &collection,bool favorite,QString *error){
@@ -85,11 +104,13 @@ bool update(Library &library,const QString &id,const QString &name,const QString
         item["name"]=name.trimmed();item["collection"]=collection.trimmed().isEmpty()?"Unsorted":collection.trimmed();item["favorite"]=favorite;items[i]=item;return commit(library,items,error);}
     return fail(error,"This library item no longer exists.");
 }
-bool relink(Library &library,const QString &id,const QString &path,QString *error){
+bool relink(Library &library,const QString &id,const QString &path,QString *error,QString *replacement){
     auto items=entries(library);for(int i=0;i<items.size();++i){auto item=items[i].toObject();if(item["id"].toString()!=id)continue;
         const auto copied=managedCopy(path,error);if(copied.isEmpty())return false;
-        auto object=surface(item);object.style["texture.file"]=copied;item["surface"]=serialize(object);items[i]=item;
-        if(commit(library,items,error))return true;QFile::remove(copied);return false;}
+        auto object=surface(item);const auto key=repairKey(object),old=object.style.value(key).toString();
+        for(const auto &field:TextureLayers::files(object))if(object.style.value(field).toString()==old)object.style[field]=copied;
+        object.style[key]=copied;item["surface"]=serialize(object);items[i]=item;
+        if(commit(library,items,error)){if(replacement)*replacement=copied;return true;}QFile::remove(copied);return false;}
     return fail(error,"This library item no longer exists.");
 }
 bool remove(Library &library,const QString &id,QString *error){
@@ -101,10 +122,12 @@ bool exportEntry(const Library &library,const QString &id,const QString &path,QS
     ElementDesign design;design.objects.append(surface(item));return exportPortableDesign(design,path,error);
 }
 bool compatible(const DObject &object){return object.hasSurface();}
-bool apply(BuildModel &model,const Library &library,const QString &id,const QString &target,QString *error){
+bool apply(BuildModel &model,const Library &library,const QString &id,const QString &target,QString *error,bool addLayer){
     const auto item=entry(library,id);if(item.isEmpty())return fail(error,"This library item no longer exists.");
     const auto source=surface(item);const auto path=file(item);
-    if(!path.isEmpty()&&readImage(path,32).isNull())return fail(error,"The texture is missing or unreadable. Relink it in Materials first.");
+    if(addLayer && item["kind"].toString()!="Texture")return fail(error,"Choose an image texture for the new layer.");
+    for(const auto &key:TextureLayers::files(source))if(readImage(source.style[key].toString(),32).isNull())
+        return fail(error,"The texture or mask is missing or unreadable: "+source.style[key].toString());
     QVector<DObject*> targets=target.isEmpty()?model.selected():QVector<DObject*>{model.byId(target)};
     targets.erase(std::remove_if(targets.begin(),targets.end(),[](const DObject *object){return !object||object->locked||!compatible(*object);}),targets.end());
     if(targets.isEmpty())return fail(error,"Select an unlocked text, shape or image to apply this material.");
@@ -114,8 +137,17 @@ bool apply(BuildModel &model,const Library &library,const QString &id,const QStr
             for(const auto &key:object->style.keys())if(appearanceKey(key))object->style.remove(key);
             for(auto it=source.style.begin();it!=source.style.end();++it)if(appearanceKey(it.key()))object->style[it.key()]=it.value();
             object->mat=source.mat;
-        }else {object->style["texture.file"]=path;object->style["texture.enabled"]=true;}
-        if(object->surfaceType()!="Text")object->style["background.type"]=item["kind"].toString()=="Preset"?source.style["background.type"]:QJsonValue("Solid");
+        }else {
+            QString prefix="texture.";
+            if(addLayer && !object->style.value("texture.file").toString().isEmpty()){
+                const auto layerId=QUuid::createUuid().toString(QUuid::WithoutBraces);
+                auto layers=TextureLayers::order(*object);layers.append(layerId);
+                object->style["texture.stack"]=QJsonArray::fromStringList(layers);
+                prefix=TextureLayers::prefix(layerId);
+            }
+            object->style[prefix+"file"]=path;object->style[prefix+"enabled"]=true;
+        }
+        if(object->surfaceType()!="Text" && !addLayer)object->style["background.type"]=item["kind"].toString()=="Preset"?source.style["background.type"]:QJsonValue("Solid");
     }
     model.notify();if(error)error->clear();return true;
 }

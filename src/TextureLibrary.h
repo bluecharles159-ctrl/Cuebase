@@ -16,10 +16,10 @@ QImage thumbnail(const QJsonObject &entry);
 QString importFile(Library &library,const QString &path,QString *error);
 QString savePreset(Library &library,const DObject &source,const QString &name,QString *error);
 bool update(Library &library,const QString &id,const QString &name,const QString &collection,bool favorite,QString *error);
-bool relink(Library &library,const QString &id,const QString &path,QString *error);
+bool relink(Library &library,const QString &id,const QString &path,QString *error,QString *replacement=nullptr);
 bool remove(Library &library,const QString &id,QString *error);
 bool exportEntry(const Library &library,const QString &id,const QString &path,QString *error);
 bool compatible(const DObject &object);
-bool apply(BuildModel &model,const Library &library,const QString &id,const QString &target={},QString *error=nullptr);
+bool apply(BuildModel &model,const Library &library,const QString &id,const QString &target={},QString *error=nullptr,bool addLayer=false);
 QWidget *createPanel(BuildModel *model,Library *library,QWidget *parent=nullptr);
 }

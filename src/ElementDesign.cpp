@@ -219,7 +219,7 @@ QString ElementDesign::toJson() const {
                       {"base", QJsonObject{{"loc", vec(bp.loc)}, {"rot", vec(bp.rot)}, {"scl", vec(bp.scl)}, {"opacity", bp.opacity}}},
                       {"tracks", tracks}, {"style", o.style}, {"locked", o.locked}, {"mods", mods},
                       {"mat", QJsonObject{{"color", o.mat.color.name()}, {"alpha", o.mat.alpha}, {"emission", o.mat.emission},
-                                          {"roughness", o.mat.roughness}, {"shadeless", o.mat.shadeless}}}};
+                                          {"roughness", o.mat.roughness}, {"metallic",o.mat.metallic}, {"shadeless", o.mat.shadeless}}}};
         j["defaults"]=o.defaults;j["parent"]=o.parentId;
         QJsonArray inverse;for(int row=0;row<4;++row)for(int col=0;col<4;++col)inverse.append(o.parentInverse(row,col));j["parentInverse"]=inverse;
         if (o.type == "Mesh") j["mesh"] = o.mesh.toJson();
@@ -333,6 +333,7 @@ ElementDesign ElementDesign::fromJson(const QString &json) {
         o.mat.alpha = m["alpha"].toDouble(1);
         o.mat.emission = m["emission"].toDouble(0);
         o.mat.roughness = m["roughness"].toDouble(0.5);
+        o.mat.metallic = qBound(0.,m["metallic"].toDouble(),1.);
         o.mat.shadeless = m["shadeless"].toBool(false);
         if (o.type == "Mesh") o.mesh = Mesh::fromJson(j["mesh"].toObject());
         o.text = j["text"].toString("Text");
@@ -673,10 +674,12 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
         const QVector3D toCam = (cam.ortho ? -camFwd : (camPos - center)).normalized();
         const QColor surface=o.shade==PaintOpts::Solid?QColor("#a5a5a5"):m.color;
         const float base[3] = {float(surface.redF()), float(surface.greenF()), float(surface.blueF())};
+        const float metal = o.shade==PaintOpts::Solid ? 0.f : float(qBound(0.,m.metallic,1.));
         if (o.shade == PaintOpts::Solid || o.shade == PaintOpts::MaterialPreview) {
             const float lam = qMax(0.0f, QVector3D::dotProduct(n, toCam));
             const float k = 0.32f + 0.68f * lam, sp = qPow(lam, 24.0f) * 0.22f;
-            return toColor(base[0] * k + sp, base[1] * k + sp, base[2] * k + sp);
+            auto channel=[&](float albedo){return albedo*k*(1-.75f*metal)+sp*(1-metal+3*albedo*metal);};
+            return toColor(channel(base[0]),channel(base[1]),channel(base[2]));
         }
         if (m.shadeless) return m.color;
         const float amb = float(world.ambient);
@@ -705,14 +708,14 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
             if (L.d.kind == "Area") lam = (lam + 0.3f) / 1.3f;  // soft: an area light wraps round
             if (lam <= 0 || I <= 0) continue;
             const float lr = float(L.d.color.redF()) * I, lg = float(L.d.color.greenF()) * I, lb = float(L.d.color.blueF()) * I;
-            r += base[0] * lam * lr;
-            g += base[1] * lam * lg;
-            b += base[2] * lam * lb;
+            r += base[0] * lam * lr * (1-metal);
+            g += base[1] * lam * lg * (1-metal);
+            b += base[2] * lam * lb * (1-metal);
             const QVector3D h = (ld + toCam).normalized();
             const float s = qPow(qMax(0.0f, QVector3D::dotProduct(n, h)), shin) * specK;
-            sr += s * lr;
-            sg += s * lg;
-            sb += s * lb;
+            sr += s * lr * (1-metal+3*metal*base[0]);
+            sg += s * lg * (1-metal+3*metal*base[1]);
+            sb += s * lb * (1-metal+3*metal*base[2]);
         }
         r += base[0] * float(m.emission) + sr;
         g += base[1] * float(m.emission) + sg;

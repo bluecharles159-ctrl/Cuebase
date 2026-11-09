@@ -14,6 +14,8 @@
 #include <QUuid>
 #include <memory>
 #include "TextureLibrary.h"
+#include "TextureLayers.h"
+#include "PropertyInspector.h"
 #include "BuildCanvas.h"
 #include "BuildModel.h"
 #include "Data.h"
@@ -68,6 +70,92 @@ private slots:
         }
         surface->style["texture.blend"]="Normal";surface->style["texture.tint"]="#80ffffff";const auto translucent=pixel();QVERIFY(qAbs(translucent.red()-qRound((source.red()+base.red())/2.))<=2);surface->style.remove("texture.file");surface->style["fill.kind"]="Linear";surface->style["background.type"]="Solid";const auto plain=model.design.textureFor(*surface);
         const auto preset=TextureLibrary::savePreset(library,*surface,"Solid with retained gradient settings",&error);QVERIFY(!preset.isEmpty());surface->style["background.type"]="Gradient";QVERIFY(TextureLibrary::apply(model,library,preset,{},&error));QCOMPARE(model.active()->style["background.type"].toString(),QString("Solid"));QCOMPARE(model.design.textureFor(*model.active()),plain);
+    }
+    void keyedMetallicMeshKeepsWorkAppearance(){
+        BuildModel model;
+        Library library;
+        model.reset(ElementDesign::defaultScene());
+        const auto id=model.addMesh("Cube");
+        auto *cube=model.byId(id);
+        cube->mat.color=QColor("#a36025");cube->mat.roughness=.2;
+        cube->base.rot={15,0,23};cube->base.scl={2,2,2};
+        cube->keyChannel("material.metallic",0,0);
+        cube->keyChannel("material.metallic",1000,1);
+        PropertyInspector inspector(&model,&library);
+        QVERIFY(inspector.findChild<QWidget*>("property_material.metallic"));
+        const auto copy=ElementDesign::fromJson(model.design.toJson());
+        auto render=[&](qint64 time,PaintOpts::Shade shade){
+            QImage image(320,180,QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);
+            QPainter p(&image);PaintOpts options;options.shade=shade;
+            copy.paint(p,image.rect(),copy.sceneCamera(time,16./9.),time,options);p.end();return image;
+        };
+        QCOMPARE(render(0,PaintOpts::Solid),render(1000,PaintOpts::Solid));
+        QVERIFY(render(0,PaintOpts::Rendered)!=render(1000,PaintOpts::Rendered));
+        QVERIFY(render(0,PaintOpts::MaterialPreview)!=render(1000,PaintOpts::MaterialPreview));
+    }
+    void orderedMaskedLayersStayEditableAndPortable(){
+        Library library;
+        library.production={};
+        BuildModel model;
+        model.reset(scene());model.select("textured");
+        QString error;
+        QImage top(32,32,QImage::Format_ARGB32);
+        top.fill(Qt::blue);
+        const auto topPath=temporary.filePath("blue-layer.png");
+        QVERIFY(top.save(topPath));
+        QImage mask(32,32,QImage::Format_ARGB32);
+        mask.fill(Qt::black);
+        {QPainter p(&mask);p.fillRect(16,0,16,32,Qt::white);}
+        const auto maskPath=temporary.filePath("layer-mask.png");QVERIFY(mask.save(maskPath));
+        const auto base=TextureLibrary::importFile(library,imagePath,&error);
+        const auto layer=TextureLibrary::importFile(library,topPath,&error);
+        QVERIFY2(!base.isEmpty()&&!layer.isEmpty(),qPrintable(error));
+        QVERIFY(TextureLibrary::apply(model,library,base,{},&error));
+        const auto initial=model.design.textureFor(*model.active());
+        std::unique_ptr<QWidget> panel(TextureLibrary::createPanel(&model,&library));
+        auto *items=panel->findChild<QListWidget*>("textureItems");
+        auto *add=panel->findChild<QPushButton*>("textureAddLayer");
+        QVERIFY(items && add);
+        for(int i=0;i<items->count();++i) if(items->item(i)->data(Qt::UserRole).toString()==layer)items->setCurrentRow(i);
+        QVERIFY(add->isEnabled());add->click();
+        auto ids=TextureLayers::order(*model.active());
+        QCOMPARE(ids.size(),2);
+        const auto key=TextureLayers::prefix(ids.last());
+        model.active()->style[key+"maskFile"]=maskPath;
+        model.active()->style[key+"maskMode"]="Luminance";
+        auto picture=[&]{return model.design.textureFor(*model.active());};
+        const auto masked=picture();const int left=masked.width()/4,right=3*left,y=masked.height()/2;
+        QCOMPARE(masked.pixelColor(left,y),initial.pixelColor(left,y));
+        QCOMPARE(masked.pixelColor(right,y),QColor(Qt::blue));
+        model.active()->keyChannel(key+"opacity",0,0.);
+        model.active()->keyChannel(key+"opacity",1000,1.);
+        QCOMPARE(model.design.textureFor(model.active()->evaluated(0)),initial);
+        QCOMPARE(model.design.textureFor(model.active()->evaluated(1000)),masked);
+        PropertyInspector inspector(&model,&library);
+        auto *back=inspector.findChild<QPushButton*>("textureLayerBack");QVERIFY(back&&back->isEnabled());back->click();
+        QCOMPARE(picture(),initial);
+        QVERIFY(model.undo());QCOMPARE(picture(),masked);
+        const auto before=model.design.toJson();
+        QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
+        auto *remove=inspector.findChild<QPushButton*>("removeSurfaceTexture");QVERIFY(remove);remove->click();
+        QCOMPARE(TextureLayers::order(*model.active()).size(),1);
+        QVERIFY(!model.active()->track(key+"opacity"));
+        QVERIFY(model.undo());QCOMPARE(model.design.toJson(),before);
+
+        const auto preset=TextureLibrary::savePreset(library,*model.active(),"Masked brand surface",&error);
+        QVERIFY2(!preset.isEmpty(),qPrintable(error));
+        const auto file=temporary.filePath("layered.cuemat");
+        QVERIFY2(TextureLibrary::exportEntry(library,preset,file,&error),qPrintable(error));
+        const auto imported=TextureLibrary::importFile(library,file,&error);
+        QVERIFY2(!imported.isEmpty(),qPrintable(error));
+        model.reset(scene());model.select("textured");
+        QVERIFY(TextureLibrary::apply(model,library,imported,{},&error));
+        QCOMPARE(picture(),masked);
+        QCOMPARE(designAssets(model.design).size(),3);
+        for(const auto &asset:designAssets(model.design)) {
+            QVERIFY(QFileInfo::exists(asset.path));
+            QVERIFY(asset.path!=imagePath && asset.path!=topPath && asset.path!=maskPath);
+        }
     }
     void missingRepairAndSaveRollback(){
         Library library;library.production={};QString error;const auto id=TextureLibrary::importFile(library,imagePath,&error);QVERIFY(!id.isEmpty());const auto original=TextureLibrary::file(TextureLibrary::entry(library,id));BuildModel model;model.reset(scene());model.select("textured");QVERIFY(TextureLibrary::apply(model,library,id,{},&error));QVERIFY(QFile::remove(original));

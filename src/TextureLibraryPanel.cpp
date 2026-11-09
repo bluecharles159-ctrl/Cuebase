@@ -30,7 +30,7 @@ protected:
 class TexturePanel : public QWidget {
     BuildModel *model;Library *library;
     TextureList *list;QLineEdit *search,*name,*collection;QComboBox *filter,*kind;QCheckBox *favorites,*favorite;
-    QLabel *status,*selection;QPushButton *apply,*relink,*save,*exportButton,*remove;
+    QLabel *status,*selection;QPushButton *apply,*addLayer,*relink,*save,*exportButton,*remove;
     QJsonArray snapshot;QHash<QString,QIcon> thumbnails;
     QPushButton *paint;
     QString current() const {return list->currentItem()?list->currentItem()->data(Qt::UserRole).toString():QString();}
@@ -45,6 +45,7 @@ class TexturePanel : public QWidget {
         selection->setText(!exists?"Import a texture, or save the selected object's surface as a preset.":file.isEmpty()?"Surface preset · no external image":QFileInfo::exists(file)?"Ready · double-click to apply, or drag onto an object":"Missing texture · relink before applying");
         bool compatible=false;for(auto *object:model->selected())if(!object->locked&&TextureLibrary::compatible(*object))compatible=true;
         apply->setEnabled(exists&&compatible&&!model->editMode);
+        addLayer->setEnabled(apply->isEnabled()&&item["kind"].toString()=="Texture");
     }
     void refresh(const QString &selected={}){
         const auto id=selected.isEmpty()?current():selected;
@@ -90,6 +91,12 @@ public:
         auto *form=new QFormLayout;form->setContentsMargins(0,0,0,0);name=new QLineEdit;name->setObjectName("textureName");collection=new QLineEdit;collection->setObjectName("textureCollection");favorite=new QCheckBox("Favorite");favorite->setObjectName("textureFavorite");form->addRow("Name",name);form->addRow("Collection",collection);form->addRow(favorite);bodyLayout->addLayout(form);
         save=new QPushButton("Save library details");save->setObjectName("textureSaveDetails");bodyLayout->addWidget(save);
         apply=new QPushButton("Apply to selected objects");apply->setObjectName("textureApply");bodyLayout->addWidget(apply);
+        addLayer=new QPushButton("Add as texture layer");addLayer->setObjectName("textureAddLayer");bodyLayout->addWidget(addLayer);
+        connect(addLayer,&QPushButton::clicked,this,[this]{
+            QString error;
+            if(TextureLibrary::apply(*model,*library,current(),{},&error,true))report("Texture layer added.");
+            else report(error);
+        });
         relink=new QPushButton;relink->setObjectName("textureRelink");bodyLayout->addWidget(relink);
         auto *bottom=new QHBoxLayout;exportButton=new QPushButton("Export preset…");exportButton->setObjectName("textureExport");remove=new QPushButton("Remove from library");remove->setToolTip("Keeps the image files used by existing scenes.");bottom->addWidget(exportButton);bottom->addWidget(remove);bodyLayout->addLayout(bottom);
         status=new QLabel;status->setWordWrap(true);status->setObjectName("textureStatus");bodyLayout->addWidget(status);
@@ -105,8 +112,9 @@ public:
         connect(preset,&QPushButton::clicked,this,[this]{if(!model->active()){report("Select a text, shape or image first.");return;}QString error;const auto id=TextureLibrary::savePreset(*library,*model->active(),model->active()->name+" surface",&error);if(id.isEmpty()){report(error);return;}search->clear();favorites->setChecked(false);filter->setCurrentIndex(0);kind->setCurrentIndex(0);refresh(id);report("Surface preset saved. Rename it below.");});
         connect(save,&QPushButton::clicked,this,[this]{const auto id=current();QString error;const bool ok=TextureLibrary::update(*library,id,name->text(),collection->text(),favorite->isChecked(),&error);refresh(id);report(ok?"Library details saved.":error);});
         connect(relink,&QPushButton::clicked,this,[this]{const auto id=current(),old=TextureLibrary::file(TextureLibrary::entry(*library,id));const auto path=QFileDialog::getOpenFileName(this,"Relink texture",{},"Images (*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)");if(path.isEmpty())return;QString error;
-            if(!TextureLibrary::relink(*library,id,path,&error)){report(error);return;}
-            if(!old.isEmpty()){auto design=model->design;const auto replacement=TextureLibrary::file(TextureLibrary::entry(*library,id));if(relinkDesignAsset(design,old,replacement,&error)){model->pushUndo();model->design=design;model->notify();}}
+            QString replacement;
+            if(!TextureLibrary::relink(*library,id,path,&error,&replacement)){report(error);return;}
+            if(!old.isEmpty()){auto design=model->design;if(relinkDesignAsset(design,old,replacement,&error)){model->pushUndo();model->design=design;model->notify();}}
             refresh(id);report("Texture repaired in the library and matching objects in this scene.");
         });
         connect(exportButton,&QPushButton::clicked,this,[this]{const auto path=QFileDialog::getSaveFileName(this,"Export portable surface preset",name->text()+".cuemat","Cuebase material (*.cuemat)");if(path.isEmpty())return;QString error;report(TextureLibrary::exportEntry(*library,current(),path.endsWith(".cuemat",Qt::CaseInsensitive)?path:path+".cuemat",&error)?"Preset exported with its texture assets.":error);});
