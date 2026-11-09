@@ -218,7 +218,16 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     bar->addSpacing(10);
     bar->addWidget(m_elementPicker);
     auto *previewButton=new QPushButton(uiIcon("image"),"Preview");previewButton->setToolTip("Capture or edit the library thumbnail");bar->addWidget(previewButton);connect(previewButton,&QPushButton::clicked,this,&BuildWorkspace::capturePreview);
-    connect(m_elementPicker,qOverload<int>(&QComboBox::activated),this,[this](int index){const QString id=m_elementPicker->itemData(index).toString();if(id.isEmpty()||(id==m_editingId&&m_cueIteration<0))return;m_name->setText(m_draftName);if(hasUnsavedChanges()){save();if(hasUnsavedChanges())return;}editElement(id);});
+    connect(m_elementPicker,qOverload<int>(&QComboBox::activated),this,[this](int index){
+        const QString id=m_elementPicker->itemData(index).toString();
+        m_name->setText(m_draftName);
+        if(id.isEmpty() || (id==m_editingId && m_cueIteration<0))return;
+        if(hasUnsavedChanges() && !saveForClose()){
+            refreshElements();
+            return;
+        }
+        editElement(id);
+    });
     connect(m_lib,&Library::elementsChanged,this,&BuildWorkspace::refreshElements);
     bar->addWidget(m_msg, 1);
     bar->addWidget(undoBtn);

@@ -144,8 +144,13 @@ bool Library::changeProgramPlaylist(const QString &oldName,const QString &newNam
         programPlaylists=previousNames;programs=previousPrograms;
         return false;
     }
+    if(!oldName.isEmpty()){
+        for(auto *history:{&m_cutUndo,&m_cutRedo})
+            for(auto &edit:*history)
+                for(auto &program:edit.programs)
+                    if(program.playlist==oldName)program.playlist=name;
+    }
     emit programPlaylistChanged(oldName,name);
-    emit programsChanged();
     return true;
 }
 
@@ -212,6 +217,26 @@ bool Library::trimTimelineItem(const QString &id,int offsetMs,qint64 durationMs,
     next[i].durationMs=durationMs;
     next[i].seconds=int((durationMs+999)/1000);
     return saveRippleEdit(next,groupEnd,delta,error);
+}
+
+bool Library::saveProgramCard(ProgramItem item,const QString &afterId,qint64 rippleFrom,QString *error) {
+    auto next=programs;
+    const int existing=programIndex(item.id);
+    if(existing>=0){
+        next[existing]=item;
+    }else if(rippleFrom>=0){
+        const int after=programIndex(afterId);
+        if(after<0){
+            if(error)*error="The program at the insert point is no longer in the rundown.";
+            return false;
+        }
+        item.slotAfter=next[after].slotAfter;
+        next[after].slotAfter=false;
+        next.insert(after+1,item);
+    }else{
+        next.append(item);
+    }
+    return saveRippleEdit(std::move(next),rippleFrom,existing<0 && rippleFrom>=0 ? item.lengthMs() : 0,error);
 }
 
 bool Library::removeTimelineItem(const QString &id,qint64 groupStart,qint64 groupEnd,QString *error) {

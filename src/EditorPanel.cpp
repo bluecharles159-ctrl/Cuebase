@@ -728,7 +728,7 @@ void manageProgramPlaylists(QWidget *parent,Library *library){
         if(!matches.isEmpty())list->setCurrentItem(matches.first());else name->clear();
         status->clear();
     });
-    QObject::connect(library,&Library::programsChanged,dialog,reload);
+    QObject::connect(library,&Library::programPlaylistChanged,dialog,reload);
     auto *buttons=new QDialogButtonBox(QDialogButtonBox::Close);layout->addWidget(buttons);
     QObject::connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::reject);
     reload();dialog->open();
@@ -1035,20 +1035,15 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
         item.image = poster->text().trimmed();
         item.fx = fx->get();
         item.replayInEffect=replayIn->currentData().toString();item.replayOutEffect=replayOut->currentData().toString();
-        bool inserted = false;
-        if (updated) {
-            for (ProgramItem &p : lib->programs) if (p.id == item.id) p = item;
-        } else if (slotPending(lib, "Clip")) {
-            const QString after = lib->pendingAfter;
-            lib->shiftPlacements(play->groupEndMs(after), qint64(item.seconds) * 1000);
-            lib->insertAfter(after, item);
-            lib->clearPending();
-            inserted = true;
-        } else {
-            lib->programs.append(item);
+        const bool inserted = !updated && slotPending(lib, "Clip");
+        const QString after = inserted ? lib->pendingAfter : QString();
+        QString error;
+        if (!lib->saveProgramCard(item,after,inserted ? play->groupEndMs(after) : -1,&error)) {
+            say(msg,"Could not save the program. "+error);
+            return;
         }
-        if (!inserted) lib->commitPrograms();
-        if (!updated) clearForm();
+        if (inserted) lib->clearPending();
+        if (!updated || !list->currentItem() || list->currentItem()->isHidden()) clearForm();
         say(msg, updated ? "Program updated."
                          : inserted ? "Clip inserted at the + on the timeline."
                                     : "Program added to the end of the queue.", true);
@@ -1128,6 +1123,7 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
         }
     });
     QObject::connect(lib, &Library::programsChanged, page, refreshList);
+    QObject::connect(lib, &Library::programPlaylistChanged, page, refreshList);
     QObject::connect(lib, &Library::adsChanged, page, fillCombos);
     QObject::connect(lib, &Library::elementsChanged, page, fillCombos);
     QObject::connect(play, &Playout::segmentChanged, page, refreshList);

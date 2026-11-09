@@ -188,6 +188,16 @@ private slots:
             QCOMPARE(library.elements.first().design,previousDesign);
             QCOMPARE(library.elements.first().name,QString("Next program"));
         }
+        Element other=element;other.id="second";other.name="Second scene";
+        library.elements.append(other);emit library.elementsChanged();
+        const QString invalidName="{{element:break|}}";
+        picker->lineEdit()->selectAll();QTest::keyClicks(picker->lineEdit(),invalidName);
+        const int otherIndex=picker->findData(other.id);QVERIFY(otherIndex>=0);
+        picker->setCurrentIndex(otherIndex);
+        QVERIFY(QMetaObject::invokeMethod(picker,"activated",Q_ARG(int,otherIndex)));
+        QCOMPARE(picker->currentData().toString(),element.id);
+        QCOMPARE(picker->currentText(),invalidName);
+        QVERIFY(workspace.hasUnsavedChanges());
         QVERIFY(QFile::remove(destination));
     }
     void portableCompositionMedia(){

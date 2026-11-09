@@ -164,6 +164,7 @@ public:
     QStringList elementPlaylists{"Overlays", "Break screens", "Logos"};
     QStringList programPlaylists;
     bool changeProgramPlaylist(const QString &oldName,const QString &newName,QString *error=nullptr);
+    bool saveProgramCard(ProgramItem item,const QString &afterId,qint64 rippleFrom,QString *error);
     QList<Placement> placements;
     QVector<LayerState> layers = QVector<LayerState>(4);  // 0 = main, 1..3 = extra timelines
     DisplaySettings display;

@@ -1,6 +1,6 @@
 # Cuebase completion counter
 
-Updated 2026-11-09. **56 of 84 tasks completed — 28 remaining.**
+Updated 2026-11-09. **58 of 84 tasks completed — 26 remaining.**
 
 The Claude transcript adds four distinct acceptance groups (81–84). Row 06 remains
 open: converted surfaces now retain their Inspector controls and unchanged
@@ -43,8 +43,8 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 - [ ] 18. Compact Inspector styling, indentation and collapsible groups across all panels.
 - [ ] 19. Studio Blue default, retained presets, thin scrollbars and settings categories; full audit.
 - [ ] 20. Distinct licensed icons and consistent rounded menus, hover states and modals.
-- [ ] 21. Integrated title bar, Settings before Minimize and window/channel transitions.
-- [ ] 22. Programs grid/list, thumbnails, metadata, playlists, search and saved-scene switching.
+- [x] 21. Integrated title bar, Settings before Minimize and window/channel transitions. Build 76 verified workspace and channel captions, Settings placement, switching workspaces, and activating a second channel window.
+- [x] 22. Programs grid/list, thumbnails, metadata, playlists, search and saved-scene switching. Build 76 passed the Programs editor workflow for assignment, metadata search after refresh, playlist rename/removal and reopening saved data. The Build library test verified switching a modified scene and starting a new scene.
 - [x] 23. Markdown text editing/rendering and animation-preserving reusable content fields. Inspector edits, undo/redo, saved formatting, reusable fields and PNG/render parity verified in `markdown-workflow-results.txt`.
 - [x] 24. Independent glyph and background shadows for text objects.
 - [x] 25. Text-background auto-fit with independently selectable X/Y axes.

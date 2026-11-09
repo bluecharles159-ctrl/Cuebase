@@ -97,6 +97,31 @@ jobs:
           python tools/package-windows-test.py stage
           python tools/package-windows-test.py verify
           python tools/package-windows-test.py archive
+      - name: Scan staged files and the portable ZIP before upload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Start-Service WinDefend
+          Update-MpSignature
+          $status = Get-MpComputerStatus
+          if (!$status.AntivirusEnabled) { throw 'Defender is unavailable.' }
+          $begin = Get-Date
+          $stage = (Resolve-Path ".delivery/$env:CUEBASE_PACKAGE_NAME").Path
+          $zip = (Resolve-Path "$env:CUEBASE_PACKAGE_NAME.zip").Path
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash
+          Start-MpScan -ScanType CustomScan -ScanPath $stage
+          Start-MpScan -ScanType CustomScan -ScanPath $zip
+          $detections = @(Get-MpThreatDetection | Where-Object InitialDetectionTime -ge $begin)
+          $report = [ordered]@{
+            file = Split-Path -Leaf $zip
+            sha256 = $hash
+            engine = $status.AMEngineVersion
+            definitions = $status.AntivirusSignatureVersion
+            detections = @($detections | Select-Object ThreatID, ActionSuccess, Resources)
+          }
+          $report | ConvertTo-Json -Depth 5 | Set-Content artifacts/defender-scan.json
+          if ($detections.Count) { throw 'Defender recorded a detection. See the test evidence.' }
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne $hash) { throw 'Package changed during scanning.' }
       - name: Upload the complete test ZIP
         uses: actions/upload-artifact@v4
         with:

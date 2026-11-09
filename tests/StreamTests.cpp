@@ -820,6 +820,9 @@ private slots:
         Library library;
         ProgramItem one, two;
         one.id="morning";one.title="Morning show";one.description=QString(95,'a')+" garden segment";
+        QTemporaryDir media;QVERIFY(media.isValid());
+        QImage poster(100,60,QImage::Format_RGB32);poster.fill(Qt::cyan);
+        one.image=media.filePath("morning.png");QVERIFY(poster.save(one.image));
         two.id="evening";two.title="Evening news";
         library.programs={one,two};
         Playout play(&library);
@@ -829,8 +832,12 @@ private slots:
         auto *filter=editor.findChild<QComboBox*>("programPlaylistFilter");
         auto *search=editor.findChild<QLineEdit*>("programSearch");
         auto *title=editor.findChild<QLineEdit*>("programTitle");
+        auto *view=editor.findChild<QComboBox*>("programViewMode");
         auto *manage=editor.findChild<QPushButton*>("manageProgramPlaylists");
-        QVERIFY(list && assign && filter && search && title && manage);
+        QVERIFY(list && assign && filter && search && title && manage && view);
+        view->setCurrentIndex(1);QCOMPARE(list->viewMode(),QListView::IconMode);
+        QCOMPARE(list->item(0)->icon().pixmap(100,60).toImage().pixelColor(40,25),QColor(Qt::cyan));
+        view->setCurrentIndex(0);QCOMPARE(list->viewMode(),QListView::ListMode);
         manage->click();
         auto *dialog=editor.findChild<QDialog*>("programPlaylistsDialog");
         QVERIFY(dialog);
@@ -853,7 +860,9 @@ private slots:
         library.commitPrograms();
         QVERIFY(!list->item(0)->isHidden() && list->item(1)->isHidden());
         title->setText("Unsaved edit");
+        QSignalSpy rundownRebuilt(&library,&Library::programsChanged);
         QVERIFY(library.changeProgramPlaylist("Daytime","Magazine"));
+        QCOMPARE(rundownRebuilt.size(),0);
         QCOMPARE(title->text(),QString("Unsaved edit"));
         QCOMPARE(filter->currentText(),QString("Magazine"));
         QCOMPARE(assign->currentText(),QString("Magazine"));
@@ -861,6 +870,26 @@ private slots:
         QCOMPARE(reopened.programPlaylists,QStringList{"Magazine"});
         QVERIFY(reopened.program(one.id));
         QCOMPARE(reopened.program(one.id)->playlist,QString("Magazine"));
+        {
+            const auto file=QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)+"/cuebase.json";
+            QVERIFY(QFile::rename(file,file+".backup"));
+            auto release=qScopeGuard([&]{ QDir().rmdir(file); QFile::rename(file+".backup",file); });
+            QVERIFY(QDir().mkdir(file));
+            QString error;
+            QVERIFY(!library.changeProgramPlaylist("Magazine","Renamed",&error));
+            QVERIFY(!error.isEmpty());
+            QCOMPARE(library.programPlaylists,QStringList{"Magazine"});
+            QCOMPARE(library.program(one.id)->playlist,QString("Magazine"));
+            ProgramItem clip;clip.id="inserted";clip.title="Insert";
+            Placement voice;voice.id="voice";voice.startMs=one.lengthMs();
+            library.placements={voice};
+            QVERIFY(!library.saveProgramCard(clip,one.id,one.lengthMs(),&error));
+            QVERIFY(!library.program(clip.id));
+            QCOMPARE(library.placements.first().startMs,voice.startMs);
+            save->click();
+            QCOMPARE(library.program(one.id)->title,one.title);
+            QCOMPARE(title->text(),QString("Unsaved edit"));
+        }
         library.requestOpenProgram(two.id);
         QCOMPARE(title->text(),two.title);QVERIFY(!list->currentItem()->isHidden());
         QVERIFY(library.changeProgramPlaylist("Magazine",{}));
