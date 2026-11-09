@@ -816,11 +816,14 @@ private slots:
         Placement sound;sound.id="voice";sound.type="Sound";sound.startMs=1000;
         sound.offsetMs=813;sound.durationMs=3000;sound.layer=2;
         library.placements={sound};
-        const QJsonObject settings{{"speed",1.5},{"volume",.8},{"fadeIn",2.5},{"fadeOut",2.0}};
+        const QJsonArray curve{QJsonObject{{"field","level"},{"ms",500},{"value",.2}},
+                               QJsonObject{{"field","level"},{"ms",2500},{"value",.8}}};
+        const QJsonObject settings{{"speed",1.5},{"volume",.8},{"fadeIn",2.5},{"fadeOut",2.0},{"volumeKeys",curve}};
         library.production["audioPlacementSettings"]=QJsonObject{{sound.id,settings}};
         QString error;
         using ClipEdit=AudioLibrary::ClipEdit;
         using AudioLibrary::clipGain;
+        QVERIFY(qAbs(clipGain(settings,500,3000)-.032)<1e-9);
         const auto cut=AudioLibrary::editTimelineClip(library,sound.id,ClipEdit::Split,2270,&error);
         QVERIFY2(!cut.isEmpty(),qPrintable(error));
         QCOMPARE(library.placement(cut)->offsetMs,2718);
@@ -855,6 +858,25 @@ private slots:
         QCOMPARE(library.placement(copy)->startMs,qint64(4000));
         QCOMPARE(library.placement(copy)->offsetMs,2718);
         QCOMPARE(AudioLibrary::placementSettings(library,copy),right);
+        AudioLibraryPanel panel(&library);
+        panel.selectPlacement(copy);
+        auto *automation=panel.findChild<QPushButton*>("clipVolumeAutomation");
+        QVERIFY(automation);
+        bool saved=false;
+        QTimer::singleShot(0,&panel,[&]{
+            auto *dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());
+            if(!dialog)return;
+            auto *time=dialog->findChild<QDoubleSpinBox*>("automationTime");
+            auto *level=dialog->findChild<QDoubleSpinBox*>("automationValue");
+            auto *key=dialog->findChild<QPushButton*>("setAudioKey");
+            if(!time || !level || !key){dialog->reject();return;}
+            time->setValue(.25);level->setValue(.125);key->click();
+            saved=true;dialog->accept();
+        });
+        automation->click();QVERIFY(saved);
+        const auto custom=AudioLibrary::placementSettings(library,copy).value("volumeKeys").toArray();
+        QVERIFY(custom!=right.value("volumeKeys").toArray());
+        QCOMPARE(AudioLibrary::placementSettings(library,cut),right);
         QVERIFY(!AudioLibrary::crossfade(library,cut,copy,&error));
         library.placement(copy)->startMs=3500;
         QVERIFY(AudioLibrary::crossfade(library,cut,copy,&error));

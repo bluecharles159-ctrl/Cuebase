@@ -51,6 +51,7 @@ private:
     QLabel *m_context;
     QPushButton *m_removeScene=nullptr;
     QPushButton *m_preview=nullptr;
+    QPushButton *m_clipAutomation=nullptr;
     QMediaPlayer *m_previewPlayer=nullptr;
     QDoubleSpinBox *m_speed,*m_fadeIn,*m_fadeOut,*m_offset,*m_volume;
     QDoubleSpinBox *m_start=nullptr;

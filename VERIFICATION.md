@@ -1,6 +1,16 @@
-# Verification — updated 2026-11-07
+# Verification — updated 2026-11-09
 
 ## Latest verified checkpoint
+
+Build 72 (`f48bb2a`) passed the Windows tests and portable runtime checks. The native
+timeline tests exercise trimming, Escape, concurrent edits, failed saves, ripple
+undo/redo and the audio clip context menu. Split audio keeps source position and
+fades. Duplicate and crossfade settings survive save/reopen. Rundown checks cover
+missing references and placements that extend past the primary track.
+[Windows ZIP](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42546754324/artifacts/13644135436)
+and [test evidence](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42546754324/artifacts/13643288188).
+
+## Build 68
 
 Build 68 (`31e2284`) passed the native Windows layer hierarchy and hover-cut workflows.
 The split tests covered programs, standalone ads and screen elements, frame timing,

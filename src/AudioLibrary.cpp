@@ -1,6 +1,7 @@
 #include "AudioLibrary.h"
 #include <limits>
 #include "AudioDspDialog.h"
+#include "AudioAutomationDialog.h"
 #include "BuildModel.h"
 #include "Data.h"
 #include "Toast.h"
@@ -42,6 +43,21 @@ protected:
 };
 qint64 duration(const QJsonObject &a){return qMax<qint64>(1,qint64(a["durationMs"].toDouble(a["seconds"].toInt(8)*1000.)));}
 QJsonObject defaults(){return {{"speed",1.},{"volume",1.},{"fadeIn",0.},{"fadeOut",0.},{"offset",0.}};}
+double volumeEnvelope(const QJsonArray &keys,qint64 time){
+    qint64 previousTime=0;
+    double previousValue=1.;
+    for(const auto &entry:keys){
+        const auto key=entry.toObject();
+        const qint64 nextTime=key.value("ms").toInteger();
+        const double nextValue=qBound(0.,key.value("value").toDouble(1),1.);
+        if(nextTime<previousTime)continue;
+        if(time<nextTime)
+            return previousValue+(nextValue-previousValue)*double(time-previousTime)/(nextTime-previousTime);
+        previousTime=nextTime;
+        previousValue=nextValue;
+    }
+    return previousValue;
+}
 void extendSceneForAudio(BuildModel &model,const DObject &audio){
     const double rate=qBound(.1,audio.propertyValue("audio.speed",model.t),4.);
     const double available=qMax(0.,audio.style["audio.duration"].toDouble()-audio.propertyValue("audio.offset",model.t));
@@ -54,6 +70,7 @@ QJsonObject AudioLibrary::asset(const Library &library,const QString &id){for(co
 QJsonObject AudioLibrary::placementSettings(const Library &library,const QString &id){auto settings=library.production["audioPlacementSettings"].toObject()[id].toObject();return settings.isEmpty()?defaults():settings;}
 double AudioLibrary::clipGain(const QJsonObject &settings,qint64 elapsedMs,qint64 lengthMs){
     double gain=qBound(0.,settings["volume"].toDouble(1),1.);
+    gain*=volumeEnvelope(settings.value("volumeKeys").toArray(),qMax<qint64>(0,elapsedMs));
     const double fadeIn=settings["fadeIn"].toDouble()*1000;
     const double fadeOut=settings["fadeOut"].toDouble()*1000;
     if(fadeIn>0)gain*=qBound(0.,(settings["fadeInElapsedMs"].toDouble()+elapsedMs)/fadeIn,1.);
@@ -137,6 +154,22 @@ QString AudioLibrary::editTimelineClip(Library &library,const QString &id,ClipEd
         settings["fadeOutTailMs"]=settings["fadeOutTailMs"].toDouble()+tail;
         copiedSettings["fadeInElapsedMs"]=settings["fadeInElapsedMs"].toDouble()+head;
         copiedSettings["offset"]=copy.offsetMs/1000.;
+        const auto keys=settings.value("volumeKeys").toArray();
+        if(!keys.isEmpty()){
+            QJsonObject boundary{{"field","level"},{"ms",head},{"value",volumeEnvelope(keys,head)}};
+            QJsonArray leftKeys,rightKeys;
+            for(const auto &entry:keys)if(entry.toObject().value("ms").toInteger()<head)leftKeys.append(entry);
+            leftKeys.append(boundary);
+            boundary["ms"]=0;
+            rightKeys.append(boundary);
+            for(const auto &entry:keys){
+                auto key=entry.toObject();
+                const auto position=key.value("ms").toInteger();
+                if(position>head){key["ms"]=position-head;rightKeys.append(key);}
+            }
+            settings["volumeKeys"]=leftKeys;
+            copiedSettings["volumeKeys"]=rightKeys;
+        }
         all[id]=settings;
     }else{
         if(end>std::numeric_limits<qint64>::max()-length){
@@ -211,6 +244,40 @@ AudioLibraryPanel::AudioLibraryPanel(Library *library,BuildModel *model,QWidget 
         connect(m_mute,&QCheckBox::toggled,this,[this](bool muted){if(m_syncing)return;auto *audio=m_model->byId(m_sceneId);if(!audio||audio->type!="Audio"||audio->locked)return;m_model->pushUndo(true);audio->style["audio.mute"]=muted?"On":"Off";m_model->notify();});}
     auto number=[&](const QString &label,double low,double high,double step){auto *spin=new ValueInput;spin->setRange(low,high);spin->setDecimals(2);spin->setSingleStep(step);spin->setKeyboardTracking(false);form->addRow(label,spin);connect(spin,&QDoubleSpinBox::valueChanged,this,[this,spin]{if(!m_syncing)saveControls(spin);});return spin;};
     m_speed=number("Speed",.1,4,.05);m_volume=number("Volume",0,1,.05);m_offset=number("Source offset (s)",0,86400,.1);m_fadeIn=number("Fade in (s)",0,3600,.1);m_fadeOut=number("Fade out (s)",0,3600,.1);m_speed->setObjectName("audioSpeed");m_volume->setObjectName("audioVolume");m_offset->setObjectName("audioOffset");m_fadeIn->setObjectName("audioFadeIn");m_fadeOut->setObjectName("audioFadeOut");layout->addStretch();
+    if(!model){
+        m_clipAutomation=new QPushButton(uiIcon("graph"),"Volume automation…");
+        m_clipAutomation->setObjectName("clipVolumeAutomation");
+        form->addRow(m_clipAutomation);
+        connect(m_clipAutomation,&QPushButton::clicked,this,[this]{
+            const auto id=m_placementId;
+            const auto *clip=m_library->placement(id);
+            if(!clip || clip->type!="Sound")return;
+            const auto length=clip->lengthMs();
+            const auto start=clip->startMs;
+            const auto initial=AudioLibrary::placementSettings(*m_library,id).value("volumeKeys").toArray();
+            QJsonObject draft{{"level",1.},{"automation",initial}};
+            const QList<AudioDsp::Command> options{{"level","Level (0–1)",{},{},0,1}};
+            if(!editAudioAutomationKeys(this,draft,options,"Clip volume automation",clip->name,length/1000.))return;
+            clip=m_library->placement(id);
+            auto settings=AudioLibrary::placementSettings(*m_library,id);
+            if(!clip || clip->lengthMs()!=length || clip->startMs!=start || settings.value("volumeKeys").toArray()!=initial){
+                ToastHost::notify(this,"audio","The audio clip changed","Reopen volume automation to edit the current clip.");
+                return;
+            }
+            const auto previous=m_library->production;
+            auto all=previous.value("audioPlacementSettings").toObject();
+            settings["volumeKeys"]=draft.value("automation");
+            all[id]=settings;
+            m_library->production["audioPlacementSettings"]=all;
+            QString error;
+            if(!m_library->saveChecked(&error)){
+                m_library->production=previous;
+                ToastHost::notify(this,"audio","Volume automation could not be saved",error);
+                return;
+            }
+            emit m_library->placementsChanged();
+        });
+    }
     connect(library,&Library::productionChanged,this,[this]{refresh();});connect(library,&Library::placementsChanged,this,[this]{if(!m_placementId.isEmpty())loadControls();});refresh();
 }
 void AudioLibraryPanel::refresh(){
@@ -224,6 +291,10 @@ void AudioLibraryPanel::selectPlacement(const QString &id){stopPreview();m_place
 void AudioLibraryPanel::loadControls(){
     m_syncing=true;QJsonObject settings;QString name;
     m_preview->setEnabled(!AudioLibrary::asset(*m_library,m_assetId).isEmpty());
+    if(m_clipAutomation){
+        const auto *clip=m_library->placement(m_placementId);
+        m_clipAutomation->setVisible(clip && clip->type=="Sound");
+    }
     bool locked=false;
     if(m_start){const auto *audio=m_model->byId(m_sceneId);locked=audio&&audio->locked;m_start->setEnabled(audio&&audio->type=="Audio"&&!locked);m_start->setValue(audio?audio->propertyValue("audio.start",m_model->t)/1000.:0.);}
     if(m_mute){const auto *audio=m_model->byId(m_sceneId);m_mute->setEnabled(audio&&audio->type=="Audio"&&!locked);m_mute->setChecked(audio&&audio->style["audio.mute"].toString()=="On");}

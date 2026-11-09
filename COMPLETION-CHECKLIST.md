@@ -1,6 +1,6 @@
 # Cuebase completion counter
 
-Updated 2026-11-07. **55 of 84 tasks completed — 29 remaining.**
+Updated 2026-11-09. **56 of 84 tasks completed — 28 remaining.**
 
 The Claude transcript adds four distinct acceptance groups (81–84). Row 06 remains
 open: converted surfaces now retain their Inspector controls and unchanged
@@ -56,7 +56,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 ## Broadcast, preview and audio
 
 - [x] 30. Primary sequence supports actual programs/ads/elements, linked segments and exact timing. Build 68 verified frame-aligned hover cutting, linked source offsets, preserved playhead and fades, undo/redo, save/reopen and rollback on write failure.
-- [ ] 31. Main-track delete/expand, cut icon, trim/split/ripple, snapping, transitions and validation.
+- [x] 31. Main-track delete/expand, cut icon, trim/split/ripple, snapping, transitions and validation. Windows builds 68, 71 and 72 verified linked cuts and fades, frame-snapped trims, ripple deletion, undo/redo, preserving separate overlay edits, disk failure rollback and rundown validation.
 - [x] 32. Fixed-center Studio playhead, moving timeline, frame stepping and navigation. Build 64 verified centering across resizes, pan, fit and reveal, fractional-rate keyboard/wheel stepping and paused/off-air state preservation on Windows.
 - [x] 33. Source-aligned thumbnail strips/waveforms and persistent Timeline settings. Verified by `resumed-preview-handoff-results.txt` (9 passing focused cases, including both trim modes); native/performance release gates remain separate.
 - [x] 34. Current-program scrubber, private preview and continuously visible live picture-in-picture (Build 58).

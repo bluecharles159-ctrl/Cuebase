@@ -9,18 +9,18 @@
 #include <QVBoxLayout>
 #include <memory>
 
-inline bool editAudioAutomation(QWidget *parent,QJsonObject &effect){
-    const auto options=AudioDsp::commands(effect.value("type").toString());
+inline bool editAudioAutomationKeys(QWidget *parent,QJsonObject &effect,const QList<AudioDsp::Command> &options,
+                                    const QString &title,const QString &context,double maxSeconds){
     if(options.isEmpty())return false;
-    std::unique_ptr<QDialog> dialog(roundedModal(parent,"Processor automation"));
+    std::unique_ptr<QDialog> dialog(roundedModal(parent,title));
     dialog->setObjectName("audioAutomation");dialog->setMinimumWidth(350);
-    auto *body=new QVBoxLayout(dialog.get());body->addWidget(new QLabel("Processor automation · "+effect.value("type").toString()));
+    auto *body=new QVBoxLayout(dialog.get());auto *caption=new QLabel(context);caption->setTextFormat(Qt::PlainText);body->addWidget(caption);
     auto *keys=new QListWidget;body->addWidget(keys);
     auto *form=new QFormLayout;body->addLayout(form);auto *field=new QComboBox;form->addRow("Parameter",field);
     for(const auto &c:options)field->addItem(c.label,c.key);
-    auto *time=new ValueInput;time->setObjectName("automationTime");time->setDecimals(3);time->setRange(0,86400);time->setSuffix(" s");form->addRow("Time",time);
+    auto *time=new ValueInput;time->setObjectName("automationTime");time->setDecimals(3);time->setRange(0,maxSeconds);time->setSuffix(" s");form->addRow("Time",time);
     auto *value=new ValueInput;value->setObjectName("automationValue");value->setDecimals(3);form->addRow("Value",value);
-    auto updateRange=[&]{const auto &c=options[field->currentIndex()];value->setRange(c.min,c.max);value->setValue(effect.value(c.key).toDouble(c.min));};
+    auto updateRange=[&]{const int i=field->currentIndex();if(i<0)return;const auto &c=options[i];value->setRange(c.min,c.max);value->setValue(effect.value(c.key).toDouble(c.min));};
     QObject::connect(field,&QComboBox::currentIndexChanged,dialog.get(),updateRange);updateRange();
     auto *actions=new QHBoxLayout;body->addLayout(actions);auto *set=new QPushButton("Set key"),*remove=new QPushButton("Remove key");
     set->setObjectName("setAudioKey");actions->addWidget(set);actions->addWidget(remove);
@@ -39,4 +39,10 @@ inline bool editAudioAutomation(QWidget *parent,QJsonObject &effect){
     auto *buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);body->addWidget(buttons);
     QObject::connect(buttons,&QDialogButtonBox::accepted,dialog.get(),&QDialog::accept);QObject::connect(buttons,&QDialogButtonBox::rejected,dialog.get(),&QDialog::reject);
     if(dialog->exec()!=QDialog::Accepted)return false;effect["automation"]=events;return true;
+}
+
+inline bool editAudioAutomation(QWidget *parent,QJsonObject &effect){
+    const auto type=effect.value("type").toString();
+    return editAudioAutomationKeys(parent,effect,AudioDsp::commands(type),"Processor automation",
+                                   "Processor automation · "+type,86400);
 }
