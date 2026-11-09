@@ -1,0 +1,44 @@
+name: Inspect Windows Build 72 with Defender
+on:
+  push:
+    branches: [codex/cloud-build]
+    paths: [.github/workflows/inspect-build-72.yml]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  inspect:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - name: Inspect the original artifact on an isolated runner
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $start = Get-Date
+          $work = Join-Path $env:RUNNER_TEMP 'build72'
+          New-Item -ItemType Directory $work | Out-Null
+          try {
+            Start-Service WinDefend
+            Update-MpSignature
+            $status = Get-MpComputerStatus
+            $status | Select-Object AMEngineVersion, AntivirusSignatureVersion, AntivirusEnabled
+            if (!$status.AntivirusEnabled) { throw 'Defender is unavailable on this runner.' }
+            $url = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/artifacts/13644135436/zip"
+            $outer = Join-Path $work 'github.zip'
+            Invoke-WebRequest $url -Headers @{Authorization="Bearer $env:GH_TOKEN"} -OutFile $outer
+            if ((Get-FileHash $outer).Hash -ne '626cbb3307b6e9ef8f6cd061e3d9402320ff27ff6ae4352cfeaf2f3c6e7a9b72') { throw 'Artifact SHA-256 differs from Build 72.' }
+            Expand-Archive -LiteralPath $outer -DestinationPath "$work/wrapper"
+            $inner = Join-Path $work 'wrapper/Cuebase-Windows-72.zip'
+            Expand-Archive -LiteralPath $inner -DestinationPath "$work/files"
+            Start-MpScan -ScanType CustomScan -ScanPath $work
+          } finally {
+            $detections = Get-MpThreatDetection -ErrorAction SilentlyContinue | Where-Object InitialDetectionTime -ge $start
+            foreach ($detection in $detections) {
+              $detection | Select-Object ThreatID, ActionSuccess, Resources | ConvertTo-Json -Depth 3
+            }
+            if ($detections) { throw 'Defender recorded a detection during artifact inspection.' }
+          }
