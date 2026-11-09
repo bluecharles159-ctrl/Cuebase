@@ -13,6 +13,11 @@
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QCoreApplication>
+#include <QCryptographicHash>
+#include <QFileInfo>
+#include <QLocalSocket>
+#include <QProgressBar>
+#include <QTimer>
 #include <QUuid>
 #include <QVBoxLayout>
 
@@ -30,6 +35,17 @@ QJsonObject format(const DisplaySettings &d){
 }
 
 ChannelDirectory::ChannelDirectory(QString dir,QString active):ini(QDir(dir).filePath("channels.ini")),activeId(std::move(active)){}
+QString ChannelDirectory::windowEndpoint(const QString &id)const{
+    const auto profile=profileName(id);
+    if(profile.isEmpty())return {};
+    QDir directory=QFileInfo(ini).absoluteDir();
+    if(id!="main"){
+        directory.cdUp();
+        directory=QDir(directory.filePath(profile));
+    }
+    const auto digest=QCryptographicHash::hash(directory.absolutePath().toUtf8(),QCryptographicHash::Sha256);
+    return "cuebase-"+QString::fromLatin1(digest.toHex().left(32));
+}
 QMap<QString,QString> ChannelDirectory::list()const{
     QSettings config(ini,QSettings::IniFormat);QMap<QString,QString> result;
     result["main"]=config.value("names/main","Main channel").toString();
@@ -89,7 +105,9 @@ QDialog *ChannelDirectory::manager(QWidget *parent,Library *library){
     share->setChecked(sharesOutput());root->addWidget(share);
     auto *note=new QLabel("Shared settings include frame size, rate, pixel aspect and bitrate. Programs, graphics and channel identities are stored separately on this computer.");
     note->setWordWrap(true);root->addWidget(note);
-    auto *status=new QLabel;status->setWordWrap(true);root->addWidget(status);
+    auto *status=new QLabel;status->setTextFormat(Qt::PlainText);status->setWordWrap(true);root->addWidget(status);
+    auto *progress=new QProgressBar;progress->setRange(0,0);progress->setFixedHeight(4);
+    progress->setTextVisible(false);progress->hide();root->addWidget(progress);
     auto reload=[=,this](const QString &id){channels->clear();const auto directory=list();
         for(auto it=directory.cbegin();it!=directory.cend();++it){auto *item=new QListWidgetItem(it.value()+(it.key()==activeId?"  ·  Current":""),channels);item->setData(Qt::UserRole,it.key());if(it.key()==id)channels->setCurrentItem(item);}};
     QObject::connect(channels,&QListWidget::currentItemChanged,dialog,[=,this](QListWidgetItem *item){
@@ -99,9 +117,42 @@ QDialog *ChannelDirectory::manager(QWidget *parent,Library *library){
     QObject::connect(addButton,&QPushButton::clicked,dialog,[=,this]{QString error;auto id=add(name->text(),&error);if(!id.isEmpty())reload(id);status->setText(error);});
     QObject::connect(renameButton,&QPushButton::clicked,dialog,[=,this]{if(!channels->currentItem())return;QString error;
         auto id=channels->currentItem()->data(Qt::UserRole).toString();if(rename(id,name->text(),&error))reload(id);status->setText(error);});
-    QObject::connect(open,&QPushButton::clicked,dialog,[=]{if(!channels->currentItem())return;
-        if(!QProcess::startDetached(QCoreApplication::applicationFilePath(),{"--channel",channels->currentItem()->data(Qt::UserRole).toString()}))
-            status->setText("The channel window could not be opened.");});
+    QObject::connect(open,&QPushButton::clicked,dialog,[=,this]{
+        if(!channels->currentItem() || !open->isEnabled())return;
+        const auto id=channels->currentItem()->data(Qt::UserRole).toString();
+        const auto endpoint=windowEndpoint(id);
+        const auto channelName=list().value(id);
+        if(endpoint.isEmpty() || channelName.isEmpty())return;
+        channels->setEnabled(false);open->setEnabled(false);addButton->setEnabled(false);renameButton->setEnabled(false);
+        status->setText(QObject::tr("Opening %1…").arg(channelName));progress->show();
+        auto *request=new QObject(dialog);
+        auto *socket=new QLocalSocket(request);
+        auto *retry=new QTimer(request);retry->setSingleShot(true);retry->setInterval(250);
+        auto fail=[=](const QString &reason){
+            retry->stop();socket->disconnect();socket->abort();
+            progress->hide();status->setText(reason);
+            channels->setEnabled(true);open->setEnabled(true);addButton->setEnabled(true);renameButton->setEnabled(true);
+            request->deleteLater();
+        };
+        QObject::connect(socket,&QLocalSocket::connected,request,[socket]{socket->write("show");socket->flush();});
+        QObject::connect(socket,&QLocalSocket::readyRead,request,[=]{
+            if(socket->bytesAvailable()>=5 && socket->read(5)=="ready"){
+                socket->disconnect();request->deleteLater();dialog->accept();
+            }
+        });
+        QObject::connect(retry,&QTimer::timeout,request,[=]{socket->connectToServer(endpoint);});
+        QObject::connect(socket,&QLocalSocket::errorOccurred,request,[=,started=false](QLocalSocket::LocalSocketError)mutable{
+            if(!started){
+                started=true;
+                if(!QProcess::startDetached(QCoreApplication::applicationFilePath(),{"--channel",id})){
+                    fail(QObject::tr("Could not start the channel window."));return;
+                }
+            }
+            retry->start();
+        });
+        QTimer::singleShot(20000,request,[=]{fail(QObject::tr("The channel window did not respond. Try Open window again."));});
+        socket->connectToServer(endpoint);
+    });
     QObject::connect(share,&QCheckBox::toggled,dialog,[=,this](bool checked){
         QString error;if(!shareOutput(checked,library->display,&error)){QSignalBlocker guard(share);share->setChecked(sharesOutput());}status->setText(error);
     });

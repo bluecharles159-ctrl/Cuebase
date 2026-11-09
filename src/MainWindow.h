@@ -32,11 +32,14 @@ public:
     void enterWorkspace();
 
 protected:
+    void changeEvent(QEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
     bool eventFilter(QObject *obj, QEvent *event) override;  // watches shortcuts for the status bar
 
 private:
     void buildMenus();
+    void updateWindowCaption();
+    void updateMaximizeButton();
     void openWorkspaceSetup();
     void configureChannels();
     void openChannels();

@@ -120,6 +120,10 @@ private slots:
         };
         QTRY_VERIFY_WITH_TIMEOUT(ready(primaryPath) && ready(secondaryPath),15000);
         QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(secondaryPath+"/cuebase.json"),10000);
+        manager->show();
+        QSignalSpy activated(manager.get(),&QDialog::accepted);
+        manager->findChild<QPushButton*>("directoryOpen")->click();
+        QTRY_COMPARE_WITH_TIMEOUT(activated.size(),1,7000);
         QProcess duplicate;QVERIFY(launch(duplicate,id));QVERIFY(duplicate.waitForFinished(7000));QCOMPARE(duplicate.exitCode(),0);
         QCOMPARE(first.state(),QProcess::Running);QCOMPARE(second.state(),QProcess::Running);
         auto display=[&](const QString &path){QFile f(path+"/cuebase.json");if(!f.open(QIODevice::ReadOnly))return QJsonObject{};
@@ -1280,7 +1284,21 @@ private slots:
         auto *settings=window.findChild<QToolButton*>("windowSettings"),*minimize=window.findChild<QToolButton*>("windowMinimize"),*maximize=window.findChild<QToolButton*>("windowMaximize"),*close=window.findChild<QToolButton*>("windowClose");
         QVERIFY(settings&&minimize&&maximize&&close);QTest::qWait(30);QVERIFY(settings->x()<minimize->x());QVERIFY(minimize->x()<maximize->x());QVERIFY(maximize->x()<close->x());
         settings->click();QTest::qWait(20);auto *dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());QVERIFY(dialog);QCOMPARE(dialog->windowTitle(),QString("Settings"));dialog->reject();QTest::qWait(20);
-        maximize->click();QVERIFY(window.isMaximized());maximize->click();QVERIFY(!window.isMaximized());
+        maximize->click();QVERIFY(window.isMaximized());QCOMPARE(maximize->accessibleName(),QString("Restore"));
+        maximize->click();QVERIFY(!window.isMaximized());QCOMPARE(maximize->accessibleName(),QString("Maximize"));
+        auto *workspace=window.findChild<QLabel*>("workspaceWindowTitle");
+        auto *engine=window.findChild<Playout*>();
+        QVERIFY(engine && workspace);QCOMPARE(workspace->text(),QString("Cuebase — Studio"));
+        QAction *switchWorkspace=nullptr;
+        for(auto *action:window.findChildren<QAction*>())
+            if(action->shortcut()==QKeySequence("Ctrl+Shift+B")){switchWorkspace=action;break;}
+        QVERIFY(switchWorkspace);
+        switchWorkspace->trigger();QCOMPARE(workspace->text(),QString("Cuebase — Build"));
+        engine->start();engine->togglePause();
+        QVERIFY(window.windowTitle().startsWith(workspace->text()));QVERIFY(!window.windowTitle().contains(program.title));
+        switchWorkspace->trigger();QCOMPARE(workspace->text(),QString("Cuebase — Studio"));
+        QVERIFY(window.windowTitle().contains(program.title));QVERIFY(window.windowTitle().contains(library.display.channel));
+        engine->stop();
         auto *editor=window.findChild<EditorPanel*>();QVERIFY(editor);editor->showTool(3);QTest::qWait(60);auto *cards=editor->findChild<QListWidget*>("screenElementCards");QVERIFY(cards);cards->setCurrentRow(0);QTest::qWait(60);QVERIFY(window.grab().save("artifacts/studio-workspace.png"));editor->showTool(4);QTest::qWait(60);QVERIFY(window.grab().save("artifacts/studio-monitor-workspace.png"));window.hide();
     }
     void channelProfileLogoWorkflow(){

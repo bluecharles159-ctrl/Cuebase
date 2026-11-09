@@ -37,7 +37,7 @@ int main(int argc, char *argv[]) {
     if(id!="main")app.setProperty("initialChannelName",channels.value(id));
     const auto channelDir=QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     if(!QDir().mkpath(channelDir)){QMessageBox::warning(nullptr,"Cuebase","Could not open the channel storage folder.");return 1;}
-    const auto socketName="cuebase-"+QString::fromLatin1(QCryptographicHash::hash(channelDir.toUtf8(),QCryptographicHash::Sha256).toHex().left(32));
+    const auto socketName=directory.windowEndpoint(id);
     QLockFile lock(QDir(channelDir).filePath("studio-window.lock"));lock.setStaleLockTime(0);
     if(!lock.tryLock(0)){
         QLocalSocket existing;existing.connectToServer(socketName);
@@ -48,8 +48,20 @@ int main(int argc, char *argv[]) {
     if(!server.listen(socketName)){QMessageBox::warning(nullptr,"Cuebase","Could not open the channel window connection.");return 1;}
     MainWindow window(nullptr,&directory);
     QObject::connect(&server,&QLocalServer::newConnection,&window,[&]{
-        while(auto *client=server.nextPendingConnection()){client->deleteLater();}
-        if(window.isMinimized())window.showNormal();window.raise();window.activateWindow();
+        while(auto *client=server.nextPendingConnection()){
+            auto showWindow=[client,&window]{
+                if(client->bytesAvailable()<4)return;
+                if(client->read(4)=="show"){
+                    if(window.isMinimized())window.setWindowState(window.windowState() & ~Qt::WindowMinimized);
+                    window.raise();window.activateWindow();
+                    client->write("ready");client->flush();
+                }
+                client->disconnectFromServer();
+            };
+            QObject::connect(client,&QLocalSocket::disconnected,client,&QObject::deleteLater);
+            QObject::connect(client,&QLocalSocket::readyRead,&window,showWindow);
+            showWindow();
+        }
     });
     window.show();
     window.enterWorkspace();

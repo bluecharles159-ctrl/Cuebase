@@ -255,10 +255,15 @@ void MainWindow::buildMenus() {
     auto *planner=control("windowPlanner","workflow","Production plan");connect(planner,&QToolButton::clicked,this,[this]{auto *board=findChild<ProductionBoard*>("productionBoard",Qt::FindDirectChildrenOnly);if(!board){board=new ProductionBoard(m_lib,this);board->setBroadcastPlayout(m_play);}board->show();board->raise();board->activateWindow();});
     auto *settings=control("windowSettings","settings","Settings");connect(settings,&QToolButton::clicked,this,[this]{showUiSettings(this,[this]{openWorkspaceSetup();});});
     auto *minimize=control("windowMinimize","remove","Minimize");minimize->setIcon(style()->standardIcon(QStyle::SP_TitleBarMinButton));connect(minimize,&QToolButton::clicked,this,&QWidget::showMinimized);
-    auto *maximize=control("windowMaximize","square","Maximize / restore");connect(maximize,&QToolButton::clicked,this,[this]{isMaximized()?showNormal():showMaximized();});
+    auto *maximize=control("windowMaximize","square","Maximize");connect(maximize,&QToolButton::clicked,this,[this]{isMaximized()?showNormal():showMaximized();});
     auto *closeButton=control("windowClose","close","Close");connect(closeButton,&QToolButton::clicked,this,&QWidget::close);
-    connect(m_stack,&QStackedWidget::currentChanged,titleLabel,[=,this]{titleLabel->setText(m_stack->currentWidget()==m_build?"Cuebase — Build":"Cuebase — Studio");});
     setMenuWidget(header);
+    connect(m_stack,&QStackedWidget::currentChanged,this,&MainWindow::updateWindowCaption);
+    connect(m_lib,&Library::displayChanged,this,&MainWindow::updateWindowCaption);
+    connect(m_play,&Playout::segmentChanged,this,&MainWindow::updateWindowCaption);
+    connect(m_play,&Playout::stateChanged,this,&MainWindow::updateWindowCaption);
+    updateWindowCaption();
+    updateMaximizeButton();
 
     auto newMenu = [bar](const QString &title) {
         QMenu *m = bar->addMenu(title);
@@ -515,13 +520,11 @@ void MainWindow::buildUi() {
     connect(m_play, &Playout::segmentChanged, this, [this] {
         const Segment *s = m_play->current();
         if (!s) {
-            setWindowTitle("Cuebase");
             log("Off air");
             return;
         }
         const char *kind = s->type == Segment::Program ? "Program" : s->type == Segment::Ad ? "Ad" : "Break";
         log(QString("Now playing (%1): %2").arg(kind, s->title));
-        setWindowTitle(s->type == Segment::Program ? "Cuebase — " + s->title : "Cuebase");
     });
     connect(m_play, &Playout::stateChanged, this, [this] {
         log(m_play->state() == Playout::Playing ? "Broadcast running"
@@ -717,7 +720,6 @@ void MainWindow::showBuild(const QString &elementId, bool fresh) {
     m_stack->setCurrentWidget(m_build);
     statusBar()->hide();
     if (m_workspaceAct) m_workspaceAct->setText("Studio");
-    setWindowTitle("Cuebase — Build");
     report("Build opened");
 }
 
@@ -725,8 +727,36 @@ void MainWindow::showStudio() {
     m_stack->setCurrentWidget(m_studio);
     statusBar()->show();
     if (m_workspaceAct) m_workspaceAct->setText("Build");
-    setWindowTitle("Cuebase");
     report("Studio opened");
+}
+
+void MainWindow::updateWindowCaption(){
+    const bool building=m_stack->currentWidget()==m_build;
+    const QString workspace=building?tr("Cuebase — Build"):tr("Cuebase — Studio");
+    QStringList parts{workspace};
+    if(!m_lib->display.channel.trimmed().isEmpty())parts<<m_lib->display.channel;
+    if(!building){
+        if(const auto *segment=m_play->current();segment && !segment->title.isEmpty())parts<<segment->title;
+    }
+    setWindowTitle(parts.join(" · "));
+    if(auto *label=findChild<QLabel*>("workspaceWindowTitle")){
+        label->setText(workspace);
+        label->setToolTip(windowTitle());
+    }
+}
+
+void MainWindow::updateMaximizeButton(){
+    auto *button=findChild<QToolButton*>("windowMaximize");
+    if(!button)return;
+    const QString label=isMaximized()?tr("Restore"):tr("Maximize");
+    button->setIcon(style()->standardIcon(isMaximized()?QStyle::SP_TitleBarNormalButton:QStyle::SP_TitleBarMaxButton));
+    button->setToolTip(label);
+    button->setAccessibleName(label);
+}
+
+void MainWindow::changeEvent(QEvent *event){
+    QMainWindow::changeEvent(event);
+    if(event->type()==QEvent::WindowStateChange)updateMaximizeButton();
 }
 
 void MainWindow::resetLayout() {
