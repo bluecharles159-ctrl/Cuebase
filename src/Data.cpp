@@ -115,6 +115,40 @@ QString Library::cutProgram(const QString &id, int atSec, bool slot) {
     return splitProgramAtMs(id,qint64(atSec)*1000,slot);
 }
 
+bool Library::changeProgramPlaylist(const QString &oldName,const QString &newName,QString *error){
+    const auto name=newName.trimmed();
+    const int index=programPlaylists.indexOf(oldName);
+    if(!oldName.isEmpty() && index<0){
+        if(error)*error="That playlist no longer exists.";
+        return false;
+    }
+    if(oldName.isEmpty() && name.isEmpty()){
+        if(error)*error="Enter a playlist name.";
+        return false;
+    }
+    if(name==oldName)return true;
+    for(const auto &other:std::as_const(programPlaylists)){
+        if(other!=oldName && other.compare(name,Qt::CaseInsensitive)==0){
+            if(error)*error="A playlist already uses that name.";
+            return false;
+        }
+    }
+    const auto previousNames=programPlaylists;
+    const auto previousPrograms=programs;
+    if(oldName.isEmpty())programPlaylists.append(name);
+    else{
+        if(name.isEmpty())programPlaylists.removeAt(index);else programPlaylists[index]=name;
+        for(auto &p:programs)if(p.playlist==oldName)p.playlist=name;
+    }
+    if(!saveChecked(error)){
+        programPlaylists=previousNames;programs=previousPrograms;
+        return false;
+    }
+    emit programPlaylistChanged(oldName,name);
+    emit programsChanged();
+    return true;
+}
+
 bool Library::applyTimelineEdit(TimelineEdit edit,HistoryAction action,QString *error) {
     auto nextPlacements=placements;
     if(!edit.moves.isEmpty()){
@@ -326,6 +360,7 @@ void Library::load() {
         p.splitShots=j["splitShots"].toArray();
         p.splitClockOrigin=j["splitClockOrigin"].toInt(-1);
         p.cutSourceId=j["cutSourceId"].toString();
+        p.playlist=j.value("playlist").toString();
         p.seconds = j["seconds"].toInt(60);
         p.durationMs=qint64(qBound(0.,j["durationMs"].toDouble(),2147483647.));p.elementId=j["elementId"].toString();
         p.offsetMs = j["offsetMs"].toInt(0);
@@ -363,6 +398,13 @@ void Library::load() {
         e.fx = fxFromJson(j["fx"].toObject());
         elements.append(e);
     }
+    programPlaylists.clear();
+    for(const auto &v:o.value("programPlaylists").toArray()){
+        const auto name=v.toString();
+        if(!name.isEmpty() && !programPlaylists.contains(name))programPlaylists.append(name);
+    }
+    for(const auto &p:std::as_const(programs))
+        if(!p.playlist.isEmpty() && !programPlaylists.contains(p.playlist))programPlaylists.append(p.playlist);
     for(auto v:o["elementPlaylists"].toArray())if(!v.toString().trimmed().isEmpty()&&!elementPlaylists.contains(v.toString()))elementPlaylists.append(v.toString());
     for(const auto &e:elements)if(!elementPlaylists.contains(e.playlist))elementPlaylists.append(e.playlist);
     for (const QJsonValue &v : o["placements"].toArray()) {
@@ -427,7 +469,7 @@ bool Library::saveChecked(QString *error) const {
                               {"adId", p.adId}, {"breakIn", p.breakIn}, {"breakOut", p.breakOut},
                               {"replayInEffect",p.replayInEffect},{"replayOutEffect",p.replayOutEffect},
                               {"splitShots",p.splitShots},
-                              {"splitClockOrigin",p.splitClockOrigin},{"cutSourceId",p.cutSourceId},
+                              {"splitClockOrigin",p.splitClockOrigin},{"cutSourceId",p.cutSourceId},{"playlist",p.playlist},
                               {"seconds", p.seconds}, {"durationMs",double(p.durationMs)}, {"elementId",p.elementId}, {"offsetMs", p.offsetMs}, {"slotAfter", p.slotAfter},
                               {"description", p.description}, {"image", p.image}, {"fx", fxToJson(p.fx)}});
     for (const Ad &a : ads)
@@ -456,7 +498,7 @@ bool Library::saveChecked(QString *error) const {
                         {"colorLook", display.colorLook}, {"exposure", display.exposure}, {"gamma", display.gamma},
                         {"regionOn", display.regionOn}, {"rx0", display.rx0}, {"ry0", display.ry0}, {"rx1", display.rx1},
                         {"ry1", display.ry1}};
-    const QJsonObject o{{"programs", pa}, {"ads", aa}, {"elements", ea}, {"elementPlaylists",QJsonArray::fromStringList(elementPlaylists)}, {"placements", la}, {"layers", lay}, {"display", d},{"production",production}};
+    const QJsonObject o{{"programs", pa}, {"programPlaylists",QJsonArray::fromStringList(programPlaylists)}, {"ads", aa}, {"elements", ea}, {"elementPlaylists",QJsonArray::fromStringList(elementPlaylists)}, {"placements", la}, {"layers", lay}, {"display", d},{"production",production}};
     QSaveFile f(filePath());const auto bytes=QJsonDocument(o).toJson();
     if(!f.open(QIODevice::WriteOnly)||f.write(bytes)!=bytes.size()||!f.commit()){if(error)*error=f.errorString();return false;}return true;
 }

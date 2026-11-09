@@ -100,6 +100,7 @@ struct ProgramItem {
     qint64 durationMs = 0; // Optional exact duration; zero keeps legacy seconds.
     QString elementId;    // A screen element occupying its own main-track slot.
     QString cutSourceId;  // Shared by parts of the same cut main-track item.
+    QString playlist;
     qint64 lengthMs() const { return qBound<qint64>(qint64(1), durationMs>0?durationMs:qint64(seconds)*1000, qint64(2147483647)); }
 };
 
@@ -161,6 +162,8 @@ public:
     QList<Ad> ads;
     QList<Element> elements;
     QStringList elementPlaylists{"Overlays", "Break screens", "Logos"};
+    QStringList programPlaylists;
+    bool changeProgramPlaylist(const QString &oldName,const QString &newName,QString *error=nullptr);
     QList<Placement> placements;
     QVector<LayerState> layers = QVector<LayerState>(4);  // 0 = main, 1..3 = extra timelines
     DisplaySettings display;
@@ -227,6 +230,7 @@ public:
 
 signals:
     void programsChanged();
+    void programPlaylistChanged(const QString &oldName, const QString &newName);
     void splitLayoutsChanged();
     void adsChanged();
     void elementsChanged();

@@ -6,6 +6,10 @@
 #include <QJsonArray>
 #include "EditorPanel.h"
 #include "AudioLibrary.h"
+#include "TimelineMedia.h"
+#include "ElementLibrary.h"
+#include <QDialogButtonBox>
+#include <QSettings>
 #include "Replay.h"
 #include "SceneEffects.h"
 #include "CrewWorkspace.h"
@@ -687,6 +691,49 @@ QWidget *makeAdsPage(Library *lib, Playout *play) {
 
 // -------------------------------------------------------- Program planner
 
+void manageProgramPlaylists(QWidget *parent,Library *library){
+    auto *dialog=roundedModal(parent,"Program playlists");
+    dialog->setObjectName("programPlaylistsDialog");
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    auto *layout=new QVBoxLayout(dialog);
+    auto *list=new QListWidget;layout->addWidget(list);
+    auto *name=new QLineEdit;name->setPlaceholderText("Playlist name");name->setMaxLength(160);layout->addWidget(name);
+    auto *actions=new QHBoxLayout;layout->addLayout(actions);
+    auto *add=new QPushButton("Create"),*rename=new QPushButton("Rename"),*remove=new QPushButton("Remove playlist");
+    name->setObjectName("playlistName");add->setObjectName("createPlaylist");
+    remove->setToolTip("Keep the programs in the rundown and remove their playlist assignment.");
+    for(auto *button:{add,rename,remove})actions->addWidget(button);
+    auto *status=new QLabel;status->setWordWrap(true);layout->addWidget(status);
+    auto reload=[=]{
+        const QString selected=list->currentItem()?list->currentItem()->text():QString();
+        QSignalBlocker block(list);list->clear();list->addItems(library->programPlaylists);
+        const auto matches=list->findItems(selected,Qt::MatchExactly);
+        if(!matches.isEmpty())list->setCurrentItem(matches.first());
+        rename->setEnabled(list->currentItem());remove->setEnabled(list->currentItem());
+    };
+    QObject::connect(list,&QListWidget::currentItemChanged,dialog,[=](QListWidgetItem *item){
+        if(item)name->setText(item->text());
+        rename->setEnabled(item);remove->setEnabled(item);
+    });
+    for(auto *button:{add,rename,remove})QObject::connect(button,&QPushButton::clicked,dialog,[=]{
+        const auto selected=list->currentItem();
+        if(button!=add && !selected)return;
+        const auto next=button==remove?QString():name->text().trimmed();
+        if(button!=remove && next.isEmpty()){status->setText("Enter a playlist name.");return;}
+        QString error;
+        if(!library->changeProgramPlaylist(button==add?QString():selected->text(),next,&error)){
+            status->setText(error);return;
+        }
+        const auto matches=list->findItems(next,Qt::MatchExactly);
+        if(!matches.isEmpty())list->setCurrentItem(matches.first());else name->clear();
+        status->clear();
+    });
+    QObject::connect(library,&Library::programsChanged,dialog,reload);
+    auto *buttons=new QDialogButtonBox(QDialogButtonBox::Close);layout->addWidget(buttons);
+    QObject::connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::reject);
+    reload();dialog->open();
+}
+
 QWidget *makePlannerPage(Library *lib, Playout *play) {
     auto *page = new QWidget;
     auto *l = new QVBoxLayout(page);
@@ -697,10 +744,27 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
     auto *list = new QListWidget;
     list->setMinimumHeight(210);
     list->setObjectName("programLibrary");list->setSpacing(8);list->setIconSize(QSize(104,60));
-    list->setStyleSheet("QListWidget{background:palette(window);border:1px solid palette(mid);border-radius:10px;padding:8px;} QListWidget::item{padding:10px;border:1px solid palette(mid);border-radius:8px;} QListWidget::item:selected{background:#344c61;border-color:#719aca;} QListWidget::item:hover{background:#2c3d4c;}");
+    list->setStyleSheet("QListWidget{background:palette(window);border:1px solid palette(mid);border-radius:8px;padding:4px;} QListWidget::item{padding:6px;border:1px solid palette(mid);border-radius:6px;} QListWidget::item:hover{background:palette(alternate-base);} QListWidget::item:selected{background:palette(highlight);color:palette(highlighted-text);}");
     auto *browseRow=new QHBoxLayout;auto *search=new QLineEdit;search->setPlaceholderText("Search programs…");auto *viewMode=new QComboBox;viewMode->addItems({"List","Grid"});browseRow->addWidget(search,1);browseRow->addWidget(viewMode);l->addLayout(browseRow);
     QObject::connect(viewMode,&QComboBox::currentIndexChanged,page,[=](int mode){list->setViewMode(mode?QListView::IconMode:QListView::ListMode);list->setFlow(mode?QListView::LeftToRight:QListView::TopToBottom);list->setWrapping(mode);list->setResizeMode(QListView::Adjust);list->setGridSize(mode?QSize(220,140):QSize());list->setIconSize(mode?QSize(180,90):QSize(104,60));});
-    QObject::connect(search,&QLineEdit::textChanged,page,[=](QString term){for(int i=0;i<list->count();++i)list->item(i)->setHidden(!list->item(i)->text().contains(term,Qt::CaseInsensitive));});
+    search->setObjectName("programSearch");viewMode->setObjectName("programViewMode");
+    viewMode->setCurrentIndex(QSettings().value("studio/programGrid",false).toBool()?1:0);
+    QObject::connect(viewMode,&QComboBox::currentIndexChanged,page,[](int mode){QSettings().setValue("studio/programGrid",mode==1);});
+    auto *groupFilter=new QComboBox;groupFilter->setObjectName("programPlaylistFilter");
+    auto *manage=new QPushButton("Manage playlists…");
+    manage->setObjectName("manageProgramPlaylists");
+    auto *groups=new QHBoxLayout;groups->addWidget(groupFilter,1);groups->addWidget(manage);l->addLayout(groups);
+    QObject::connect(manage,&QPushButton::clicked,page,[=]{manageProgramPlaylists(page,lib);});
+    auto filter=[=]{
+        const QString term=search->text().trimmed(),group=groupFilter->currentData().toString();
+        for(int i=0;i<list->count();++i){
+            auto *item=list->item(i);
+            const bool inGroup=group.isEmpty() || item->data(Qt::UserRole+1).toString()==group;
+            item->setHidden(!inGroup || !item->toolTip().contains(term,Qt::CaseInsensitive));
+        }
+    };
+    QObject::connect(search,&QLineEdit::textChanged,page,filter);
+    QObject::connect(groupFilter,&QComboBox::currentIndexChanged,page,filter);
     auto *title = new QLineEdit;
     title->setObjectName("programTitle");
     title->setPlaceholderText("Program title");
@@ -739,6 +803,7 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
     auto *form = new QFormLayout;
     form->addRow("Title", title);
     form->addRow("Type", kind);
+    auto *assignment=new QComboBox;assignment->setObjectName("programPlaylist");form->addRow("Playlist",assignment);
     form->addRow("Length", lenRow);
     form->addRow("Media", fileRow);
     form->addRow("Ad after", adBox);
@@ -801,6 +866,33 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
         selectById(inBox, i);
         selectById(outBox, o);
     };
+    auto fillPlaylists = [=](const QString &oldName, const QString &newName) {
+        for (auto *box : {groupFilter, assignment}) {
+            QString selected = box->currentData().toString();
+            if (!oldName.isEmpty() && selected == oldName) selected = newName;
+            QSignalBlocker block(box);
+            box->clear();
+            box->addItem(box == groupFilter ? "All playlists" : "No playlist", QString());
+            for (const auto &name : lib->programPlaylists) box->addItem(name, name);
+            selectById(box, selected);
+        }
+    };
+    fillPlaylists({}, {});
+    QObject::connect(lib, &Library::programPlaylistChanged, page, fillPlaylists);
+    auto *previews = new TimelineMedia(page);
+    auto updateMediaIcons = [=] {
+        for (int i = 0; i < list->count(); ++i) {
+            auto *it = list->item(i);
+            const auto path = it->data(Qt::UserRole + 2).toString();
+            if (path.isEmpty()) continue;
+            auto frame = previews->thumbnail(path, it->data(Qt::UserRole + 3).toLongLong());
+            if (!frame.isNull()) {
+                it->setIcon(QPixmap::fromImage(frame));
+                it->setData(Qt::UserRole + 2, QVariant());
+            }
+        }
+    };
+    QObject::connect(previews, &TimelineMedia::updated, page, updateMediaIcons);
     auto refreshList = [=] {
         const QString keep = selId();
         QSignalBlocker b(list);
@@ -809,17 +901,32 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
         for (int i = 0; i < lib->programs.size(); ++i) {
             const ProgramItem &p = lib->programs[i];
             const qint64 fin = play->finishedAt(p.id);
-            const QString prefix = i == cur ? "▶  " : fin > 0 ? "✓  " : "     ";
-            QString text = QString("%1%2. %3   ·   %4   ·   %5").arg(prefix).arg(i + 1).arg(p.title, p.kind, formatDuration(p.seconds));
-            if (!p.isAdSpot() && lib->ad(p.adId)) text += "   ·   + ad";
-            text=QString("%1%2\n%3 · %4%5").arg(i==cur?"ON AIR · ":fin>0?"PLAYED · ":"",p.title,p.kind,formatDuration(p.seconds),p.description.isEmpty()?QString():" · "+p.description.left(80));
-            auto *it = new QListWidgetItem(text);QPixmap picture(p.image);if(!picture.isNull())it->setIcon(QIcon(picture));else it->setIcon(uiIcon("play"));it->setToolTip(p.title+"\n"+p.description);it->setHidden(!text.contains(search->text(),Qt::CaseInsensitive));
+            const auto duration = formatDuration(p.seconds);
+            const auto text = QString("%1%2\n%3 · %4%5").arg(i==cur?"ON AIR · ":fin>0?"PLAYED · ":"",p.title,p.kind,duration,p.description.isEmpty()?QString():" · "+p.description.left(80));
+            auto *it = new QListWidgetItem(text);
+            QString mediaPath = p.file;
+            if (p.isAdSpot()) {
+                if (const auto *ad = lib->ad(p.adId)) mediaPath = ad->file;
+            }
+            QPixmap picture;
+            if (!p.image.isEmpty()) picture.load(p.image);
+            if (picture.isNull() && !p.elementId.isEmpty()) {
+                if (const auto *element = lib->element(p.elementId))
+                    picture = QPixmap::fromImage(elementThumbnail(*element));
+            }
+            it->setIcon(picture.isNull() ? uiIcon("play") : QIcon(picture));
+            if (picture.isNull()) it->setData(Qt::UserRole + 2, mediaPath);
+            it->setData(Qt::UserRole + 3, p.offsetMs);
+            it->setData(Qt::UserRole + 1, p.playlist);
+            it->setToolTip(QStringList{p.title, p.kind, duration, p.playlist, p.description, mediaPath}.join('\n'));
             it->setData(Qt::UserRole, p.id);
             if (i == cur) it->setForeground(QColor("#60a5fa"));
             else if (fin > 0) it->setForeground(QColor("#64748b"));
             list->addItem(it);
             if (p.id == keep) list->setCurrentItem(it);
         }
+        filter();
+        updateMediaIcons();
     };
     auto setDefaults = [=] {
         QString first, second;
@@ -838,6 +945,7 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
         title->clear();
         file->clear();
         kind->setCurrentIndex(0);
+        selectById(assignment, groupFilter->currentData().toString());
         mins->setValue(0);
         secs->setValue(30);
         desc->clear();
@@ -847,6 +955,12 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
         setDefaults();
         addBtn->setText("Add Program");
     };
+    auto clearHiddenSelection = [=] {
+        if (list->currentItem() && list->currentItem()->isHidden()) clearForm();
+        else if (!list->currentItem()) selectById(assignment, groupFilter->currentData().toString());
+    };
+    QObject::connect(groupFilter,&QComboBox::currentIndexChanged,page,clearHiddenSelection);
+    QObject::connect(search,&QLineEdit::textChanged,page,clearHiddenSelection);
     auto probe = makeProbe(page, [=](int s) {
         mins->setValue(s / 60);
         secs->setValue(s % 60);
@@ -868,6 +982,7 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
         }
         title->setText(p->title);
         kind->setCurrentText(p->kind);
+        selectById(assignment, p->playlist);
         mins->setValue(p->seconds / 60);
         secs->setValue(p->seconds % 60);
         file->setText(p->file);
@@ -909,6 +1024,7 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
         if (!updated) item.id = Library::newId();
         item.title = t;
         item.kind = kind->currentText();
+        item.playlist = assignment->currentData().toString();
         if(item.seconds!=total)item.durationMs=0;
         item.seconds = total;
         item.file = file->text().trimmed();
@@ -979,6 +1095,12 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
     QObject::connect(lib, &Library::openProgramRequested, page, [=](const QString &id) {
         for (int i = 0; i < list->count(); ++i)
             if (list->item(i)->data(Qt::UserRole).toString() == id) {
+                if (list->item(i)->isHidden()) {
+                    if (!groupFilter->currentData().toString().isEmpty() &&
+                        groupFilter->currentData() != list->item(i)->data(Qt::UserRole + 1))
+                        groupFilter->setCurrentIndex(0);
+                    if (list->item(i)->isHidden()) search->clear();
+                }
                 list->setCurrentRow(i);
                 list->scrollToItem(list->item(i));
                 break;
