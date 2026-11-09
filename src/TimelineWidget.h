@@ -98,6 +98,9 @@ private:
     QString m_trimId;
     bool m_trimProgram=false;
     qint64 m_trimGroupEnd=0;
+    qint64 m_trimEdgeMs=0;
+    qint64 programTrimEdge(int x) const;
+    void finishProgramTrim(int x);
     qint64 m_trimStart=0,m_trimLength=0;
     int m_trimOffset=0,m_panScroll=0;
 

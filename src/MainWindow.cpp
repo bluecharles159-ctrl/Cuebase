@@ -1055,10 +1055,11 @@ void MainWindow::onSpotRemoved(const QString &spotId) {
     if (!p) return;
     const QString name = p->title;
     const qint64 end = m_play->groupEndMs(spotId);
-    qint64 start=end;for(int i=0;i<m_play->segments().size();++i)if(m_play->segments()[i].programId==spotId){start=m_play->segmentStartMs(i);break;}
-    const qint64 len = end-start;
-    m_lib->removeItem(spotId);
-    m_lib->shiftPlacements(end, -len);  // whatever was placed after it moves back with the timeline
+    QString error;
+    if (!m_lib->removeTimelineItem(spotId,m_play->programStartMs(spotId),end,&error)) {
+        report(error);
+        return;
+    }
     report(QString("\u201c%1\u201d removed from the timeline").arg(name));
 }
 

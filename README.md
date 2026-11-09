@@ -10,9 +10,9 @@ animation, audio assets and broadcast planning.
 
 ## Windows download
 
-The verified preview candidate is commit `701a6af`.
-[Download the Windows preview](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42334371204/artifacts/13559266731)
-or [open the build and test reports](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42334371204).
+The verified preview candidate is commit `31e2284`.
+[Download the Windows preview](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42356947981/artifacts/13567757675)
+or [open the build and test reports](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42356947981).
 Select the **Cuebase-Windows** artifact. GitHub may require sign-in for Actions
 downloads. A public Releases download has not yet been published.
 

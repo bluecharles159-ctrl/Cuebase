@@ -952,7 +952,12 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
             say(msg, "Select a program to remove.");
             return;
         }
-        lib->removeItem(lib->programs[idx].id);
+        const QString id=lib->programs[idx].id;
+        QString error;
+        if(!lib->removeTimelineItem(id,play->programStartMs(id),play->groupEndMs(id),&error)){
+            say(msg,error);
+            return;
+        }
         clearForm();
         say(msg, "Program removed.", true);
     });

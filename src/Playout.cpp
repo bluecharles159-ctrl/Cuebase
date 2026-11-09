@@ -203,6 +203,8 @@ void Playout::rebuild() {
     int keyPart = 0;
     const bool had = isLive() && m_index >= 0 && m_index < m_segs.size();
     const auto previousTime=had?timelinePosMs():0;
+    const int previousOffset=had?m_segs[m_index].offsetMs:0;
+    const bool previousSpot=had && m_segs[m_index].spot;
     if (had) {
         keyId = m_segs[m_index].programId;
         keyType = m_segs[m_index].type;
@@ -322,8 +324,14 @@ void Playout::rebuild() {
     }else if (had) {
         int found = -1;
         for (int i = 0; i < m_segs.size(); ++i)
-            if (m_segs[i].programId == keyId && m_segs[i].type == keyType && m_segs[i].part == keyPart) found = i;
-        if (found >= 0) m_index = found;
+            if (m_segs[i].programId == keyId && m_segs[i].type == keyType &&
+                m_segs[i].part == keyPart && m_segs[i].spot==previousSpot) {found=i;break;}
+        if (found >= 0) {
+            m_index=found;
+            const auto &segment=m_segs[found];
+            const auto elapsed=qBound<qint64>(0,m_segElapsed+previousOffset-segment.offsetMs,segment.ms-1);
+            if(elapsed!=m_segElapsed || previousOffset!=segment.offsetMs)enter(elapsed);
+        }
         else stop();
     }
     emit segmentsChanged();

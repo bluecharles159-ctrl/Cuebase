@@ -2,6 +2,15 @@
 
 ## Latest verified checkpoint
 
+Build 68 (`31e2284`) passed the native Windows layer hierarchy and hover-cut workflows.
+The split tests covered programs, standalone ads and screen elements, frame timing,
+undo/redo, preserved transition progress, and rollback on a failed save.
+The evidence includes full-workspace and close-up Layers screenshots.
+[Windows ZIP](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42356947981/artifacts/13567757675)
+and [test evidence](https://github.com/bluecharles159-ctrl/Cuebase/actions/runs/42356947981/artifacts/13568306062).
+
+## Build 64
+
 Build 64 verified paused timeline seeking and fractional-rate frame stepping with
 keyboard and wheel. Cue creation from selected keys and cue picker filtering ran in
 the native Windows UI. The reports include both dialogs and the timeline capture.

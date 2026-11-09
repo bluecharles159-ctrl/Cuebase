@@ -808,6 +808,67 @@ private slots:
         auto *post=request("POST",document);QTRY_VERIFY_WITH_TIMEOUT(post->isFinished(),15000);QCOMPARE(post->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),403);delete post;session.revoke(member);
         get=request("GET");QTRY_VERIFY_WITH_TIMEOUT(get->isFinished(),15000);QCOMPARE(get->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),403);delete get;code=session.invite("Producer","Editor");post=request("POST",document);QTRY_VERIFY_WITH_TIMEOUT(post->isFinished(),15000);QCOMPARE(post->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),200);delete post;post=request("POST",document);QTRY_VERIFY_WITH_TIMEOUT(post->isFinished(),15000);QCOMPARE(post->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),409);delete post;session.stopSession();QVERIFY(!session.isListening());
     }
+    void primaryTrimPreviewAndRipple(){
+        const auto old=qApp->applicationName();
+        qApp->setApplicationName(old+"-primary-trim");
+        auto reset=qScopeGuard([&]{qApp->setApplicationName(old);});
+        QSettings().setValue("studio/timelineScale",100.);
+        Library library;
+        library.display.fps=25;
+        ProgramItem first;first.id="first";first.durationMs=2400;first.offsetMs=120;
+        Ad sponsor;sponsor.id="sponsor";sponsor.seconds=1;
+        library.ads={sponsor};first.adId=sponsor.id;
+        ProgramItem next;next.id="next";next.durationMs=1500;
+        library.programs={first,next};
+        Placement early;early.id="early";early.startMs=2500;
+        Placement later;later.id="later";later.startMs=3400;
+        library.placements={early,later};
+        Playout play(&library);
+        TimelineWidget timeline(&play,&library);
+        timeline.resize(660,200);timeline.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&timeline));
+        auto *window=timeline.windowHandle();
+        const QPoint edge(timeline.blockX(0)+timeline.blockW(0)-1,60);
+        const QPoint target=edge-QPoint(51,0);
+        QSignalSpy changed(&library,&Library::programsChanged);
+        play.start(0,2300);play.togglePause();
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,edge);
+        QTest::mouseMove(window,target);
+        QCOMPARE(changed.size(),0);
+        QCOMPARE(library.program(first.id)->lengthMs(),qint64(2400));
+        QTest::keyClick(window,Qt::Key_Escape);
+        QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,target);
+        QCOMPARE(library.program(first.id)->lengthMs(),qint64(2400));
+        QCOMPARE(changed.size(),0);
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,edge);
+        QTest::mouseMove(window,target);
+        QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,target);
+        QCOMPARE(changed.size(),1);
+        QCOMPARE(library.program(first.id)->lengthMs(),qint64(1880));
+        QCOMPARE(play.segmentElapsed(),qint64(1879));QCOMPARE(play.state(),Playout::Paused);
+        QCOMPARE(library.placement(early.id)->startMs,qint64(2500));
+        QCOMPARE(library.placement(later.id)->startMs,qint64(2880));
+        // Another editor changes the clip during a drag. Its saved duration wins.
+        const QPoint newEdge(timeline.blockX(0)+timeline.blockW(0)-1,60);
+        play.stop();
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,newEdge);
+        QString error;
+        QVERIFY(library.trimTimelineItem(first.id,120,2000,2880,&error));
+        QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,newEdge+QPoint(40,0));
+        QCOMPARE(library.program(first.id)->lengthMs(),qint64(2000));
+        const auto path=QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)+"/cuebase.json";
+        QVERIFY(QFile::rename(path,path+".backup"));QVERIFY(QDir().mkdir(path));
+        QVERIFY(!library.removeTimelineItem(first.id,0,3000,&error));QVERIFY(!error.isEmpty());
+        QVERIFY(!library.trimTimelineItem(first.id,120,2400,3000,&error));
+        QCOMPARE(library.programs.size(),2);QCOMPARE(library.program(first.id)->lengthMs(),qint64(2000));
+        QCOMPARE(library.placement(later.id)->startMs,qint64(3000));QCOMPARE(changed.size(),2);
+        QVERIFY(QDir().rmdir(path));QVERIFY(QFile::rename(path+".backup",path));
+        QVERIFY(library.removeTimelineItem(first.id,0,3000,&error));
+        QCOMPARE(play.programStartMs(next.id),qint64(0));
+        Library reopened;reopened.load();QCOMPARE(reopened.programs.size(),1);
+        QCOMPARE(reopened.placement(later.id)->startMs,qint64(0));
+        QCOMPARE(reopened.placement(early.id)->startMs,qint64(2500));
+    }
     void timelineTrim_data(){QTest::addColumn<bool>("previews");QTest::newRow("with previews")<<true;QTest::newRow("without previews")<<false;}
     void timelineTrim(){
         QFETCH(bool,previews);QSettings().setValue("studio/timelineThumbnails",previews);QSettings().setValue("studio/timelineWaveforms",previews);

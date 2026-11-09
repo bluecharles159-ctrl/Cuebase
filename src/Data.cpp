@@ -27,6 +27,7 @@ qint64 Element::lengthMs() const {
 #include <QUuid>
 #include <QtMath>
 #include <algorithm>
+#include <limits>
 
 Library::Library(QObject *parent) : QObject(parent) {
     connect(this,&Library::programsChanged,this,[this]{if(!m_cutEdit){m_cutUndo.clear();m_cutRedo.clear();}});
@@ -119,6 +120,57 @@ bool Library::saveCutEdit(QList<ProgramItem> replacement,QString *error) {
     if(saveChecked(error))return true;
     programs.swap(replacement);
     return false;
+}
+
+bool Library::saveRippleEdit(QList<ProgramItem> next,qint64 groupEnd,qint64 delta,QString *error) {
+    auto moved=placements;
+    bool shifted=false;
+    for(auto &placement:moved){
+        if(!delta || placement.startMs<groupEnd)continue;
+        if(delta>0 && placement.startMs>std::numeric_limits<qint64>::max()-delta){
+            if(error)*error="The ripple would move a placement beyond the timeline limit.";
+            return false;
+        }
+        placement.startMs+=delta;
+        shifted=true;
+    }
+    programs.swap(next);
+    if(shifted)placements.swap(moved);
+    if(!saveChecked(error)){
+        programs.swap(next);
+        if(shifted)placements.swap(moved);
+        return false;
+    }
+    emit programsChanged();
+    if(shifted)emit placementsChanged();
+    return true;
+}
+
+bool Library::trimTimelineItem(const QString &id,int offsetMs,qint64 durationMs,qint64 groupEnd,QString *error) {
+    const int i=programIndex(id);
+    if(i<0 || offsetMs<0 || durationMs<1 || durationMs>2147483647 || groupEnd<programs[i].lengthMs()){
+        if(error)*error="The item or its trim range is no longer valid.";
+        return false;
+    }
+    const auto delta=durationMs-programs[i].lengthMs();
+    if(delta==0 && offsetMs==programs[i].offsetMs)return true;
+    auto next=programs;
+    next[i].offsetMs=offsetMs;
+    next[i].durationMs=durationMs;
+    next[i].seconds=int((durationMs+999)/1000);
+    return saveRippleEdit(next,groupEnd,delta,error);
+}
+
+bool Library::removeTimelineItem(const QString &id,qint64 groupStart,qint64 groupEnd,QString *error) {
+    const int i=programIndex(id);
+    if(i<0 || groupStart<0 || groupEnd<groupStart || groupEnd-groupStart<programs[i].lengthMs()){
+        if(error)*error="The item is no longer available at that time.";
+        return false;
+    }
+    auto next=programs;
+    if(next[i].slotAfter && i>0)next[i-1].slotAfter=true;
+    next.removeAt(i);
+    return saveRippleEdit(next,groupEnd,groupStart-groupEnd,error);
 }
 
 QString Library::splitProgramAtMs(const QString &id,qint64 atMs,bool slot,QString *error){

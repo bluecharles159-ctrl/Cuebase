@@ -1,6 +1,6 @@
 # Cuebase completion counter
 
-Updated 2026-11-07. **53 of 84 tasks completed — 31 remaining.**
+Updated 2026-11-07. **55 of 84 tasks completed — 29 remaining.**
 
 The Claude transcript adds four distinct acceptance groups (81–84). Row 06 remains
 open: converted surfaces now retain their Inspector controls and unchanged
@@ -36,7 +36,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 - [x] 14. Graph handles, interpolation, key transforms/copy/paste and navigation persistence. Run 41876580763 passes handle dragging/evaluation, mixed interpolation, pan/zoom persistence, key clipboard and duplicate cancel, constrained keyboard scale/move, Enter confirmation and right-click cancellation. Creative interactions also pass native Windows and packaged-runtime checks.
 - [x] 15. Orange modified key replaces the saved key; unchanged yellow key removes it.
 - [x] 16. Pointer-anchored canvas zoom, adaptive rulers/grid and native navigation review. Run 41878592859 verifies ordinary and extreme zoom in Broadcast and Front views, stable pointer coordinates, bounded dimensions, readable ruler spacing and unchanged scene/Final output. Zoom-out capture inspected; grid retains a minimum screen spacing.
-- [ ] 17. Parenting, isolated parent transforms, hierarchy search/reveal and rounded corners.
+- [x] 17. Parenting, isolated parent transforms, hierarchy search/reveal and rounded corners. Build 68 passed parent transform, search/reveal, corner units, undo and save/reopen checks. Native Layers capture reviewed.
 
 ## Appearance and studio interface
 
@@ -55,7 +55,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 
 ## Broadcast, preview and audio
 
-- [ ] 30. Primary sequence supports actual programs/ads/elements, linked segments and exact timing.
+- [x] 30. Primary sequence supports actual programs/ads/elements, linked segments and exact timing. Build 68 verified frame-aligned hover cutting, linked source offsets, preserved playhead and fades, undo/redo, save/reopen and rollback on write failure.
 - [ ] 31. Main-track delete/expand, cut icon, trim/split/ripple, snapping, transitions and validation.
 - [x] 32. Fixed-center Studio playhead, moving timeline, frame stepping and navigation. Build 64 verified centering across resizes, pan, fit and reveal, fractional-rate keyboard/wheel stepping and paused/off-air state preservation on Windows.
 - [x] 33. Source-aligned thumbnail strips/waveforms and persistent Timeline settings. Verified by `resumed-preview-handoff-results.txt` (9 passing focused cases, including both trim modes); native/performance release gates remain separate.

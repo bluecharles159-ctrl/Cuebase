@@ -189,6 +189,8 @@ public:
     // slot = true leaves a "+" insert point between the halves.
     QString cutProgram(const QString &id, int atSec, bool slot = true);
     QString splitProgramAtMs(const QString &id,qint64 atMs,bool slot=true,QString *error=nullptr);
+    bool trimTimelineItem(const QString &id,int offsetMs,qint64 durationMs,qint64 groupEnd,QString *error);
+    bool removeTimelineItem(const QString &id,qint64 groupStart,qint64 groupEnd,QString *error);
     bool applyingCut() const { return m_cutEdit; }
     bool undoProgramCut();
     bool redoProgramCut();
@@ -240,6 +242,7 @@ signals:
     void openAudioRequested(const QString &placementId);
 
 private:
+    bool saveRippleEdit(QList<ProgramItem> next,qint64 groupEnd,qint64 delta,QString *error);
     bool saveCutEdit(QList<ProgramItem> replacement,QString *error=nullptr);
     QList<QList<ProgramItem>> m_cutUndo,m_cutRedo;
     bool m_cutEdit=false;

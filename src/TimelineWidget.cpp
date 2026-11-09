@@ -582,6 +582,16 @@ void TimelineWidget::paintEvent(QPaintEvent *) {
         const qint64 ms=grabbing?xToMs(px):m_play->playheadMs();
         drawPill(p,px,clockStamp(ms),pc,width());
     }
+    if(m_trimProgram && (m_drag==Drag::TrimLeft || m_drag==Drag::TrimRight)){
+        const int edge=msToX(m_trimEdgeMs);
+        const int original=msToX(m_drag==Drag::TrimLeft?m_trimStart:m_trimStart+m_trimLength);
+        const QColor accent=palette().highlight().color();
+        QColor fill=accent;fill.setAlpha(60);
+        p.fillRect(QRect(qMin(edge,original),kMainTop,qAbs(edge-original),mainHeight()),fill);
+        p.setPen(QPen(accent,2));
+        p.drawLine(edge,kMainTop-2,edge,kMainTop+mainHeight());
+        drawPill(p,edge,clockStamp(m_trimEdgeMs),accent,width());
+    }
 }
 
 // ---------------------------------------------------------------- mouse
@@ -657,7 +667,20 @@ void TimelineWidget::mousePressEvent(QMouseEvent *e) {
     const int i = blockAt(pos);
     if (i >= 0) {
         const Segment &s = m_play->segments()[i];
-        if((s.type==Segment::Program||s.spot)&&(qAbs(pos.x()-m_blocks[i].x)<6||qAbs(pos.x()-(m_blocks[i].x+m_blocks[i].w))<6)){m_trimProgram=true;m_trimId=s.programId;m_trimStart=m_play->segmentStartMs(i);m_trimLength=s.ms;m_trimOffset=s.offsetMs;m_trimGroupEnd=m_play->groupEndMs(s.programId);m_drag=qAbs(pos.x()-m_blocks[i].x)<6?Drag::TrimLeft:Drag::TrimRight;setCursor(Qt::SizeHorCursor);return;}
+        const int leftDistance=qAbs(pos.x()-m_blocks[i].x);
+        const int rightDistance=qAbs(pos.x()-(m_blocks[i].x+m_blocks[i].w));
+        if((s.type==Segment::Program||s.spot) && qMin(leftDistance,rightDistance)<6){
+            m_trimProgram=true;
+            m_trimId=s.programId;
+            m_trimStart=m_play->segmentStartMs(i);
+            m_trimLength=s.ms;
+            m_trimOffset=s.offsetMs;
+            m_trimGroupEnd=m_play->groupEndMs(s.programId);
+            m_drag=leftDistance<rightDistance?Drag::TrimLeft:Drag::TrimRight;
+            m_trimEdgeMs=m_drag==Drag::TrimLeft?m_trimStart:m_trimStart+m_trimLength;
+            setCursor(Qt::SizeHorCursor);
+            return;
+        }
         m_candSeg = i;
         m_drag = Drag::Press;
         if (s.type == Segment::Program || s.spot) {
@@ -677,13 +700,10 @@ void TimelineWidget::mouseMoveEvent(QMouseEvent *e) {
     const QPoint pos = e->position().toPoint();
     m_hover = pos;m_hasHover = true;
     if(m_drag==Drag::Pan){if(auto *bar=hbar())bar->setValue(m_panScroll+m_pressPos.x()-e->globalPosition().toPoint().x());return;}
-    if(m_drag==Drag::TrimLeft||m_drag==Drag::TrimRight){if(m_trimProgram){const qint64 at=xToMs(pos.x());
-        for(auto &program:m_lib->programs)if(program.id==m_trimId){
-            if(m_drag==Drag::TrimRight)program.durationMs=qBound<qint64>(qint64(1),at-m_trimStart,qint64(864000000));
-            else{const auto delta=qBound<qint64>(-m_trimOffset,at-m_trimStart,m_trimLength-1);program.offsetMs=m_trimOffset+int(delta);program.durationMs=m_trimLength-delta;}
-            program.seconds=int((program.durationMs+999)/1000);break;
-        }
-        emit m_lib->programsChanged();autoScroll(pos.x());update();return;}if(auto *placement=m_lib->placement(m_trimId)){
+    if(m_drag==Drag::TrimLeft||m_drag==Drag::TrimRight){if(m_trimProgram){
+        m_trimEdgeMs=programTrimEdge(pos.x());
+        autoScroll(pos.x());update();return;
+    }if(auto *placement=m_lib->placement(m_trimId)){
         const double frame=1000.*m_lib->display.fpsBase/qMax(1,m_lib->display.fps);qint64 at=qRound64(xToMs(pos.x())/frame)*frame;
         if(m_drag==Drag::TrimRight)placement->durationMs=qMax<qint64>(qRound64(frame),at-m_trimStart);
         else{const double rate=placement->type=="Sound"?qBound(.1,AudioLibrary::placementSettings(*m_lib,placement->id)["speed"].toDouble(1),4.):1.;const auto end=m_trimStart+m_trimLength;at=qBound<qint64>(qMax<qint64>(0,m_trimStart-qRound64(m_trimOffset/rate)),at,end-qRound64(frame));placement->startMs=at;placement->durationMs=end-at;placement->offsetMs=m_trimOffset+qRound64((at-m_trimStart)*rate);}
@@ -710,11 +730,44 @@ void TimelineWidget::mouseMoveEvent(QMouseEvent *e) {
     update();
 }
 
+qint64 TimelineWidget::programTrimEdge(int x) const {
+    const bool left=m_drag==Drag::TrimLeft;
+    const qint64 original=left?m_trimStart:m_trimStart+m_trimLength;
+    if(x==m_pressPos.x())return original;
+    const double frame=1000.*qMax(.001,m_lib->display.fpsBase)/qMax(1,m_lib->display.fps);
+    const qint64 minimum=qMin(m_trimLength,qMax<qint64>(1,qRound64(frame)));
+    const qint64 target=original+qRound64((x-m_pressPos.x())*1000./m_pixelsPerSecond);
+    const qint64 snapped=qRound64(qRound64(target/frame)*frame);
+    if(left)return qBound(qMax<qint64>(0,m_trimStart-m_trimOffset),snapped,
+                          qMin(m_trimStart+m_trimLength-minimum,m_trimStart+INT_MAX-m_trimOffset));
+    return qBound(m_trimStart+minimum,snapped,m_trimStart+qMax<qint64>(864000000,m_trimLength));
+}
+
+void TimelineWidget::finishProgramTrim(int x){
+    const auto *program=m_lib->program(m_trimId);
+    if(!program || program->lengthMs()!=m_trimLength || program->offsetMs!=m_trimOffset ||
+       m_play->programStartMs(m_trimId)!=m_trimStart || m_play->groupEndMs(m_trimId)!=m_trimGroupEnd){
+        QToolTip::showText(mapToGlobal(m_hover),tr("The rundown changed during the trim. Drag the edge again."),this);
+        return;
+    }
+    const qint64 edge=programTrimEdge(x);
+    const bool left=m_drag==Drag::TrimLeft;
+    const qint64 slip=left?edge-m_trimStart:0;
+    const qint64 duration=left?m_trimLength-slip:edge-m_trimStart;
+    QString error;
+    if(!m_lib->trimTimelineItem(m_trimId,int(m_trimOffset+slip),duration,m_trimGroupEnd,&error))
+        QToolTip::showText(mapToGlobal(m_hover),error,this);
+}
+
 void TimelineWidget::mouseReleaseEvent(QMouseEvent *e) {
     if(m_drag==Drag::Range){m_drag=Drag::None;update();return;}
     if(m_drag==Drag::Pan){m_drag=Drag::None;return;}
     if (e->button() != Qt::LeftButton) return;
-    if(m_drag==Drag::TrimLeft||m_drag==Drag::TrimRight){m_drag=Drag::None;if(m_trimProgram){const auto *program=m_lib->program(m_trimId);if(program){const auto delta=program->lengthMs()-m_trimLength;for(auto &placement:m_lib->placements)if(placement.startMs>=m_trimGroupEnd)placement.startMs=qMax<qint64>(0,placement.startMs+delta);}m_lib->save();emit m_lib->programsChanged();emit m_lib->placementsChanged();m_trimProgram=false;}else m_lib->commitPlacements();updateCursor();return;}
+    if(m_drag==Drag::TrimLeft||m_drag==Drag::TrimRight){
+        if(m_trimProgram)finishProgramTrim(e->position().toPoint().x());
+        else m_lib->commitPlacements();
+        m_drag=Drag::None;m_trimProgram=false;updateCursor();update();return;
+    }
     const Drag d = m_drag;
     const int x = m_dragX;
     const bool moved = m_moved;
@@ -800,7 +853,40 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent *e) {
         const QString id = m_play->segments()[i].programId;
         QMenu menu(this);
         QAction *duration=menu.addAction("Set program duration...");QAction *rm = menu.addAction("Remove from timeline");
-        auto *chosen=menu.exec(e->globalPos());if(chosen==rm)emit spotRemoveRequested(id);else if(chosen==duration){const auto *current=m_lib->program(id);if(!current)return;QDialog *dialog=roundedModal(this,"Program duration");QVBoxLayout layout(dialog);layout.setContentsMargins(20,18,20,18);layout.addWidget(new QLabel("Duration"));auto *input=new ValueInput;input->setDecimals(3);input->setRange(.001,864000);input->setSuffix(" s");input->setValue(current->lengthMs()/1000.);layout.addWidget(input);auto *buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);layout.addWidget(buttons);connect(buttons,&QDialogButtonBox::accepted,dialog,&QDialog::accept);connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::reject);const bool accepted=dialog->exec()==QDialog::Accepted;const qint64 durationMs=qRound64(input->value()*1000);dialog->deleteLater();current=m_lib->program(id);if(!accepted||!current||durationMs==current->lengthMs())return;const auto before=m_lib->programs;const auto placements=m_lib->placements;const auto end=m_play->groupEndMs(id);const auto delta=durationMs-current->lengthMs();for(auto &program:m_lib->programs)if(program.id==id){program.seconds=int((durationMs+999)/1000);program.durationMs=durationMs;}for(auto &placement:m_lib->placements)if(placement.startMs>=end)placement.startMs=qMax<qint64>(0,placement.startMs+delta);QString error;if(!m_lib->saveChecked(&error)){m_lib->programs=before;m_lib->placements=placements;QToolTip::showText(e->globalPos(),error,this);return;}emit m_lib->programsChanged();emit m_lib->placementsChanged();}
+        auto *chosen=menu.exec(e->globalPos());
+        if(chosen==rm){emit spotRemoveRequested(id);return;}
+        if(chosen!=duration)return;
+        const auto *current=m_lib->program(id);
+        if(!current)return;
+        const auto originalLength=current->lengthMs();
+        const auto originalOffset=current->offsetMs;
+        const auto end=m_play->groupEndMs(id);
+        QDialog *dialog=roundedModal(this,"Program duration");
+        QVBoxLayout layout(dialog);
+        layout.setContentsMargins(20,18,20,18);
+        layout.addWidget(new QLabel("Duration"));
+        auto *input=new ValueInput;
+        input->setDecimals(3);
+        input->setRange(.001,qMax(864000.,originalLength/1000.));
+        input->setSuffix(" s");
+        input->setValue(originalLength/1000.);
+        layout.addWidget(input);
+        auto *buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);
+        layout.addWidget(buttons);
+        connect(buttons,&QDialogButtonBox::accepted,dialog,&QDialog::accept);
+        connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::reject);
+        const bool accepted=dialog->exec()==QDialog::Accepted;
+        const qint64 durationMs=qRound64(input->value()*1000);
+        dialog->deleteLater();
+        if(!accepted || durationMs==originalLength)return;
+        current=m_lib->program(id);
+        if(!current || current->lengthMs()!=originalLength || current->offsetMs!=originalOffset || m_play->groupEndMs(id)!=end){
+            QToolTip::showText(e->globalPos(),tr("The rundown changed. Reopen the duration control."),this);
+            return;
+        }
+        QString error;
+        if(!m_lib->trimTimelineItem(id,originalOffset,durationMs,end,&error))
+            QToolTip::showText(e->globalPos(),error,this);
     }
 }
 
@@ -857,6 +943,9 @@ void TimelineWidget::zoomView(double factor){auto *bar=hbar();int center=(bar?ba
 void TimelineWidget::fitView(){pauseFollowing();qint64 end=m_play->totalMs();for(const auto &p:m_lib->placements)end=qMax(end,p.startMs+p.lengthMs());m_pixelsPerSecond=qBound(.1,(viewportWidth()-30)/qMax(1.,end/1000.),800.);QSettings().setValue("studio/timelineScale",m_pixelsPerSecond);relayout();if(auto *bar=hbar())bar->setValue(qMax(0,m_originX-15));update();}
 void TimelineWidget::revealPlayhead(){m_followPaused=false;if(auto *bar=hbar())bar->setValue(qMax(0,playheadX()-viewportWidth()/2));emit navigationChanged();update();}
 void TimelineWidget::keyPressEvent(QKeyEvent *e){
+    if(e->key()==Qt::Key_Escape && m_trimProgram){
+        m_trimProgram=false;m_drag=Drag::None;updateCursor();update();e->accept();return;
+    }
     if(e->modifiers()==Qt::NoModifier && (e->key()==Qt::Key_Left || e->key()==Qt::Key_Right)){
         stepFrames(e->key()==Qt::Key_Right?1:-1);e->accept();return;
     }
