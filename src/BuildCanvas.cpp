@@ -41,6 +41,20 @@ double visibleGridStep(const QRectF &frame,const QJsonObject &style,int outputWi
     return step;
 }
 
+QRectF compositionReference(const QRectF &frame,const QJsonObject &style){
+    const double aspect=style.value("editor.referenceAspect").toDouble();
+    if(!(aspect>0) || frame.isEmpty())return {};
+    QSizeF size(aspect,1);
+    size.scale(frame.size(),Qt::KeepAspectRatio);
+    QRectF reference(QPointF(),size);reference.moveCenter(frame.center());
+    return reference;
+}
+
+double gridSubdivision(double major,const QJsonObject &style){
+    const double minor=major/qBound(1,style.value("editor.gridDivisions").toInt(1),16);
+    return minor>=6 ? minor : major;
+}
+
 QPointF projectView(const ViewCam &cam, const QRectF &r, const QVector3D &c) {
     const double d = -c.z();
     double nx, ny;
@@ -496,6 +510,7 @@ void BuildCanvas::paintEvent(QPaintEvent *) {
     p.setBrush(Qt::NoBrush);
     p.drawRect(r);
     const auto guideStyle=d.camera()?d.camera()->style:QJsonObject{};
+    p.save();p.setOpacity(qBound(0.,guideStyle.value("editor.guideOpacity").toDouble(1.),1.));
     const QRectF titleSafe = safeFrame(r,guideStyle,true);
     const QRectF actionSafe = safeFrame(r,guideStyle,false);
     p.setPen(QPen(QColor(96,165,250,45), 1, Qt::DashLine));
@@ -510,13 +525,24 @@ void BuildCanvas::paintEvent(QPaintEvent *) {
     if(showGrid){
         p.setPen(QColor(148,163,184,25));
         const double step=visibleGridStep(r,guideStyle,m_lib->display.resX());
+        const double minor=gridSubdivision(step,guideStyle);
+        if(minor<step){
+            p.setPen(QColor(148,163,184,13));
+            for(double x=r.left();x<r.right();x+=minor)p.drawLine(QPointF(x,r.top()),QPointF(x,r.bottom()));
+            for(double y=r.top();y<r.bottom();y+=minor)p.drawLine(QPointF(r.left(),y),QPointF(r.right(),y));
+            p.setPen(QColor(148,163,184,25));
+        }
         for(double x=r.left();x<r.right();x+=step)p.drawLine(QPointF(x,r.top()),QPointF(x,r.bottom()));
         for(double y=r.top();y<r.bottom();y+=step)p.drawLine(QPointF(r.left(),y),QPointF(r.right(),y));
     }
     QColor guideColor(guideStyle["editor.guideColor"].toString("#22d3ee"));if(!guideColor.isValid())guideColor=QColor("#22d3ee");
     p.setPen(QPen(guideColor,1,Qt::DashLine));
+    const auto reference=m_cameraView?compositionReference(r,guideStyle):QRectF();
+    if(!reference.isEmpty())p.drawRect(reference);
+    setProperty("compositionReferenceFrame",reference);
     for(double guide:m_verticalGuides){double x=r.left()+guide*r.width();p.drawLine(QPointF(x,r.top()),QPointF(x,r.bottom()));}
     for(double guide:m_horizontalGuides){double y=r.top()+guide*r.height();p.drawLine(QPointF(r.left(),y),QPointF(r.right(),y));}
+    p.restore();
     p.restore();
     if(showRulers){
         p.fillRect(QRectF(0,0,width(),20),palette().color(QPalette::Window));p.fillRect(QRectF(0,0,20,height()),palette().color(QPalette::Window));
@@ -1063,12 +1089,15 @@ void BuildCanvas::applyModal(const QPointF &mouse) {
             if(snapping && !edit && !(QApplication::keyboardModifiers()&(Qt::AltModifier|Qt::ControlModifier))){
                 QPointF target;cam.toScreen(m_modal.pivot+delta,r,&target);
                 QVector<double> xs{r.left(),r.center().x(),r.right()},ys{r.top(),r.center().y(),r.bottom()};
-                if(showOverlays){
+                const auto *guideCamera=m_m->design.camera();
+                const auto style=guideCamera?guideCamera->style:QJsonObject{};
+                const bool visibleGuides=showOverlays && style.value("editor.guideOpacity").toDouble(1.)>0;
+                if(visibleGuides){
                     for(double g:m_verticalGuides)xs.append(r.left()+g*r.width());
                     for(double g:m_horizontalGuides)ys.append(r.top()+g*r.height());
                     if(m_cameraView){
-                        const auto *camera=m_m->design.camera();
-                        const auto style=camera?camera->style:QJsonObject{};
+                        const auto reference=compositionReference(r,style);
+                        if(!reference.isEmpty()){xs<<reference.left()<<reference.right();ys<<reference.top()<<reference.bottom();}
                         for(bool title:{true,false}){
                             if(!(title?showTitleSafe:showActionSafe))continue;
                             const auto safe=safeFrame(r,style,title);
@@ -1086,9 +1115,8 @@ void BuildCanvas::applyModal(const QPointF &mouse) {
                 double dx=7,dy=7,gx=target.x(),gy=target.y();
                 for(double x:xs)for(double anchor:{moving.left(),moving.center().x(),moving.right()})if(qAbs(x-anchor)<qAbs(dx)){dx=x-anchor;gx=x;}
                 for(double y:ys)for(double anchor:{moving.top(),moving.center().y(),moving.bottom()})if(qAbs(y-anchor)<qAbs(dy)){dy=y-anchor;gy=y;}
-                if(showGrid && showOverlays && snapToGrid && r.contains(target)){
-                    const auto *camera=m_m->design.camera();
-                    const auto step=visibleGridStep(r,camera?camera->style:QJsonObject{},m_lib->display.resX());
+                if(showGrid && visibleGuides && snapToGrid && r.contains(target)){
+                    const auto step=gridSubdivision(visibleGridStep(r,style,m_lib->display.resX()),style);
                     const double gridX=r.left()+qRound((target.x()-r.left())/step)*step;
                     const double gridY=r.top()+qRound((target.y()-r.top())/step)*step;
                     if(qAbs(dx)>=7 && gridX<=r.right()){gx=gridX;dx=gx-target.x();}

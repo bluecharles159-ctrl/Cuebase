@@ -122,7 +122,38 @@ private slots:
         auto *settings=workspace.findChild<QAction*>("compositionGuideSettings");QVERIFY(settings);bool edited=false;
         QTimer::singleShot(0,[&]{auto *dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());if(!dialog)return;QTimer::singleShot(3000,dialog,&QDialog::reject);auto *title=dialog->findChild<QDoubleSpinBox*>("guideTitleMargin");auto *grid=dialog->findChild<QDoubleSpinBox*>("guideGridSpacing");auto *color=dialog->findChild<QLineEdit*>("compositionGuideColor");QVERIFY(title&&grid&&color);title->setValue(12);grid->setValue(80);color->setText("#edb950");QVERIFY(dialog->grab().save("artifacts/composition-guides-dialog.png"));edited=true;dialog->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Save)->click();});settings->trigger();QVERIFY(edited);QCOMPARE(model->design.camera()->style["editor.titleSafe"].toDouble(),.12);QCOMPARE(model->design.camera()->style["editor.gridSpacing"].toDouble(),80.);QCOMPARE(QColor(model->design.camera()->style["editor.guideColor"].toString()),QColor("#edb950"));QVERIFY(model->undo());QVERIFY(!model->design.camera()->style.contains("editor.titleSafe"));QVERIFY(model->redo());
         const auto beforeCancel=model->design.toJson();QTimer::singleShot(0,[&]{if(auto *dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget())){dialog->findChild<QDoubleSpinBox*>("guideTitleMargin")->setValue(20);dialog->reject();}});settings->trigger();QCOMPARE(model->design.toJson(),beforeCancel);
-        canvas->grab();QVERIFY(canvas->grab().save("artifacts/composition-guides.png"));model->reset(ElementDesign::defaultScene());QVERIFY(guides().isEmpty());
+        DObject plate;plate.id="guide-card";plate.type="Shape";plate.w=3;plate.h=1;
+        plate.base.rot={90,0,0};plate.mat.shadeless=true;model->design.objects.append(plate);
+        auto render=[&]{
+            QImage image(320,180,QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);
+            QPainter painter(&image);model->design.render(painter,image.rect(),0);painter.end();return image;
+        };
+        const auto output=render();
+        bool setReference=false;
+        QTimer::singleShot(0,[&]{
+            auto *dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());if(!dialog)return;
+            auto *reference=dialog->findChild<QComboBox*>("referenceAspect");
+            auto *opacity=dialog->findChild<QDoubleSpinBox*>("guideOpacity");
+            auto *divisions=dialog->findChild<QSpinBox*>("gridSubdivisions");
+            if(!reference || !opacity || !divisions){dialog->reject();return;}
+            reference->setCurrentIndex(reference->findData(9./16));opacity->setValue(60);divisions->setValue(4);
+            setReference=true;dialog->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Save)->click();
+        });
+        settings->trigger();QVERIFY(setReference);canvas->grab();
+        auto checkReference=[&]{
+            const auto frame=canvas->property("compositionFrame").toRectF();
+            const auto ref=canvas->property("compositionReferenceFrame").toRectF();
+            QVERIFY(!ref.isEmpty());QVERIFY(qAbs(ref.width()/ref.height()-9./16)<.001);
+            QVERIFY(QLineF(frame.center(),ref.center()).length()<.01);
+            QVERIFY(ref.width()<=frame.width()+.01 && ref.height()<=frame.height()+.01);
+        };
+        checkReference();
+        model->reset(ElementDesign::fromJson(model->design.toJson()));
+        QCOMPARE(model->design.camera()->style["editor.guideOpacity"].toDouble(),.6);
+        QCOMPARE(model->design.camera()->style["editor.gridDivisions"].toInt(),4);
+        library.display.resolution="1080x1920";canvas->grab();checkReference();
+        QCOMPARE(render(),output);
+        QVERIFY(canvas->grab().save("artifacts/composition-guides.png"));model->reset(ElementDesign::defaultScene());QVERIFY(guides().isEmpty());
     }
     void buildPreviewQualityAndBackdrop(){
         Library library;BuildModel model;auto scene=ElementDesign::defaultScene();scene.durationMs=1000;

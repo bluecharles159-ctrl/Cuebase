@@ -332,12 +332,24 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
         auto *title=dspin(0,45,.5,1," %"),*action=dspin(0,45,.5,1," %"),*grid=dspin(1,4096,1,0," px");
         title->setObjectName("guideTitleMargin");action->setObjectName("guideActionMargin");grid->setObjectName("guideGridSpacing");title->setValue(original["editor.titleSafe"].toDouble(.05)*100);action->setValue(original["editor.actionSafe"].toDouble(.035)*100);grid->setValue(original["editor.gridSpacing"].toDouble(120));
         form->addRow("Title-safe inset",title);form->addRow("Action-safe inset",action);form->addRow("Grid spacing",grid);
+        auto *divisions=new FrameInput;divisions->setRange(1,16);divisions->setObjectName("gridSubdivisions");
+        divisions->setValue(original.value("editor.gridDivisions").toInt(1));form->addRow("Grid subdivisions",divisions);
+        auto *opacity=dspin(0,100,1,0," %");opacity->setObjectName("guideOpacity");
+        opacity->setValue(100*original.value("editor.guideOpacity").toDouble(1.));form->addRow("Guide opacity",opacity);
+        auto *reference=new QComboBox;reference->setObjectName("referenceAspect");
+        reference->addItem("None",0.);reference->addItem("Widescreen · 16:9",16./9);
+        reference->addItem("Portrait · 9:16",9./16);reference->addItem("Square · 1:1",1.);
+        reference->addItem("Standard · 4:3",4./3);
+        reference->setCurrentIndex(qMax(0,reference->findData(original.value("editor.referenceAspect").toDouble())));
+        form->addRow("Reference frame",reference);
         auto *color=new QLineEdit(original["editor.guideColor"].toString("#22d3ee"));color->setObjectName("compositionGuideColor");color->setToolTip("Guide color as #RRGGBB or #AARRGGBB");form->addRow("Guide color",color);
         auto *hint=new QLabel("Drag from a ruler to add a guide. Drag outside the composition to remove it. Guides save with this scene and never appear in output.");hint->setWordWrap(true);form->addRow(hint);
         auto *error=new QLabel;error->setWordWrap(true);form->addRow(error);auto *buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);form->addRow(buttons);
         connect(buttons,&QDialogButtonBox::rejected,dialog.get(),&QDialog::reject);connect(buttons,&QDialogButtonBox::accepted,dialog.get(),[&]{if(!QColor(color->text()).isValid()){error->setText("Enter a valid guide color.");return;}dialog->accept();});
         if(dialog->exec()!=QDialog::Accepted)return;auto *current=m->design.find(cameraId);if(!current||current->style!=original){say("Composition settings changed. Reopen guide settings.",true);return;}
         auto updated=original;updated["editor.titleSafe"]=title->value()/100;updated["editor.actionSafe"]=action->value()/100;updated["editor.gridSpacing"]=grid->value();updated["editor.guideColor"]=QColor(color->text()).name(QColor::HexArgb);
+        updated["editor.gridDivisions"]=divisions->value();updated["editor.guideOpacity"]=opacity->value()/100.;
+        updated["editor.referenceAspect"]=reference->currentData().toDouble();
         if(updated!=original){m->pushUndo();current->style=updated;m->notify();}
     });
     auto *clearGuides=helperMenu->addAction("Clear guides");clearGuides->setObjectName("clearCompositionGuides");connect(clearGuides,&QAction::triggered,canvas,[=]{if(auto *camera=m->design.camera()){if(camera->style["editor.guides.vertical"].toArray().isEmpty()&&camera->style["editor.guides.horizontal"].toArray().isEmpty())return;m->pushUndo();camera->style.remove("editor.guides.vertical");camera->style.remove("editor.guides.horizontal");m->notify();}canvas->clearGuides();});
