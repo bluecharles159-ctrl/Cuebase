@@ -1,7 +1,10 @@
 #pragma once
 #include "ElementDesign.h"
+#include <QBuffer>
+#include <QImageReader>
 #include <QPainter>
 #include <QtMath>
+#include <cmath>
 
 namespace RevealEffects {
 inline double noise(int x,int y,int seed=0){
@@ -15,6 +18,102 @@ inline double progress(const DObject &o){
     if(timing=="Steps"){const int steps=qBound(2,o.style["effects.revealSteps"].toInt(8),100);return qFloor(p*steps)/double(steps);}
     if(timing=="Flicker"&&p>0&&p<1){const int phase=qFloor(p*80);return noise(phase,0,o.style["effects.revealSeed"].toInt())>.35?p:qMax(0.,p-.2);}
     return p;
+}
+// Capture the evaluated mesh in the scene file so a portable cue can reuse its silhouette.
+inline QString meshStamp(const Mesh &mesh,const QColor &color){
+    if(mesh.isEmpty())return {};
+    QPolygonF points;
+    for(const auto &v:mesh.v)points.append(QPointF(v.x()+.42*v.y(),-v.z()+.32*v.y()));
+    const QRectF bounds=points.boundingRect();
+    const double extent=qMax(bounds.width(),bounds.height());
+    if(extent<=0)return {};
+    QImage stamp(96,96,QImage::Format_ARGB32_Premultiplied);
+    stamp.fill(Qt::transparent);
+    QPainter painter(&stamp);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.translate(48,48);painter.scale(90/extent,90/extent);
+    painter.translate(-bounds.center());
+    painter.setPen(Qt::NoPen);painter.setBrush(color);
+    for(const auto &face:mesh.f){
+        QPolygonF polygon;
+        for(int i:face)if(i>=0 && i<points.size())polygon.append(points[i]);
+        if(polygon.size()>=3)painter.drawPolygon(polygon);
+    }
+    painter.end();
+    QByteArray png;QBuffer sink(&png);sink.open(QIODevice::WriteOnly);
+    if(!stamp.save(&sink,"PNG"))return {};
+    return QString::fromLatin1(png.toBase64());
+}
+
+inline void paintParticles(QImage &image,const QImage &surface,const DObject &o,const QRect &area,double p){
+    const auto kind=o.style.value("effects.revealParticles").toString("None");
+    if(kind=="None" || p<=0 || p>=1)return;
+    QImage stamp;
+    if(kind=="Mesh stamp"){
+        const auto encoded=o.style.value("effects.revealStamp").toString();
+        if(encoded.size()>65536)return;
+        QBuffer buffer;buffer.setData(QByteArray::fromBase64(encoded.toLatin1()));buffer.open(QIODevice::ReadOnly);
+        QImageReader reader(&buffer,"PNG");
+        if(reader.size()!=QSize(96,96) || !reader.read(&stamp))return;
+    }
+    const int count=qBound(1,qRound(o.propertyBase("effects.particleCount")),1024);
+    const double size=qBound(.5,o.propertyBase("effects.particleSize"),128.);
+    const int seed=o.style.value("effects.revealSeed").toInt();
+    const auto style=o.style.value("effects.revealStyle").toString("Wipe");
+    const int block=style=="Pixels"?1:qBound(2,qRound(o.propertyBase("effects.revealBlock")),512);
+    const double angle=qDegreesToRadians(o.propertyBase("effects.revealAngle"));
+    const QPointF direction(qCos(angle),qSin(angle));
+    const bool radial=o.style.value("effects.revealMode").toString()=="Radial";
+    const QPointF center(o.propertyBase("effects.revealX"),o.propertyBase("effects.revealY"));
+    const double radiusMax=qMax(1.,std::hypot(qMax(center.x(),1-center.x())*area.width(),qMax(center.y(),1-center.y())*area.height()));
+    const bool smoke=kind=="Smoke",fog=kind=="Fog",fire=kind=="Fire",sparks=kind=="Sparks";
+    const double travel=o.propertyBase("effects.particleTravel");
+    QPainter painter(&image);painter.setPen(Qt::NoPen);painter.setRenderHint(QPainter::Antialiasing);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform);
+    for(int i=0;i<count;++i){
+        const double x=noise(i,1,seed),y=noise(i,3,seed);
+        const QPoint offset(qRound(x*(area.width()-1)),qRound(y*(area.height()-1)));
+        const QPoint origin=area.topLeft()+offset;
+        double birth;
+        if(style=="Blocks" || style=="Pixels")birth=noise(offset.x()/block,offset.y()/block,seed);
+        else if(style=="Assemble")birth=noise(origin.x()/block,origin.y()/block,seed)*.4;
+        else if(style=="Liquid")birth=(1.15-y)/1.3;
+        else if(radial)birth=std::hypot((x-center.x())*area.width(),(y-center.y())*area.height())/radiusMax;
+        else birth=.5+QPointF::dotProduct(QPointF(x-.5,y-.5),direction)/(qAbs(direction.x())+qAbs(direction.y()));
+        const double life=.13+.13*noise(i,2,seed);
+        const double age=(p-birth)/life;
+        if(age<=0 || age>=1)continue;
+        const double coverage=surface.pixelColor(origin).alphaF();
+        if(coverage==0)continue;
+        const double radius=size*(.5+noise(i,4,seed))*(smoke||fog?1+2*age:1);
+        QPointF drift((noise(i,5,seed)-.5)*size*9*age,-size*(2+5*noise(i,6,seed))*age);
+        if(fog)drift=QPointF(size*age*6,drift.y()*.2);
+        if(kind=="Debris")drift.ry()+=size*11*age*age;
+        drift*=travel;
+        painter.save();painter.translate(origin+drift);painter.setOpacity(coverage*qSin(age*M_PI)*qMin(1.,(1-p)*10));
+        if(!stamp.isNull()){
+            painter.rotate(noise(i,7,seed)*360+age*90);
+            painter.drawImage(QRectF(-radius,-radius,2*radius,2*radius),stamp);
+        }else if(smoke || fog || fire){
+            if(fog)painter.scale(2.8,.75);
+            if(fire)painter.scale(1-age*.55,1.55);
+            QRadialGradient gradient(0,0,radius);
+            gradient.setColorAt(0,fire?QColor(255,232,146):QColor(185,190,196,fog?70:120));
+            if(fire)gradient.setColorAt(.5,QColor(255,88,23,160));
+            gradient.setColorAt(1,Qt::transparent);painter.setBrush(gradient);
+            painter.drawEllipse(QPointF(),radius,radius);
+        }else if(sparks){
+            painter.rotate(-25+50*noise(i,7,seed));painter.setBrush(QColor(255,177,68));
+            painter.drawEllipse(QPointF(),radius*.27,radius*1.7);
+        }else if(kind=="Debris"){
+            painter.rotate(noise(i,7,seed)*360+age*150);
+            painter.setBrush(surface.pixelColor(origin));
+            painter.drawRect(QRectF(-radius,-radius*.5,radius*2,radius));
+        }else{
+            painter.setBrush(QColor(223,211,183));painter.drawEllipse(QPointF(),radius*.45,radius*.45);
+        }
+        painter.restore();
+    }
 }
 // Object-space sampling keeps exports, backward scrubbing and repeated plays identical.
 inline bool apply(QImage &image,const DObject &o,int padding,int width,int height,double p){

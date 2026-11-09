@@ -221,6 +221,7 @@ QImage ElementDesign::baseTexture(const DObject &source) const {
             const int alpha=qRound(qAlpha(row[x])*t*t*(3-2*t));row[x]=qRgba(qRed(row[x]),qGreen(row[x]),qBlue(row[x]),alpha);
         }}
     }
+    RevealEffects::paintParticles(pixels,image,o,QRect(padding,padding,w,h),reveal);
     image=blurImage(pixels,qRound(o.propertyBase("effects.blur")));
     if(o.style["shadow.enabled"].toBool()) {
         QImage shadow(image.size(),QImage::Format_ARGB32_Premultiplied);shadow.fill(Qt::transparent);

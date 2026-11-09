@@ -281,6 +281,39 @@ private slots:
         }
         applyUiTheme("Darker",false);
     }
+    void revealParticleSources(){
+        Library library;BuildModel model;
+        auto scene=ElementDesign::defaultScene();
+        DObject mesh;mesh.id="spark-shape";mesh.name="Copper cone";mesh.type="Mesh";
+        mesh.mesh=Mesh::primitive("Cone");mesh.mat.color=QColor("#df7831");
+        scene.objects.append(mesh);
+        DObject shape;shape.id="title-card";shape.type="Shape";shape.w=3;shape.h=1.5;
+        shape.mat.color=QColor("#173059");shape.keyChannel("effects.reveal",0,0);shape.keyChannel("effects.reveal",1000,1);
+        scene.objects.append(shape);model.reset(scene);model.select(shape.id);
+        PropertyInspector inspector(&model,&library);
+        auto *source=inspector.findChild<QComboBox*>("property_effects.revealParticles");
+        auto *capture=inspector.findChild<QToolButton*>("revealMeshStamp");
+        QVERIFY(source && capture && capture->menu());
+        auto frame=[&](int ms){return model.design.textureFor(model.byId(shape.id)->evaluated(ms));};
+        const auto hidden=frame(0),plain=frame(500),full=frame(1000);
+        QList<QImage> variants{plain};
+        for(const auto &kind:QStringList{"Dust","Sparks","Fire","Smoke","Fog","Debris","Mesh stamp"}){
+            source->setCurrentText(kind);
+            QVERIFY(QMetaObject::invokeMethod(source,"activated",Q_ARG(int,source->currentIndex())));
+            if(kind=="Mesh stamp"){
+                QVERIFY(QMetaObject::invokeMethod(capture->menu(),"aboutToShow"));
+                auto actions=capture->menu()->actions();QCOMPARE(actions.size(),1);
+                QCOMPARE(actions.first()->text(),mesh.name);actions.first()->trigger();
+                QVERIFY(!model.byId(shape.id)->style.value("effects.revealStamp").toString().isEmpty());
+            }
+            const auto middle=frame(500);
+            QVERIFY(!variants.contains(middle));variants.append(middle);
+            QCOMPARE(frame(0),hidden);QCOMPARE(frame(1000),full);QCOMPARE(frame(500),middle);
+        }
+        auto reopened=ElementDesign::fromJson(model.design.toJson());
+        reopened.objects.removeIf([&](const auto &object){return object.id==mesh.id;});
+        QCOMPARE(reopened.textureFor(reopened.find(shape.id)->evaluated(500)),variants.last());
+    }
     void proceduralRevealStyles(){
         ElementDesign scene;DObject shape;shape.id="procedural";shape.type="Shape";shape.w=2;shape.h=1;const auto complete=scene.textureFor(shape);
         for(const auto &style:QStringList{"Pixels","Blocks","Liquid","Assemble"}){

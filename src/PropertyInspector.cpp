@@ -1,5 +1,6 @@
 #include "UiControls.h"
 #include "PropertyInspector.h"
+#include "RevealEffects.h"
 #include "ElementLibrary.h"
 #include "BuildModel.h"
 #include "Data.h"
@@ -366,6 +367,40 @@ void PropertyInspector::rebuild(){
         number(effects,"Reveal direction","effects.revealAngle",-180,180,1);
         number(effects,"Reveal center X","effects.revealX",0,1,.01);
         number(effects,"Reveal center Y","effects.revealY",0,1,.01);
+        choice(effects,"Reveal particles","effects.revealParticles",{"None","Dust","Sparks","Fire","Smoke","Fog","Debris","Mesh stamp"},"None");
+        const int countRow=effects->rowCount();
+        number(effects,"Particle count","effects.particleCount",1,1024,1);
+        number(effects,"Particle size","effects.particleSize",.5,128,.5," px");
+        number(effects,"Particle travel","effects.particleTravel",0,8,.05);
+        auto *stampButton=new QToolButton;
+        stampButton->setObjectName("revealMeshStamp");stampButton->setPopupMode(QToolButton::InstantPopup);
+        stampButton->setToolTip("Capture a mesh silhouette and its material color for these particles.");
+        auto *stamps=new QMenu(stampButton);stampButton->setMenu(stamps);
+        effects->addRow("Particle mesh",stampButton);
+        connect(stamps,&QMenu::aboutToShow,this,[this,stamps]{
+            stamps->clear();
+            for(const auto &mesh:m->design.objects){
+                if(mesh.type!="Mesh" || mesh.id==m->activeId)continue;
+                auto *action=stamps->addAction(mesh.name);
+                connect(action,&QAction::triggered,this,[this,id=mesh.id]{
+                    const auto *source=m->byId(id);auto *target=m->active();
+                    if(!source || !target || target->locked)return;
+                    const auto stamp=RevealEffects::meshStamp(m->design.evalMesh(*source,m->t),source->evaluated(m->t).mat.color);
+                    if(stamp.isEmpty())return;
+                    apply([&]{target->style["effects.revealStamp"]=stamp;target->style["effects.revealStampName"]=source->name;});
+                });
+            }
+            if(stamps->isEmpty())stamps->addAction("No other mesh in this scene")->setEnabled(false);
+        });
+        sync.append([=,this]{
+            if(const auto *active=m->active()){
+                const auto kind=active->style.value("effects.revealParticles").toString("None");
+                for(int row=countRow;row<countRow+3;++row)effects->setRowVisible(row,kind!="None");
+                effects->setRowVisible(stampButton,kind=="Mesh stamp");
+                stampButton->setEnabled(!active->locked);
+                stampButton->setText(active->style.value("effects.revealStampName").toString("Choose mesh…"));
+            }
+        });
         for(const auto &path:QStringList{"brightness","contrast","saturation"})number(effects,path,"effects."+path,0,3,.05);
         for(const auto &path:QStringList{"grayscale","invert","sepia"})number(effects,path,"effects."+path,0,1,.05);
         number(effects,"Hue","effects.hue",-360,360,1,"°");
