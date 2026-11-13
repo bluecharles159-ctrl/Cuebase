@@ -29,7 +29,7 @@ void setDesignAsset(ElementDesign &design,const DesignAsset &asset,const QString
         if(asset.role=="image")object->image=path;
         else if(asset.role=="texture")object->style["texture.file"]=path;
         else if(asset.role.startsWith("texture.") &&
-                (asset.role.endsWith(".file") || asset.role.endsWith(".maskFile")))object->style[asset.role]=path;
+                (asset.role.endsWith(".file") || asset.role.endsWith(".maskFile") || asset.role.endsWith(".reliefFile")))object->style[asset.role]=path;
         else if(asset.role=="audio")object->style["audio.file"]=path;
         else if(asset.role.startsWith("mask.") && asset.role.endsWith(".file"))object->style[asset.role]=path;
     }

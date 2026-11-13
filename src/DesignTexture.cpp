@@ -17,6 +17,7 @@
 #include <QImageReader>
 #include <QCache>
 #include <QDateTime>
+#include <QQuaternion>
 #include <QtMath>
 
 namespace {
@@ -34,6 +35,54 @@ QImage cachedLayerImage(const QFileInfo &surfaceFile){
         if(!texture.isNull())sources.insert(sourceKey,new QImage(texture),qMax(1,int(texture.sizeInBytes()/1024)));
     }
     return texture;
+}
+
+void shadeLayerRelief(QImage &texture,const DObject &object,const QString &layer) {
+    const auto file=object.style.value(layer+"reliefFile").toString();
+    const float strength=qBound(0.,object.propertyBase(layer+"reliefStrength"),8.);
+    if(file.isEmpty() || strength==0) return;
+    // The scene renderer writes an explicit set of lights. An empty set is
+    // meaningful: shadeless materials keep their source pixels unchanged.
+    const auto samples=object.style.value("render.reliefLights").toArray();
+    if(samples.isEmpty()) return;
+    const auto map=cachedLayerImage(QFileInfo(file)).scaled(texture.size(),Qt::IgnoreAspectRatio,Qt::SmoothTransformation);
+    if(map.isNull())return;
+    struct Sample { QVector3D direction,energy; bool area; };
+    QVector<Sample> lights;
+    const auto rotation=QQuaternion::fromAxisAndAngle(0,0,1,object.propertyBase(layer+"rotation"));
+    for(const auto &entry:samples) {
+        const auto values=entry.toArray();if(values.size()!=7)continue;
+        QVector3D direction(values[0].toDouble(),values[1].toDouble(),values[2].toDouble());
+        lights.append(Sample{rotation.rotatedVector(direction).normalized(),
+            QVector3D(values[3].toDouble(),values[4].toDouble(),values[5].toDouble()),values[6].toBool()});
+    }
+    const bool height=object.style.value(layer+"reliefMode").toString()=="Height";
+    const bool tile=object.style.value(layer+"mapping").toString()=="Tile";
+    auto coordinate=[&](int value,int length){return tile?(value+length)%length:qBound(0,value,length-1);};
+    auto sampleHeight=[&](int x,int y){return qGray(map.pixel(coordinate(x,map.width()),coordinate(y,map.height())))/255.f;};
+    for(int y=0;y<texture.height();++y) {
+        const auto *relief=reinterpret_cast<const QRgb*>(map.constScanLine(y));
+        auto *row=reinterpret_cast<QRgb*>(texture.scanLine(y));
+        for(int x=0;x<texture.width();++x) {
+            const auto pixel=row[x];if(!qAlpha(pixel)||!qAlpha(relief[x]))continue;
+            const auto color=qUnpremultiply(relief[x]);
+            const float amount=strength*qAlpha(relief[x])/255.f;
+            QVector3D normal;
+            if(height)normal={amount*(sampleHeight(x-1,y)-sampleHeight(x+1,y)),
+                              amount*(sampleHeight(x,y+1)-sampleHeight(x,y-1)),1};
+            else normal={amount*(qRed(color)-128)/127.f,amount*(qGreen(color)-128)/127.f,
+                         qMax(.001f,(qBlue(color)-128)/127.f)};
+            normal.normalize();
+            QVector3D factor(1,1,1);
+            for(const auto &light:lights) {
+                const auto diffuse=[&](float cosine){return qMax(0.f,light.area?(cosine+.3f)/1.3f:cosine);};
+                factor+=light.energy*(diffuse(QVector3D::dotProduct(normal,light.direction))-diffuse(light.direction.z()));
+            }
+            const int alpha=qAlpha(pixel);
+            row[x]=qRgba(qBound(0,qRound(qRed(pixel)*factor.x()),alpha),qBound(0,qRound(qGreen(pixel)*factor.y()),alpha),
+                         qBound(0,qRound(qBlue(pixel)*factor.z()),alpha),alpha);
+        }
+    }
 }
 
 void prepareText(QTextDocument &doc,const DObject &o,double width){
@@ -156,6 +205,7 @@ QImage ElementDesign::baseTexture(const DObject &source) const {
         if (surfaceFile.filePath().isEmpty() || !o.style.value(layer+"enabled").toBool(true)) continue;
         QImage texture=cachedLayerImage(surfaceFile);
         if(!texture.isNull()){
+            shadeLayerRelief(texture,o,layer);
             QColor tint(o.style[layer+"tint"].toString("#ffffff"));if(!tint.isValid())tint=Qt::white;
             const double opacity=qBound(0.,o.propertyBase(layer+"opacity"),1.)*tint.alphaF();
             if(opacity!=1||tint!=QColor(Qt::white))for(int y=0;y<texture.height();++y){auto *row=reinterpret_cast<QRgb*>(texture.scanLine(y));for(int x=0;x<texture.width();++x){const auto c=row[x];row[x]=qRgba(qRound(qRed(c)*tint.redF()*opacity),qRound(qGreen(c)*tint.greenF()*opacity),qRound(qBlue(c)*tint.blueF()*opacity),qRound(qAlpha(c)*opacity));}}

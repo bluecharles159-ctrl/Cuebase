@@ -71,6 +71,35 @@ private slots:
         surface->style["texture.blend"]="Normal";surface->style["texture.tint"]="#80ffffff";const auto translucent=pixel();QVERIFY(qAbs(translucent.red()-qRound((source.red()+base.red())/2.))<=2);surface->style.remove("texture.file");surface->style["fill.kind"]="Linear";surface->style["background.type"]="Solid";const auto plain=model.design.textureFor(*surface);
         const auto preset=TextureLibrary::savePreset(library,*surface,"Solid with retained gradient settings",&error);QVERIFY(!preset.isEmpty());surface->style["background.type"]="Gradient";QVERIFY(TextureLibrary::apply(model,library,preset,{},&error));QCOMPARE(model.active()->style["background.type"].toString(),QString("Solid"));QCOMPARE(model.design.textureFor(*model.active()),plain);
     }
+    void normalAndHeightMapsUseLayerSpaceAndSceneLights(){
+        auto design=scene();auto *plate=design.find("textured");plate->mat.shadeless=false;
+        QImage texture(32,32,QImage::Format_ARGB32);texture.fill(QColor("#888888"));
+        const auto colorFile=temporary.filePath("relief-color.png");QVERIFY(texture.save(colorFile));
+        const auto normalFile=temporary.filePath("normal.png"),heightFile=temporary.filePath("height.png");
+        texture.fill(QColor(35,128,215));QVERIFY(texture.save(normalFile));
+        for(int y=0;y<32;++y)for(int x=0;x<32;++x)texture.setPixelColor(x,y,QColor::fromRgb((x%6)*50,(x%6)*50,(x%6)*50));
+        QVERIFY(texture.save(heightFile));
+        plate->style["texture.file"]=colorFile;
+        DObject *lamp=nullptr;for(auto &o:design.objects)if(o.type=="Light")lamp=&o;
+        QVERIFY(lamp);lamp->light.kind="Point";lamp->light.energy=1000;lamp->base.loc={-3,-4,0};
+        auto render=[&](PaintOpts::Shade shade){
+            QImage out(320,180,QImage::Format_ARGB32_Premultiplied);out.fill(Qt::transparent);QPainter p(&out);
+            PaintOpts options;options.shade=shade;design.paint(p,out.rect(),design.sceneCamera(0,16./9.),0,options);p.end();return out;
+        };
+        const auto base=render(PaintOpts::Rendered),work=render(PaintOpts::Solid);
+        for(const QString &mode:QStringList{"Normal","Height"}){
+            plate=design.find("textured");plate->style["texture.reliefFile"]=mode=="Normal"?normalFile:heightFile;
+            plate->style["texture.reliefMode"]=mode;plate->style["texture.reliefStrength"]=2.;
+            lamp->base.loc={-3,-4,0};const auto left=render(PaintOpts::Rendered);
+            lamp->base.loc={3,-4,0};const auto right=render(PaintOpts::Rendered);
+            QVERIFY(left!=base && right!=left);
+            QCOMPARE(render(PaintOpts::Solid),work);
+            plate->style["texture.reliefStrength"]=0.;QCOMPARE(render(PaintOpts::Rendered),base);
+            plate->style["texture.reliefStrength"]=2.;plate->mat.shadeless=true;
+            QCOMPARE(render(PaintOpts::Rendered),base);plate->mat.shadeless=false;
+            QCOMPARE(designAssets(design).size(),2);
+        }
+    }
     void keyedMetallicMeshKeepsWorkAppearance(){
         BuildModel model;
         Library library;
@@ -156,6 +185,34 @@ private slots:
             QVERIFY(QFileInfo::exists(asset.path));
             QVERIFY(asset.path!=imagePath && asset.path!=topPath && asset.path!=maskPath);
         }
+    }
+    void brandStylesPreserveTypographyTreatmentsAndGuides(){
+        Library library;library.production={};
+        BuildModel model;model.reset(scene());model.select("textured");
+        auto *source=model.active();source->type="Text";source->text="Original content";source->fontPx=72;
+        source->style["text.family"]="Inter";source->style["text.weight"]=700;
+        source->style["text.tracking"]=3.;source->style["stroke.width"]=4.;
+        source->style["shadow.opacity"]=.6;source->style["finish.kind"]="Glass";
+        auto *camera=model.design.camera();QVERIFY(camera);camera->style["editor.titleSafe"]=true;
+        camera->style["editor.gridSpacing"]=44.;camera->style["editor.guideColor"]="#70c6ff";
+        QString error;const auto id=TextureLibrary::saveStyle(library,model.design,*source,"Cuebase Broadcast",&error);
+        QVERIFY2(!id.isEmpty(),qPrintable(error));
+        const auto item=TextureLibrary::entry(library,id);QCOMPARE(item["kind"].toString(),QString("Style"));
+        std::unique_ptr<QWidget> panel(TextureLibrary::createPanel(&model,&library));
+        auto *kind=panel->findChild<QComboBox*>("textureKindFilter");QVERIFY(kind);kind->setCurrentText("Brand styles");
+        auto *items=panel->findChild<QListWidget*>("textureItems");QVERIFY(items);QCOMPARE(items->count(),1);items->setCurrentRow(0);
+        DObject another=object();another.id="another";another.type="Text";another.text="Keep this copy";another.fontPx=28;another.style["text.family"]="Arial";
+        model.design.objects.append(another);model.select("another");
+        QVERIFY(TextureLibrary::apply(model,library,id,{},&error));
+        auto *applied=model.active();QCOMPARE(applied->text,QString("Keep this copy"));QCOMPARE(applied->fontPx,72);
+        QCOMPARE(applied->style["text.family"].toString(),QString("Inter"));QCOMPARE(applied->style["stroke.width"].toDouble(),4.);
+        camera->style["editor.gridSpacing"]=9.;
+        QVERIFY(TextureLibrary::applyStyleGuides(model,library,id,&error));
+        QCOMPARE(camera->style["editor.gridSpacing"].toDouble(),44.);QCOMPARE(camera->style["editor.guideColor"].toString(),QString("#70c6ff"));
+        const auto path=temporary.filePath("brand-style.cuemat");
+        QVERIFY2(TextureLibrary::exportEntry(library,id,path,&error),qPrintable(error));
+        const auto imported=TextureLibrary::importFile(library,path,&error);QVERIFY2(!imported.isEmpty(),qPrintable(error));
+        QCOMPARE(TextureLibrary::entry(library,imported)["kind"].toString(),QString("Style"));
     }
     void missingRepairAndSaveRollback(){
         Library library;library.production={};QString error;const auto id=TextureLibrary::importFile(library,imagePath,&error);QVERIFY(!id.isEmpty());const auto original=TextureLibrary::file(TextureLibrary::entry(library,id));BuildModel model;model.reset(scene());model.select("textured");QVERIFY(TextureLibrary::apply(model,library,id,{},&error));QVERIFY(QFile::remove(original));

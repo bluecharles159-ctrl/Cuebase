@@ -304,6 +304,25 @@ void PropertyInspector::textureControls(const DObject &object) {
     connect(clearMask,&QPushButton::clicked,this,[=,this]{
         apply([&]{if(auto *current=m->active();current&&!current->locked)current->style.remove(key+"maskFile");});
     });
+    auto *relief=new QPushButton("Choose normal or height map…");
+    relief->setToolTip("Material uses a preview light. Final uses scene lights when Ignore lighting is off.");
+    texture->addRow("Surface relief",relief);
+    connect(relief,&QPushButton::clicked,this,[=,this]{
+        const auto path=QFileDialog::getOpenFileName(this,"Choose a normal or height map",{},"Images (*.png *.jpg *.jpeg *.bmp *.webp *.tif *.tiff)");
+        if(!path.isEmpty())apply([&]{if(auto *current=m->active();current&&!current->locked)current->style[key+"reliefFile"]=path;});
+    });
+    const int firstReliefRow=texture->rowCount();
+    choice(texture,"Map type",key+"reliefMode",{"Normal","Height"},"Normal");
+    number(texture,"Relief strength",key+"reliefStrength",0,8,.05);
+    auto *clearRelief=new QPushButton("Clear relief map");texture->addRow(clearRelief);
+    sync.append([=,this]{if(auto *current=m->active()){
+        const auto file=current->style.value(key+"reliefFile").toString();
+        relief->setText(file.isEmpty()?"Choose normal or height map…":QFileInfo(file).fileName());
+        for(int i=firstReliefRow;i<firstReliefRow+3;++i)texture->setRowVisible(i,!file.isEmpty());
+    }});
+    connect(clearRelief,&QPushButton::clicked,this,[=,this]{
+        apply([&]{if(auto *current=m->active();current&&!current->locked)current->style.remove(key+"reliefFile");});
+    });
     auto *clear=new QPushButton("Remove texture");clear->setObjectName("removeSurfaceTexture");texture->addRow(clear);
     connect(clear,&QPushButton::clicked,this,[=,this]{apply([&]{
         auto *current=m->active();if(!current || current->locked)return;

@@ -35,9 +35,26 @@ QString managedCopy(const QString &path,QString *error){
     return destination;
 }
 bool appearanceKey(const QString &key){return key.startsWith("texture.")||key.startsWith("fill.");}
-DObject appearance(const DObject &source){
+bool brandKey(const QString &key){
+    static const QStringList type{"text.family","text.weight","text.italic","text.decoration","text.tracking",
+        "text.wordSpacing","text.lineHeight","text.transform","text.background","text.backgroundColor"};
+    return type.contains(key)||key.startsWith("stroke.")||key.startsWith("corner.")||
+        key.startsWith("shadow.")||key.startsWith("textShadow.")||key.startsWith("finish.");
+}
+bool guideKey(const QString &key){
+    static const QStringList keys{"editor.titleSafe","editor.actionSafe","editor.gridSpacing","editor.gridDivisions",
+        "editor.referenceAspect","editor.guideOpacity","editor.guideColor","editor.guides.vertical","editor.guides.horizontal"};
+    return keys.contains(key);
+}
+DObject appearance(const DObject &source,bool captureStyle=false){
     DObject result;result.id="surface";result.type="Shape";result.name=source.name;result.w=4;result.h=3;result.mat=source.mat;
     for(auto it=source.style.begin();it!=source.style.end();++it)if(appearanceKey(it.key()))result.style[it.key()]=it.value();
+    if(captureStyle||source.style.value("preset.brandStyle").toBool()){
+        result.fontPx=source.fontPx;
+        for(auto it=source.style.begin();it!=source.style.end();++it)
+            if(brandKey(it.key())||it.key()=="preset.guides")result.style[it.key()]=it.value();
+        result.style["preset.brandStyle"]=true;
+    }
     const auto background=source.style["background.type"].toString(source.style["fill.kind"].toString("Solid")=="Solid"?"Solid":"Gradient");
     result.style["background.type"]=background=="Gradient"?"Gradient":"Solid";return result;
 }
@@ -85,7 +102,8 @@ QString importFile(Library &library,const QString &path,QString *error){
         auto design=ElementDesign::fromJson(QString::fromUtf8(input.readAll()));
         design.objects.erase(std::remove_if(design.objects.begin(),design.objects.end(),[](const DObject &object){return object.type=="Camera";}),design.objects.end());
         if(design.objects.size()!=1||!compatible(design.objects.first())){fail(error,"This is not a Cuebase surface material preset.");return {};}
-        resolveDesignAssets(design,QFileInfo(path).absolutePath());object=appearance(design.objects.first());kind="Preset";
+        resolveDesignAssets(design,QFileInfo(path).absolutePath());object=appearance(design.objects.first());
+        kind=object.style.value("preset.brandStyle").toBool()?"Style":"Preset";
     }else{
         object=appearance(object);object.style["texture.file"]=path;
     }
@@ -97,6 +115,30 @@ QString savePreset(Library &library,const DObject &source,const QString &name,QS
     auto object=appearance(source);QStringList copied;
     if(!copyLayerFiles(object,copied,error))return {};
     object.name=name.trimmed();return append(library,{{"name",object.name},{"kind","Preset"},{"surface",serialize(object)}},copied,error);
+}
+QString saveStyle(Library &library,const ElementDesign &scene,const DObject &source,const QString &name,QString *error){
+    if(!compatible(source)||name.trimmed().isEmpty()){fail(error,"Choose a surface and enter a style name.");return {};}
+    auto object=appearance(source,true);
+    QJsonObject guides;
+    if(const auto *camera=scene.camera())
+        for(auto it=camera->style.begin();it!=camera->style.end();++it)if(guideKey(it.key()))guides[it.key()]=it.value();
+    object.style["preset.guides"]=guides;
+    QStringList copied;
+    if(!copyLayerFiles(object,copied,error))return {};
+    object.name=name.trimmed();
+    return append(library,{{"name",object.name},{"kind","Style"},{"surface",serialize(object)}},copied,error);
+}
+bool applyStyleGuides(BuildModel &model,const Library &library,const QString &id,QString *error){
+    const auto item=entry(library,id);
+    auto *camera=model.design.camera();
+    if(item["kind"].toString()!="Style"||!camera||camera->locked)return fail(error,"Choose a brand style and an unlocked composition camera.");
+    auto next=camera->style;
+    for(const auto &key:next.keys())if(guideKey(key))next.remove(key);
+    const auto saved=surface(item).style.value("preset.guides").toObject();
+    for(auto it=saved.begin();it!=saved.end();++it)if(guideKey(it.key()))next[it.key()]=it.value();
+    if(next!=camera->style){model.pushUndo(true);camera->style=next;model.notify();}
+    if(error)error->clear();
+    return true;
 }
 bool update(Library &library,const QString &id,const QString &name,const QString &collection,bool favorite,QString *error){
     if(name.trimmed().isEmpty())return fail(error,"Enter a name for this library item.");
@@ -132,10 +174,14 @@ bool apply(BuildModel &model,const Library &library,const QString &id,const QStr
     targets.erase(std::remove_if(targets.begin(),targets.end(),[](const DObject *object){return !object||object->locked||!compatible(*object);}),targets.end());
     if(targets.isEmpty())return fail(error,"Select an unlocked text, shape or image to apply this material.");
     if(model.editMode)return fail(error,"Exit Edit Mode before applying a material.");
+    const bool brand=item["kind"].toString()=="Style",preset=brand||item["kind"].toString()=="Preset";
     model.pushUndo();for(auto *object:targets){
-        if(item["kind"].toString()=="Preset"){
-            for(const auto &key:object->style.keys())if(appearanceKey(key))object->style.remove(key);
-            for(auto it=source.style.begin();it!=source.style.end();++it)if(appearanceKey(it.key()))object->style[it.key()]=it.value();
+        const bool media=object->style["background.type"].toString(object->surfaceType()=="Image"?"Media":"Solid")=="Media";
+        if(preset){
+            auto copyKey=[&](const QString &key){return appearanceKey(key)||(brand && brandKey(key));};
+            for(const auto &key:object->style.keys())if(copyKey(key))object->style.remove(key);
+            for(auto it=source.style.begin();it!=source.style.end();++it)if(copyKey(it.key()))object->style[it.key()]=it.value();
+            if(brand && object->surfaceType()=="Text")object->fontPx=source.fontPx;
             object->mat=source.mat;
         }else {
             QString prefix="texture.";
@@ -147,7 +193,8 @@ bool apply(BuildModel &model,const Library &library,const QString &id,const QStr
             }
             object->style[prefix+"file"]=path;object->style[prefix+"enabled"]=true;
         }
-        if(object->surfaceType()!="Text" && !addLayer)object->style["background.type"]=item["kind"].toString()=="Preset"?source.style["background.type"]:QJsonValue("Solid");
+        if(object->surfaceType()!="Text" && !addLayer && !(brand && media))
+            object->style["background.type"]=preset?source.style["background.type"]:QJsonValue("Solid");
     }
     model.notify();if(error)error->clear();return true;
 }

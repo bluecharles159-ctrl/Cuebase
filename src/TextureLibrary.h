@@ -15,6 +15,8 @@ QImage thumbnail(const QJsonObject &entry);
 // Imported files are copied into this profile; callers keep their originals.
 QString importFile(Library &library,const QString &path,QString *error);
 QString savePreset(Library &library,const DObject &source,const QString &name,QString *error);
+QString saveStyle(Library &library,const ElementDesign &scene,const DObject &source,const QString &name,QString *error);
+bool applyStyleGuides(BuildModel &model,const Library &library,const QString &id,QString *error);
 bool update(Library &library,const QString &id,const QString &name,const QString &collection,bool favorite,QString *error);
 bool relink(Library &library,const QString &id,const QString &path,QString *error,QString *replacement=nullptr);
 bool remove(Library &library,const QString &id,QString *error);

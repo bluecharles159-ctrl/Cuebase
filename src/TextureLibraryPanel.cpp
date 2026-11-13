@@ -30,7 +30,7 @@ protected:
 class TexturePanel : public QWidget {
     BuildModel *model;Library *library;
     TextureList *list;QLineEdit *search,*name,*collection;QComboBox *filter,*kind;QCheckBox *favorites,*favorite;
-    QLabel *status,*selection;QPushButton *apply,*addLayer,*relink,*save,*exportButton,*remove;
+    QLabel *status,*selection;QPushButton *apply,*addLayer,*relink,*save,*saveStyle,*applyGuides,*exportButton,*remove;
     QJsonArray snapshot;QHash<QString,QIcon> thumbnails;
     QPushButton *paint;
     QString current() const {return list->currentItem()?list->currentItem()->data(Qt::UserRole).toString():QString();}
@@ -42,10 +42,15 @@ class TexturePanel : public QWidget {
         name->setText(item["name"].toString());collection->setText(item["collection"].toString());favorite->setChecked(item["favorite"].toBool());
         for(QWidget *widget:QList<QWidget*>{name,collection,favorite,save,exportButton,remove,relink})widget->setEnabled(exists);
         const auto file=TextureLibrary::file(item);relink->setText(!file.isEmpty()&&!QFileInfo::exists(file)?"Relink missing texture…":"Replace texture…");
-        selection->setText(!exists?"Import a texture, or save the selected object's surface as a preset.":file.isEmpty()?"Surface preset · no external image":QFileInfo::exists(file)?"Ready · double-click to apply, or drag onto an object":"Missing texture · relink before applying");
+        const auto itemKind=item["kind"].toString();
+        selection->setText(!exists?"Import a texture, or save the selected object's surface as a preset.":
+            itemKind=="Style"?"Reusable brand style · includes typography, treatments and saved guides":
+            file.isEmpty()?"Surface preset · no external image":QFileInfo::exists(file)?"Ready · double-click to apply, or drag onto an object":"Missing texture · relink before applying");
         bool compatible=false;for(auto *object:model->selected())if(!object->locked&&TextureLibrary::compatible(*object))compatible=true;
         apply->setEnabled(exists&&compatible&&!model->editMode);
         addLayer->setEnabled(apply->isEnabled()&&item["kind"].toString()=="Texture");
+        saveStyle->setEnabled(object && object->hasSurface() && !object->locked);
+        applyGuides->setEnabled(exists && item["kind"].toString()=="Style" && !model->editMode);
     }
     void refresh(const QString &selected={}){
         const auto id=selected.isEmpty()?current():selected;
@@ -84,9 +89,10 @@ public:
         connect(header,&QToolButton::toggled,this,[=](bool on){body->setVisible(on);header->setArrowType(on?Qt::DownArrow:Qt::RightArrow);});
         search=new QLineEdit;search->setObjectName("textureSearch");search->setPlaceholderText("Search textures or collections…");bodyLayout->addWidget(search);
         filter=new QComboBox;filter->setObjectName("textureCollectionFilter");filter->addItem("All collections");bodyLayout->addWidget(filter);
-        auto *row=new QHBoxLayout;kind=new QComboBox;kind->addItem("All materials","");kind->addItem("Textures","Texture");kind->addItem("Presets","Preset");favorites=new QCheckBox("Favorites");favorites->setObjectName("textureFavoritesOnly");row->addWidget(kind);row->addWidget(favorites);bodyLayout->addLayout(row);
+        auto *row=new QHBoxLayout;kind=new QComboBox;kind->setObjectName("textureKindFilter");kind->addItem("All materials","");kind->addItem("Textures","Texture");kind->addItem("Presets","Preset");kind->addItem("Brand styles","Style");favorites=new QCheckBox("Favorites");favorites->setObjectName("textureFavoritesOnly");row->addWidget(kind);row->addWidget(favorites);bodyLayout->addLayout(row);
         list=new TextureList;list->setObjectName("textureItems");list->setViewMode(QListView::IconMode);list->setResizeMode(QListView::Adjust);list->setMovement(QListView::Static);list->setIconSize({96,72});list->setGridSize({112,110});list->setSpacing(3);list->setWordWrap(true);list->setDragEnabled(true);list->setMinimumHeight(180);list->setMaximumHeight(280);bodyLayout->addWidget(list);
         auto *actions=new QHBoxLayout;auto *import=new QPushButton("Import…");import->setObjectName("textureImport");auto *preset=new QPushButton("Save surface preset");preset->setObjectName("textureSavePreset");actions->addWidget(import);actions->addWidget(preset);bodyLayout->addLayout(actions);
+        saveStyle=new QPushButton("Save reusable brand style");saveStyle->setObjectName("textureSaveStyle");bodyLayout->addWidget(saveStyle);
         selection=new QLabel;selection->setWordWrap(true);bodyLayout->addWidget(selection);
         auto *form=new QFormLayout;form->setContentsMargins(0,0,0,0);name=new QLineEdit;name->setObjectName("textureName");collection=new QLineEdit;collection->setObjectName("textureCollection");favorite=new QCheckBox("Favorite");favorite->setObjectName("textureFavorite");form->addRow("Name",name);form->addRow("Collection",collection);form->addRow(favorite);bodyLayout->addLayout(form);
         save=new QPushButton("Save library details");save->setObjectName("textureSaveDetails");bodyLayout->addWidget(save);
@@ -97,6 +103,7 @@ public:
             if(TextureLibrary::apply(*model,*library,current(),{},&error,true))report("Texture layer added.");
             else report(error);
         });
+        applyGuides=new QPushButton("Apply this style's composition guides");applyGuides->setObjectName("textureApplyGuides");bodyLayout->addWidget(applyGuides);
         relink=new QPushButton;relink->setObjectName("textureRelink");bodyLayout->addWidget(relink);
         auto *bottom=new QHBoxLayout;exportButton=new QPushButton("Export preset…");exportButton->setObjectName("textureExport");remove=new QPushButton("Remove from library");remove->setToolTip("Keeps the image files used by existing scenes.");bottom->addWidget(exportButton);bottom->addWidget(remove);bodyLayout->addLayout(bottom);
         status=new QLabel;status->setWordWrap(true);status->setObjectName("textureStatus");bodyLayout->addWidget(status);
@@ -110,6 +117,8 @@ public:
             search->clear();favorites->setChecked(false);filter->setCurrentIndex(0);kind->setCurrentIndex(0);refresh(last);report(QString("Imported %1 item(s).").arg(count)+(failures.isEmpty()?QString():"\n"+failures.join('\n')));
         });
         connect(preset,&QPushButton::clicked,this,[this]{if(!model->active()){report("Select a text, shape or image first.");return;}QString error;const auto id=TextureLibrary::savePreset(*library,*model->active(),model->active()->name+" surface",&error);if(id.isEmpty()){report(error);return;}search->clear();favorites->setChecked(false);filter->setCurrentIndex(0);kind->setCurrentIndex(0);refresh(id);report("Surface preset saved. Rename it below.");});
+        connect(saveStyle,&QPushButton::clicked,this,[this]{if(!model->active()){report("Select a text, shape or image first.");return;}QString error;const auto id=TextureLibrary::saveStyle(*library,model->design,*model->active(),model->active()->name+" brand style",&error);if(id.isEmpty()){report(error);return;}search->clear();favorites->setChecked(false);filter->setCurrentIndex(0);kind->setCurrentIndex(0);refresh(id);report("Reusable brand style saved, including its composition guides.");});
+        connect(applyGuides,&QPushButton::clicked,this,[this]{QString error;report(TextureLibrary::applyStyleGuides(*model,*library,current(),&error)?"Composition guides applied to this scene.":error);});
         connect(save,&QPushButton::clicked,this,[this]{const auto id=current();QString error;const bool ok=TextureLibrary::update(*library,id,name->text(),collection->text(),favorite->isChecked(),&error);refresh(id);report(ok?"Library details saved.":error);});
         connect(relink,&QPushButton::clicked,this,[this]{const auto id=current(),old=TextureLibrary::file(TextureLibrary::entry(*library,id));const auto path=QFileDialog::getOpenFileName(this,"Relink texture",{},"Images (*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff)");if(path.isEmpty())return;QString error;
             QString replacement;

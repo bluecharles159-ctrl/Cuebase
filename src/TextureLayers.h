@@ -1,5 +1,7 @@
 #pragma once
 #include "ElementDesign.h"
+#include <QJsonArray>
+#include <QStringList>
 
 namespace TextureLayers {
 inline QString prefix(const QString &id) {
@@ -17,7 +19,7 @@ inline QStringList order(const DObject &object) {
 inline QStringList files(const DObject &object) {
     QStringList keys;
     for (const auto &id : order(object)) {
-        for(const auto &field:QStringList{"file","maskFile"}) {
+        for(const auto &field:QStringList{"file","maskFile","reliefFile"}) {
             const auto key = prefix(id)+field;
             if (!object.style.value(key).toString().isEmpty()) keys.append(key);
         }

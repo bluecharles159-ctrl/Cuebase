@@ -1,5 +1,6 @@
 #include "ElementDesign.h"
 #include "MeshEmitter.h"
+#include "TextureLayers.h"
 #include "FormAnimation.h"
 #include "MirrorGeometry.h"
 #include "BevelGeometry.h"
@@ -537,6 +538,23 @@ struct LightW {
     LightData d;
 };
 
+float incidentLight(const LightW &light,const QVector3D &center,QVector3D &direction) {
+    if (light.d.kind=="Sun") {
+        direction=-light.dir;
+        return float(light.d.energy)*.3f;
+    }
+    const auto delta=light.pos-center;
+    const float distanceSquared=qMax(.05f,delta.lengthSquared());
+    direction=delta/qSqrt(distanceSquared);
+    float intensity=float(light.d.energy)/(4.f*float(M_PI)*distanceSquared)*.3f;
+    if(light.d.kind=="Spot") {
+        const float half=float(qDegreesToRadians(light.d.spotSize/2));
+        const float outer=qCos(half),inner=qCos(half*float(1-light.d.spotBlend));
+        intensity*=qBound(0.f,(QVector3D::dotProduct(-direction,light.dir)-outer)/(inner-outer+1e-4f),1.f);
+    }
+    return intensity;
+}
+
 double cross2D(QPointF a, QPointF b) {
     return a.x()*b.y() - a.y()*b.x();
 }
@@ -689,21 +707,7 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
         const float shin = 8 + 120 * float(1 - qBound(0.0, m.roughness, 1.0)), specK = 0.55f * float(1 - qBound(0.0, m.roughness, 1.0));
         for (const LightW &L : lights) {
             QVector3D ld;
-            float I;
-            if (L.d.kind == "Sun") {
-                ld = -L.dir;
-                I = float(L.d.energy) * 0.3f;
-            } else {
-                const QVector3D v = L.pos - center;
-                const float d2 = qMax(0.05f, v.lengthSquared());
-                ld = v / qSqrt(d2);
-                I = float(L.d.energy) / (4.0f * float(M_PI) * d2) * 0.3f;
-                if (L.d.kind == "Spot") {
-                    const float half = float(qDegreesToRadians(L.d.spotSize / 2));
-                    const float ca = QVector3D::dotProduct(-ld, L.dir), outer = qCos(half), inner = qCos(half * float(1 - L.d.spotBlend));
-                    I *= qBound(0.0f, (ca - outer) / (inner - outer + 1e-4f), 1.0f);
-                }
-            }
+            const float I=incidentLight(L,center,ld);
             float lam = QVector3D::dotProduct(n, ld);
             if (L.d.kind == "Area") lam = (lam + 0.3f) / 1.3f;  // soft: an area light wraps round
             if (lam <= 0 || I <= 0) continue;
@@ -730,10 +734,37 @@ void ElementDesign::paint(QPainter &p, const QRectF &rect, const ViewCam &cam, q
     };
 
     for (const DObject &source : objects) {
-        const DObject obj = source.evaluated(ms);
+        DObject obj = source.evaluated(ms);
         if (!effectiveVisible(obj) || !obj.isRenderable() || o.skip.contains(obj.id)) continue;
         const DProps pr = propsAt(obj, ms);
         const QMatrix4x4 W = worldMatrix(obj,ms);
+        if (obj.hasSurface() && (o.shade==PaintOpts::Rendered || o.shade==PaintOpts::MaterialPreview)) {
+            const auto files=TextureLayers::files(obj);
+            if(std::any_of(files.cbegin(),files.cend(),[](const QString &key){return key.endsWith(".reliefFile");})) {
+                // Capture illumination only on the evaluated surface used for this frame.
+                // Map world-space directions into its local texture tangent frame.
+                const auto tangent=W.mapVector({1,0,0}).normalized();
+                const auto up=W.mapVector({0,1,0});
+                const auto normal=QVector3D::crossProduct(tangent,up).normalized();
+                const auto bitangent=QVector3D::crossProduct(normal,tangent);
+                const auto center=W.map(obj.surfaceOffset());
+                QJsonArray samples;
+                if(o.shade==PaintOpts::MaterialPreview) {
+                    samples.append(QJsonArray{.45,.4,.8,.85,.85,.85,false});
+                } else if(!obj.mat.shadeless) {
+                    for(const auto &light:lights) {
+                        QVector3D direction;
+                        const auto energy=incidentLight(light,center,direction);
+                        if(energy<=0)continue;
+                        samples.append(QJsonArray{QVector3D::dotProduct(direction,tangent),
+                            QVector3D::dotProduct(direction,bitangent),QVector3D::dotProduct(direction,normal),
+                            energy*light.d.color.redF(),energy*light.d.color.greenF(),energy*light.d.color.blueF(),
+                            light.d.kind=="Area"});
+                    }
+                }
+                obj.style["render.reliefLights"]=samples;
+            }
+        }
         const auto clip=overflowClip(obj,ms,cam,rect,o.clip?rect:p.transform().inverted().mapRect(QRectF(p.viewport())));
         const double alpha = qBound(0.0, pr.opacity * obj.mat.alpha, 1.0);
         if (alpha <= 0.003) continue;
