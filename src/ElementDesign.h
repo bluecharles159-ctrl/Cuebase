@@ -83,6 +83,9 @@ struct LightData {
 struct PhysicsData {
     bool enabled = false, active = true;  // active bodies fall; passive ones just stand in the way
     double mass = 1.0, friction = 0.5, bounce = 0.4;
+    // Collision filtering: two bodies interact only when each one's mask
+    // includes the other's group. The defaults keep every body colliding.
+    int group = 1, mask = -1;
 };
 
 struct Modifier {
@@ -197,6 +200,9 @@ struct RenderSettings {  // how the display settings reach the 3D renderer
 struct ElementDesign {
     int backLayer=0,frontLayer=0;
     QJsonArray animationCues;
+    // Shared material styles: id -> {name, properties}. Objects reference one
+    // through style["material.style"]; editing the style updates every user.
+    QJsonObject materialStyles;
     QVector3D cursor;
     QVector<DObject> objects;
     World world;
@@ -230,6 +236,10 @@ struct ElementDesign {
     const Mesh &evalMesh(const DObject &o, qint64 ms) const;  // modifiers applied
     ViewCam sceneCamera(qint64 ms, double aspect) const;
     QImage textureFor(const DObject &o,qint64 ms=0) const;
+    // Applies the object's shared material style (if any) on top of its own
+    // surface properties. Local keys win, so per-object overrides survive.
+    DObject resolvedSurface(const DObject &o) const;
+    QString materialStyleName(const QString &id) const;
 
     // Draws the scene seen from cam into rect.
     void paint(QPainter &p, const QRectF &rect, const ViewCam &cam, qint64 ms, const PaintOpts &opts) const;

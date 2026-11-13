@@ -12,6 +12,15 @@ public:
     void returnToProgram();
     void cancel();
     bool active()const{return phase!=Off;}
+    // Independent replay controls: they act on the replay only and never touch
+    // the program's own transport.
+    void setPaused(bool value);
+    bool paused()const{return m_paused;}
+    void setSpeed(double value);
+    double speed()const{return m_speed;}
+    void seekTo(qint64 positionMs);
+    qint64 rangeStart()const{return rangeFrom;}
+    qint64 rangeEnd()const{return end;}
     qint64 segmentElapsed()const{return index>=0?position-starts[index]:0;}
     Phase phase=Off;
     qint64 position=0,elapsed=0,phaseTime=0;
@@ -27,8 +36,9 @@ private:
     void sync();
     Playout *play;Library *library;
     QList<Segment> segments;QVector<qint64> starts;
-    qint64 end=0,last=0,pending=-1,lastReady=0;
+    qint64 end=0,last=0,pending=-1,lastReady=0,rangeFrom=0;
     int index=-1;bool resume=false;
+    bool m_paused=false;double m_speed=1.;
     QElapsedTimer clock;QTimer timer;
     QMediaPlayer *player;QAudioOutput *audio;QVideoSink *sink;
     DesignAudio *layers;

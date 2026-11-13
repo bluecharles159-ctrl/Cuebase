@@ -116,6 +116,18 @@ public:
 
     static DProps decompose(const QMatrix4x4 &m);
 
+    // ---- shared material styles (task 53)
+    // Creates a style from the active object's current surface and links it.
+    QString createMaterialStyle(const QString &name);
+    // Links / unlinks the selected objects to an existing style.
+    bool assignMaterialStyle(const QString &styleId);
+    bool detachMaterialStyle();
+    // Writes a property into the style so every linked object updates.
+    bool setMaterialStyleProperty(const QString &styleId,const QString &key,const QJsonValue &value);
+    bool renameMaterialStyle(const QString &styleId,const QString &name);
+    bool removeMaterialStyle(const QString &styleId);
+    QStringList materialStyleIds() const;
+
     void notify() { emit changed(); }
 
 signals:

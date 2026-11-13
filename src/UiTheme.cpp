@@ -91,7 +91,7 @@ QCheckBox { spacing:4px; }
 void showUiSettings(QWidget *parent,const std::function<void()> &workspaceSetup){
     auto *dialog=roundedModal(parent,"Settings");dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->resize(560,340);
     auto *outer=new QVBoxLayout(dialog);outer->setContentsMargins(16,16,16,16);auto *heading=new QLabel("Settings");heading->setStyleSheet("font-size:14px;font-weight:600;");outer->addWidget(heading);
-    auto *row=new QHBoxLayout;auto *categories=new QListWidget;categories->setObjectName("settingsSections");categories->addItems({"General","Theme","Timeline"});categories->setFixedWidth(125);row->addWidget(categories);
+    auto *row=new QHBoxLayout;auto *categories=new QListWidget;categories->setObjectName("settingsSections");categories->addItems({"General","Theme","Timeline","Layout"});categories->setFixedWidth(125);row->addWidget(categories);
     auto *pages=new QStackedWidget;auto *general=new QWidget;auto *generalLayout=new QVBoxLayout(general);auto *intro=new QLabel("Workspace appearance is saved on this computer.\nBroadcast content and exported graphics keep their own colors.");intro->setWordWrap(true);generalLayout->addWidget(intro);generalLayout->addStretch();pages->addWidget(general);
     auto *appearance=new QWidget;auto *form=new QFormLayout(appearance);form->setContentsMargins(18,4,4,4);auto *themes=new QComboBox;themes->setObjectName("applicationTheme");themes->addItems({"Studio Blue","Current","Darker","Light"});themes->setCurrentText(currentUiTheme());form->addRow("Theme",themes);auto *hint=new QLabel("Changes apply immediately to both workspaces.");hint->setWordWrap(true);form->addRow(hint);pages->addWidget(appearance);row->addWidget(pages,1);outer->addLayout(row,1);
     if(workspaceSetup){
@@ -105,6 +105,11 @@ void showUiSettings(QWidget *parent,const std::function<void()> &workspaceSetup)
     preference("Show video thumbnails","studio/timelineThumbnails","timelineThumbnails");
     preference("Show audio waveforms","studio/timelineWaveforms","timelineWaveforms");
     auto *timelineHint=new QLabel("Previews follow the source section used by each clip, including its trim.\nPan to inspect the timeline; press F to follow the broadcast again.");timelineHint->setWordWrap(true);timelineForm->addRow(timelineHint);pages->addWidget(timeline);
+    auto *layoutPage=new QWidget;auto *layoutForm=new QFormLayout(layoutPage);layoutForm->setContentsMargins(18,4,4,4);
+    auto *layoutPreset=new QComboBox;layoutPreset->setObjectName("layoutPreset");layoutPreset->addItems({"Editing","Preview","Broadcast"});layoutPreset->setCurrentText(QSettings().value("layout/preset","Broadcast").toString());layoutForm->addRow("Workspace layout",layoutPreset);
+    auto *layoutHint=new QLabel("Presets move the existing panels without recreating editors or losing unsaved work. Reset Layout in the Window menu restores the default sizes.");layoutHint->setWordWrap(true);layoutForm->addRow(layoutHint);
+    QObject::connect(layoutPreset,&QComboBox::currentTextChanged,dialog,[](const QString &name){QSettings().setValue("layout/preset",name);for(auto *window:qApp->topLevelWidgets())if(window->metaObject()->indexOfMethod("applyLayoutPreset(QString)")>=0){QMetaObject::invokeMethod(window,"applyLayoutPreset",Qt::DirectConnection,Q_ARG(QString,name));break;}});
+    pages->addWidget(layoutPage);
     QObject::connect(categories,&QListWidget::currentRowChanged,pages,&QStackedWidget::setCurrentIndex);QObject::connect(themes,&QComboBox::currentTextChanged,dialog,[](const QString &name){applyUiTheme(name);});categories->setCurrentRow(0);
     auto *close=new QPushButton("Done");close->setAutoDefault(false);QObject::connect(close,&QPushButton::clicked,dialog,&QDialog::accept);outer->addWidget(close,0,Qt::AlignRight);dialog->open();
 }
