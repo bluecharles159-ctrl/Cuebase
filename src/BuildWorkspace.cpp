@@ -708,6 +708,9 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     pform->addRow("Bounciness", bounce);
     auto *planarPhysics=new QCheckBox("Constrain to canvas plane");planarPhysics->setObjectName("physicsPlanar");planarPhysics->setToolTip("Keep depth fixed while allowing movement and rotation in the canvas plane.");pform->addRow(planarPhysics);
     auto *collisionMargin=dspin(.0001,.2,.001,4," m"),*surfaceThickness=dspin(.002,10,.01,3," m");collisionMargin->setObjectName("physicsMargin");surfaceThickness->setObjectName("physicsThickness");pform->addRow("Contact margin",collisionMargin);pform->addRow("Flat surface depth",surfaceThickness);
+    auto *physGroup=dspin(1,32767,1,0),*physMask=dspin(-1,32767,-1,0);physGroup->setObjectName("physicsGroup");physMask->setObjectName("physicsMask");
+    physGroup->setToolTip("Collision group this body belongs to. Two bodies interact only when each one's mask includes the other's group.");physMask->setToolTip("Which collision groups this body collides with. -1 collides with every group.");
+    pform->addRow("Collision group",physGroup);pform->addRow("Collides with",physMask);
     phl->addLayout(pform);
     auto *physHint = new QLabel("Gravity and the ground are set in the World tab. Press play to see bodies fall.");
     physHint->setWordWrap(true);
@@ -1078,6 +1081,7 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
             bounce->setValue(o->phys.bounce);
             planarPhysics->setChecked(o->style["physics.planar"].toBool(o->type!="Mesh"));planarPhysics->setEnabled(o->phys.enabled&&o->phys.active);
             collisionMargin->setValue(o->style["physics.margin"].toDouble(.005));surfaceThickness->setValue(o->style["physics.thickness"].toDouble(.04));collisionMargin->setEnabled(o->phys.enabled);surfaceThickness->setEnabled(o->phys.enabled);
+            physGroup->setValue(o->phys.group);physMask->setValue(o->phys.mask);physGroup->setEnabled(o->phys.enabled);physMask->setEnabled(o->phys.enabled);
             mass->setEnabled(o->phys.enabled&&o->phys.active);
             fric->setEnabled(o->phys.enabled);
             bounce->setEnabled(o->phys.enabled);
@@ -1365,6 +1369,8 @@ BuildWorkspace::BuildWorkspace(Library *lib, QWidget *parent) : QWidget(parent),
     connect(planarPhysics,&QCheckBox::toggled,this,[=,this](bool value){objEdit("pPlane",[&](DObject &o){o.style["physics.planar"]=value;});});
     connect(collisionMargin,&QDoubleSpinBox::valueChanged,this,[=,this](double value){objEdit("pMargin",[&](DObject &o){o.style["physics.margin"]=value;});});
     connect(surfaceThickness,&QDoubleSpinBox::valueChanged,this,[=,this](double value){objEdit("pThickness",[&](DObject &o){o.style["physics.thickness"]=value;});});
+    connect(physGroup,&QDoubleSpinBox::valueChanged,this,[=,this](double value){objEdit("pGroup",[&](DObject &o){o.phys.group=int(value);});});
+    connect(physMask,&QDoubleSpinBox::valueChanged,this,[=,this](double value){objEdit("pMask",[&](DObject &o){o.phys.mask=int(value);});});
 
     auto worldEdit = [=, this](const QString &tag, std::function<void(World &)> f) {
         if (*syncing) return;

@@ -51,6 +51,43 @@
 class BuildTests:public QObject {
     Q_OBJECT
 private slots:
+    void sharedMaterialStyles(){
+        Library library;BuildModel model;auto scene=ElementDesign::defaultScene();
+        DObject first;first.id="style-a";first.type="Shape";first.w=4;first.h=3;first.base.rot={90,0,0};first.mat.shadeless=true;first.mat.color=QColor("#c0392b");first.style["corner.radius"]=12.;first.style["fill.end"]="#2c3e50";scene.objects.append(first);
+        DObject second=first;second.id="style-b";second.base.loc.setX(5);second.mat.color=QColor("#27ae60");scene.objects.append(second);
+        model.reset(scene);model.select(first.id);
+        const auto styleId=model.createMaterialStyle("Brand surface");QVERIFY(!styleId.isEmpty());
+        QCOMPARE(model.byId(first.id)->style.value("material.style").toString(),styleId);
+        QVERIFY(!model.byId(first.id)->style.contains("corner.radius"));
+        QCOMPARE(model.design.materialStyleName(styleId),QString("Brand surface"));
+        // A second object links to the same style and picks up its values.
+        model.setSelection({second.id},second.id);QVERIFY(model.assignMaterialStyle(styleId));
+        QCOMPARE(model.byId(second.id)->style.value("material.style").toString(),styleId);
+        QCOMPARE(model.design.resolvedSurface(*model.byId(second.id)).style.value("corner.radius").toDouble(),12.);
+        // Editing the shared style updates every linked object.
+        QVERIFY(model.setMaterialStyleProperty(styleId,"corner.radius",QJsonValue(30.)));
+        QCOMPARE(model.design.resolvedSurface(*model.byId(first.id)).style.value("corner.radius").toDouble(),30.);
+        QCOMPARE(model.design.resolvedSurface(*model.byId(second.id)).style.value("corner.radius").toDouble(),30.);
+        // A local override still wins over the shared value.
+        model.byId(second.id)->style["corner.radius"]=4.;
+        QCOMPARE(model.design.resolvedSurface(*model.byId(second.id)).style.value("corner.radius").toDouble(),4.);
+        QCOMPARE(model.design.resolvedSurface(*model.byId(first.id)).style.value("corner.radius").toDouble(),30.);
+        // Styles survive a save/reopen round trip.
+        const auto restored=ElementDesign::fromJson(model.design.toJson());
+        QCOMPARE(restored.materialStyleName(styleId),QString("Brand surface"));
+        QCOMPARE(restored.resolvedSurface(*restored.find(first.id)).style.value("corner.radius").toDouble(),30.);
+        // Detaching bakes the shared values so the look does not change.
+        model.setSelection({first.id},first.id);QVERIFY(model.detachMaterialStyle());
+        QVERIFY(!model.byId(first.id)->style.contains("material.style"));
+        QCOMPARE(model.byId(first.id)->style.value("corner.radius").toDouble(),30.);
+        // Removing a style keeps linked objects looking the same. Re-assigning
+        // cleared the local override, so the baked value is the shared one.
+        model.setSelection({second.id},second.id);QVERIFY(model.assignMaterialStyle(styleId));
+        QVERIFY(model.removeMaterialStyle(styleId));
+        QVERIFY(!model.design.materialStyles.contains(styleId));
+        QVERIFY(!model.byId(second.id)->style.contains("material.style"));
+        QCOMPARE(model.byId(second.id)->style.value("corner.radius").toDouble(),30.);
+    }
     void lightingModesHierarchyAndExport(){
         Library library;BuildModel model;auto scene=ElementDesign::defaultScene();scene.objects.erase(std::remove_if(scene.objects.begin(),scene.objects.end(),[](const DObject &o){return o.type=="Light";}),scene.objects.end());scene.world.transparent=false;scene.world.color=QColor("#393939");scene.world.ambient=.02;
         DObject cube;cube.id="lit-cube";cube.type="Mesh";cube.mesh=Mesh::primitive("Cube");cube.base.scl={2,2,2};cube.base.rot={20,0,25};cube.mat.color=QColor("#74a7db");scene.objects.append(cube);DObject group;group.id="light-rig";group.type="Group";scene.objects.append(group);DObject light;light.id="key-light";light.type="Light";light.parentId=group.id;light.base.loc={0,-6,0};light.base.rot={90,0,0};light.light.color=QColor("#ffe0b0");scene.objects.append(light);model.reset(scene);

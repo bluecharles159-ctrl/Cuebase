@@ -99,7 +99,7 @@ struct RigidBodySimulation::Impl {
             if(!body->active){body->rigid->setCollisionFlags((body->rigid->getCollisionFlags()&~btCollisionObject::CF_STATIC_OBJECT)|btCollisionObject::CF_KINEMATIC_OBJECT);body->rigid->setActivationState(DISABLE_DEACTIVATION);}
             else {const float extent=qMax(.002f,std::min({high.x()-low.x(),high.y()-low.y(),high.z()-low.z()}));body->rigid->setCcdMotionThreshold(extent*.5f);body->rigid->setCcdSweptSphereRadius(extent*.2f);}
             QMatrix4x4 shift;shift.translate(-body->center);body->renderOffset=shift*body->initialWorld;
-            world.addRigidBody(body->rigid.get());bodies.push_back(std::move(body));
+            world.addRigidBody(body->rigid.get(),source.phys.group,source.phys.mask);bodies.push_back(std::move(body));
         }
     }
     ~Impl(){for(auto &body:bodies)world.removeRigidBody(body->rigid.get());bodies.clear();}

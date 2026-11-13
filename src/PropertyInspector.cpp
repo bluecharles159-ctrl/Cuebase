@@ -22,6 +22,7 @@
 #include <QMessageBox>
 #include <QMenu>
 #include <QLineEdit>
+#include <QInputDialog>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QToolButton>
@@ -342,6 +343,7 @@ void PropertyInspector::rebuild(){
     auto *o=m->active();QString sig=o?o->id+o->type+QString::number(m->sel.size()):QString("none");
     if(o && o->hasSurface())sig+=QString::fromUtf8(QJsonDocument(o->style.value("mask.stack").toArray()).toJson(QJsonDocument::Compact))+QString::number(o->locked);
     if(o && o->hasSurface())sig+=QString::fromUtf8(QJsonDocument(o->style.value("texture.stack").toArray()).toJson(QJsonDocument::Compact))+selectedTextureLayers.value(o->id);
+    sig+=QString::fromUtf8(QJsonDocument(m->design.materialStyles).toJson(QJsonDocument::Compact));
     if(sig==signature)return;signature=sig;sync.clear();
     while(auto *item=layout->takeAt(0)){if(item->widget())item->widget()->deleteLater();delete item;}
     if(!o){layout->addWidget(new QLabel("Select a layer to inspect its properties."));layout->addStretch();return;}
@@ -657,6 +659,30 @@ void PropertyInspector::rebuild(){
     }
     if(!multi&&(o->surfaceType()=="Shape"||o->surfaceType()=="Text"||o->surfaceType()=="Image")){
         textureControls(*o);
+        auto *shared=section("SHARED MATERIAL STYLE",false);
+        auto *styleBox=new QComboBox;styleBox->setObjectName("materialStyle");shared->addRow("Style",styleBox);
+        auto *styleRow=new QWidget;auto *styleLayout=new QHBoxLayout(styleRow);styleLayout->setContentsMargins(0,0,0,0);styleLayout->setSpacing(3);
+        auto *createStyle=new QPushButton("Create from this");createStyle->setObjectName("createMaterialStyle");
+        auto *detachStyle=new QPushButton("Detach");detachStyle->setObjectName("detachMaterialStyle");
+        styleLayout->addWidget(createStyle);styleLayout->addWidget(detachStyle);shared->addRow(styleRow);
+        auto *styleHint=new QLabel("Linked objects share these surface values. Local edits still win, so per-object overrides survive.");styleHint->setWordWrap(true);shared->addRow(styleHint);
+        sync.append([=,this]{if(auto *current=m->active()){
+            QSignalBlocker block(styleBox);styleBox->clear();styleBox->addItem("Not shared",QString());
+            for(const auto &id:m->materialStyleIds())styleBox->addItem(m->design.materialStyleName(id),id);
+            const auto linked=current->style.value("material.style").toString();
+            const int at=styleBox->findData(linked);styleBox->setCurrentIndex(at>=0?at:0);
+            detachStyle->setEnabled(!linked.isEmpty());
+        }});
+        connect(styleBox,&QComboBox::activated,this,[=,this](int index){
+            const auto id=styleBox->itemData(index).toString();
+            if(id.isEmpty()){m->detachMaterialStyle();return;}
+            m->assignMaterialStyle(id);
+        });
+        connect(createStyle,&QPushButton::clicked,this,[=,this]{
+            bool ok=false;const auto name=QInputDialog::getText(this,"Shared material style","Name for this style",QLineEdit::Normal,m->active()?m->active()->name:QString(),&ok);
+            if(ok&&!name.trimmed().isEmpty())m->createMaterialStyle(name);
+        });
+        connect(detachStyle,&QPushButton::clicked,this,[=,this]{m->detachMaterialStyle();});
         auto *overflow=section("OVERFLOW",false);choice(overflow,"X","overflow.x",{"Visible","Hidden"},"Visible");choice(overflow,"Y","overflow.y",{"Visible","Hidden"},"Visible");
     }
     if(!multi && o->type=="Mesh" && !o->hasSurface()){

@@ -50,6 +50,7 @@ private:
     void buildUi();
     QWidget *buildPreview();
     void resetLayout();
+    Q_INVOKABLE void applyLayoutPreset(const QString &name);
     void toggleDevTools();
     void log(const QString &msg);
     QList<QPair<QString, QString>> shortcutRows() const;

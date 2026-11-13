@@ -1,6 +1,6 @@
 # Cuebase completion counter
 
-Updated 2026-11-09. **62 of 84 tasks completed — 22 remaining.**
+Updated 2026-11-13. **63 of 84 tasks completed — 21 remaining.**
 
 The Claude transcript adds four distinct acceptance groups (81–84). Row 06 remains
 open: converted surfaces now retain their Inspector controls and unchanged
@@ -41,7 +41,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 ## Appearance and studio interface
 
 - [ ] 18. Compact Inspector styling, indentation and collapsible groups across all panels.
-- [ ] 19. Studio Blue default, retained presets, thin scrollbars and settings categories; full audit.
+- [ ] 19. Studio Blue default, retained presets, thin scrollbars and settings categories; full audit. Studio Blue default, four retained presets, 4 px thin scrollbars, General/Theme/Timeline/Layout categories and the Layout preset picker are implemented. The full cross-panel visual audit is still outstanding.
 - [ ] 20. Distinct licensed icons and consistent rounded menus, hover states and modals.
 - [x] 21. Integrated title bar, Settings before Minimize and window/channel transitions. Build 76 verified workspace and channel captions, Settings placement, switching workspaces, and activating a second channel window.
 - [x] 22. Programs grid/list, thumbnails, metadata, playlists, search and saved-scene switching. Build 76 passed the Programs editor workflow for assignment, metadata search after refresh, playlist rename/removal and reopening saved data. The Build library test verified switching a modified scene and starting a new scene.
@@ -60,7 +60,7 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 - [x] 32. Fixed-center Studio playhead, moving timeline, frame stepping and navigation. Build 64 verified centering across resizes, pan, fit and reveal, fractional-rate keyboard/wheel stepping and paused/off-air state preservation on Windows.
 - [x] 33. Source-aligned thumbnail strips/waveforms and persistent Timeline settings. Verified by `resumed-preview-handoff-results.txt` (9 passing focused cases, including both trim modes); native/performance release gates remain separate.
 - [x] 34. Current-program scrubber, private preview and continuously visible live picture-in-picture (Build 58).
-- [ ] 35. Return-to-live overlay/animation and independent replay controls; live-camera replay gap.
+- [ ] 35. Return-to-live overlay/animation and independent replay controls; live-camera replay gap. Return-to-live overlay/animation and independent replay transport (pause/resume, 0.25–4× speed, range scrubbing) now act on the replay only, leaving the program playhead, pause state and speed untouched. Replaying a live camera segment that was not recorded still reports "this live segment has no recording", so the live-camera replay gap remains open.
 - [x] 36. Black-screen override, looping alternate content, logo presets and editable/error messages (Build 58).
 - [x] 37. Timed multi-source split screens and five smooth transition presets (Build 55, multiple Build scenes verified; physical camera inputs require hardware validation).
 - [x] 38. Control-panel tool navigation and wheel-adjusted volume controls with useful meters (Build 60).
@@ -84,17 +84,17 @@ a row, update this file and report “X of 84 tasks completed — Y remaining.�
 - [x] 50. Work, Material and Final appearance, lighting parity and adaptive quality. Build 86 passed native Windows tests for all four light types in Build Final, PNG export and Studio output. Auto responds to measured render time at the project frame rate. The zoomed backdrop fixture recorded median times of 112.4 ms at Full, 26.5 ms at Half and 7.7 ms at Quarter on the GitHub runner. See `native-build-preview-results.txt` and `native-studio-lighting-results.txt`.
 - [x] 51. Configurable composition guides, margins, colors, responsive layout, dragging and snapping. Builds 79–80 verified guide snapping and responsive references. Build 88 passed native guide dragging, undo, portrait references and optional PNG guide-proof exports. Build 89 verified keyed artwork and child alignment, editable frame pins, and preserved object sizes in portrait with both camera types.
 - [x] 52. Texture library, collections/favorites, reusable presets, missing-file repair and portability. Material panel, managed image imports, stable IDs, search/filtering, favorites, scene drag/drop, presets, undo/redo, save/reopen, missing repair, portable sharing and failed-save rollback pass 9 focused cases in `texture-library-verified-results.txt`; pixel blend checks and animated PNG equality pass. Full editor suite: 55 passing cases in `texture-editor-regression-results.txt`. Captures inspected. This covers 2D text/shape/image surface materials; layered/PBR materials remain task 53.
-- [ ] 53. Ordered material layers, mapping/blends, shared styles and evaluated surface properties.
+- [x] 53. Ordered material layers, mapping/blends, shared styles and evaluated surface properties. Ordered texture layers with per-layer Fit/Tile mapping, Normal/Multiply/Screen/Overlay blending, tint/opacity, masks and reordering (tasks 52/54) combine with named shared material styles: `ElementDesign::materialStyles` plus `style["material.style"]`, resolved through `resolvedSurface` so local values and animation keys still win. Create/link/detach/delete/rename propagate to every linked object, detach and delete bake the shared values so appearance is preserved, and styles survive save/reopen. `BuildTests::sharedMaterialStyles` passes; the full Build suite is 64 passing with one pre-existing unrelated failure.
 - [x] 54. Editable shape/alpha/luma/gradient/text/brush masks, combinations, feathering and animation (Build 48).
 - [x] 55. Shared text/logo appearance effects, reflections, bevel/extrusion, glass and light sweeps (Build 49).
 - [x] 56. Nondestructive surface painting, brush controls, ordered layers, masks and undo (Build 47).
 - [x] 57. Drawable editable effect splines, handles, moving-object attachment and animated paths. Windows builds 81–84 verified freehand drawing, handle editing, splitting, parent motion, animated blending between two authored paths, save/reopen and scrubbed output.
 - [ ] 58. Particle/mesh emitters, sparks, fire, smoke, fog, dust, debris, liquid and atmospheric presets. Build 78 verified surface particles and a portable mesh stamp. Build 83 verified independent point and area emitters. Build 85 verified scene mesh instances, depth scatter, path following and portable source geometry. Fluid and volumetric effects remain open.
 - [x] 59. Pixel/block/liquid/scattered-piece reveals with smooth/constant/step/flicker timing. Actual Inspector controls, undo/redo, saved settings, repeatable backward scrubbing and exact PNG parity for five surface styles × five timing modes pass in `reveal-workflow-results.txt` (5 cases). Rendered proof sheet inspected. These are 2D surface effects; 3D emitters/fluid simulation remain in task 58.
-- [ ] 60. Arbitrary transformed rigid bodies, collision filtering, custom shapes and simulation caches.
+- [ ] 60. Arbitrary transformed rigid bodies, collision filtering, custom shapes and simulation caches. Per-body collision group/mask is implemented, serialized with the scene, applied through Bullet's filter callback and exposed in the Inspector. Arbitrary transformed bodies, custom collision shapes and simulation caches remain open.
 - [x] 61. Stable reusable components, :: registration, search/quick insert and linked source revisions. Actual Build/browser workflow and saved-library reopening verified in `component-verified-results.txt`; individual renderable objects, with explicit updates in the open scene.
 - [x] 62. Local component overrides, selective propagation and default-linked animations/cues. Verified local/disabled groups, source ownership, duplicate cue IDs, stale review, rollback, undo and saved-instance reload. Scene-time cue and base-placement limits are recorded in REUSABLE-OBJECTS.md; independent object clocks and bulk cross-document updates are not implied.
-- [ ] 63. Full docking/tabbing/floating/maximize, persisted layouts, presets and safe reset.
+- [ ] 63. Full docking/tabbing/floating/maximize, persisted layouts, presets and safe reset. Named Editing/Preview/Broadcast presets move the existing splitters and panel visibility without recreating editors or losing unsaved work, the choice persists, and Reset Layout restores default sizes. Floating/docked tab groups and a maximized-panel mode remain open.
 - [x] 64. Master graphic templates, full-screen/lower-third/ID variants and shared brand tokens. Windows build 44 created three editable library scenes, updated shared content and typography, preserved local text, transforms and keys, and verified reload and cancellation. Native chooser capture reviewed.
 - [x] 65. Portable model/element/animation/baked-cue import/export, assets and round-trip checks (Build 46).
 

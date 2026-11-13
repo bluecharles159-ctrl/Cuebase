@@ -1075,3 +1075,115 @@ bool BuildModel::opSplit() {
     emit changed();
     return true;
 }
+
+// ------------------------------------------------- shared material styles
+namespace {
+bool surfaceKey(const QString &key){
+    return key.startsWith("texture.")||key.startsWith("fill.")||key.startsWith("background.")||
+           key.startsWith("material.")||key.startsWith("corner.")||key=="shape"||key.startsWith("stroke.");
+}
+}
+QStringList BuildModel::materialStyleIds() const {
+    auto ids=design.materialStyles.keys();
+    std::sort(ids.begin(),ids.end(),[this](const QString &a,const QString &b){
+        return design.materialStyleName(a).compare(design.materialStyleName(b),Qt::CaseInsensitive)<0;
+    });
+    return ids;
+}
+QString BuildModel::createMaterialStyle(const QString &name){
+    auto *object=active();
+    if(!object||!object->hasSurface()||object->locked)return {};
+    const auto trimmed=name.trimmed();
+    if(trimmed.isEmpty())return {};
+    pushUndo();
+    const auto id=QUuid::createUuid().toString(QUuid::WithoutBraces).left(8);
+    QJsonObject properties;
+    for(auto it=object->style.begin();it!=object->style.end();++it)
+        if(surfaceKey(it.key())&&!it.key().startsWith("texture.layer."))properties[it.key()]=it.value();
+    QJsonObject material{{"color",object->mat.color.name(QColor::HexArgb)},{"alpha",object->mat.alpha},
+                         {"roughness",object->mat.roughness},{"metallic",object->mat.metallic},
+                         {"emission",object->mat.emission},{"shadeless",object->mat.shadeless}};
+    design.materialStyles[id]=QJsonObject{{"name",trimmed},{"properties",properties},{"material",material}};
+    // The linked object now reads the shared values, so drop its local copies.
+    for(const auto &key:properties.keys())object->style.remove(key);
+    object->style["material.style"]=id;
+    notify();
+    return id;
+}
+bool BuildModel::assignMaterialStyle(const QString &styleId){
+    if(styleId.isEmpty()||!design.materialStyles.contains(styleId))return false;
+    auto targets=selected();
+    targets.erase(std::remove_if(targets.begin(),targets.end(),[](const DObject *object){
+        return !object||object->locked||!object->hasSurface();
+    }),targets.end());
+    if(targets.isEmpty())return false;
+    pushUndo();
+    for(auto *object:targets){
+        // Local surface values would shadow the shared style, so clear them.
+        QStringList local;
+        for(auto it=object->style.begin();it!=object->style.end();++it)
+            if(surfaceKey(it.key())&&!it.key().startsWith("texture.layer."))local.append(it.key());
+        for(const auto &key:local)object->style.remove(key);
+        object->style["material.style"]=styleId;
+    }
+    notify();
+    return true;
+}
+bool BuildModel::detachMaterialStyle(){
+    auto targets=selected();
+    targets.erase(std::remove_if(targets.begin(),targets.end(),[](const DObject *object){
+        return !object||object->locked||!object->style.contains("material.style");
+    }),targets.end());
+    if(targets.isEmpty())return false;
+    pushUndo();
+    for(auto *object:targets){
+        const auto styleId=object->style.value("material.style").toString();
+        const auto style=design.materialStyles.value(styleId).toObject();
+        // Bake the shared values into the object so its look does not change.
+        const auto properties=style.value("properties").toObject();
+        for(auto it=properties.begin();it!=properties.end();++it)object->style[it.key()]=it.value();
+        const auto material=style.value("material").toObject();
+        if(material.contains("color"))object->mat.color=QColor(material.value("color").toString());
+        if(material.contains("alpha"))object->mat.alpha=material.value("alpha").toDouble(object->mat.alpha);
+        if(material.contains("roughness"))object->mat.roughness=material.value("roughness").toDouble(object->mat.roughness);
+        if(material.contains("metallic"))object->mat.metallic=material.value("metallic").toDouble(object->mat.metallic);
+        if(material.contains("emission"))object->mat.emission=material.value("emission").toDouble(object->mat.emission);
+        if(material.contains("shadeless"))object->mat.shadeless=material.value("shadeless").toBool(object->mat.shadeless);
+        object->style.remove("material.style");
+    }
+    notify();
+    return true;
+}
+bool BuildModel::setMaterialStyleProperty(const QString &styleId,const QString &key,const QJsonValue &value){
+    if(!design.materialStyles.contains(styleId)||key.isEmpty())return false;
+    auto style=design.materialStyles.value(styleId).toObject();
+    auto properties=style.value("properties").toObject();
+    if(value.isNull()||value.isUndefined())properties.remove(key);else properties[key]=value;
+    style["properties"]=properties;
+    design.materialStyles[styleId]=style;
+    notify();
+    return true;
+}
+bool BuildModel::renameMaterialStyle(const QString &styleId,const QString &name){
+    if(!design.materialStyles.contains(styleId)||name.trimmed().isEmpty())return false;
+    auto style=design.materialStyles.value(styleId).toObject();
+    style["name"]=name.trimmed();
+    design.materialStyles[styleId]=style;
+    notify();
+    return true;
+}
+bool BuildModel::removeMaterialStyle(const QString &styleId){
+    if(!design.materialStyles.contains(styleId))return false;
+    pushUndo();
+    // Objects keep their current look by baking the shared values first.
+    for(auto &object:design.objects){
+        if(object.style.value("material.style").toString()!=styleId)continue;
+        const auto style=design.materialStyles.value(styleId).toObject();
+        const auto properties=style.value("properties").toObject();
+        for(auto it=properties.begin();it!=properties.end();++it)object.style[it.key()]=it.value();
+        object.style.remove("material.style");
+    }
+    design.materialStyles.remove(styleId);
+    notify();
+    return true;
+}

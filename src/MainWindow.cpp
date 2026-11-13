@@ -379,6 +379,9 @@ void MainWindow::buildMenus() {
         resetLayout();
         report("Layout reset");
     });
+    add(window, "Layout: Editing", QKeySequence(), [this] { applyLayoutPreset("Editing"); });
+    add(window, "Layout: Preview", QKeySequence(), [this] { applyLayoutPreset("Preview"); });
+    add(window, "Layout: Broadcast", QKeySequence(), [this] { applyLayoutPreset("Broadcast"); });
     add(window, "Minimize", QKeySequence(), [this] { showMinimized(); });
 }
 
@@ -765,6 +768,32 @@ void MainWindow::resetLayout() {
     m_root->setSizes({560, 240});
     m_control->show();
     m_preview->show();
+}
+
+// Named layout presets. They only move the existing splitters and panel
+// visibility, so no editor, model or unsaved document state is recreated.
+void MainWindow::applyLayoutPreset(const QString &name) {
+    if (name == "Preview") {
+        m_top->setSizes({900, 260});
+        m_left->setSizes({1100, 250});
+        m_root->setSizes({560, 240});
+        m_control->hide();
+        m_preview->show();
+    } else if (name == "Broadcast") {
+        m_top->setSizes({640, 520});
+        m_left->setSizes({1100, 250});
+        m_root->setSizes({560, 240});
+        m_control->show();
+        m_preview->show();
+    } else {  // Editing
+        m_top->setSizes({420, 740});
+        m_left->setSizes({1100, 250});
+        m_root->setSizes({560, 240});
+        m_control->show();
+        m_preview->show();
+    }
+    QSettings().setValue("layout/preset", name);
+    report(QString("Layout preset: %1").arg(name));
 }
 
 void MainWindow::closeEvent(QCloseEvent *event) {

@@ -41,7 +41,7 @@ bool Replay::start(qint64 from,qint64 to,const QString &entry,const QString &exi
     }
     auto effect=[&](const QString &id){if(id.startsWith("preset:"))return sceneEffectPreset(id.mid(7));if(const auto *e=library->element(id)){auto d=ElementDesign::fromJson(e->design);if(sceneEffect(d))return d;}return sceneEffectPreset("Fade");};
     entryEffect=effect(entry);exitEffect=effect(exit);segments=play->segments();starts.clear();for(int i=0;i<segments.size();++i)starts.append(play->segmentStartMs(i));
-    position=from;end=to;elapsed=phaseTime=0;index=-1;resume=pause&&play->state()==Playout::Playing;
+    position=from;rangeFrom=from;end=to;elapsed=phaseTime=0;index=-1;m_paused=false;m_speed=1.;resume=pause&&play->state()==Playout::Playing;
     if(resume)play->togglePause();phase=Enter;play->setReplayMix(0);last=lastReady=clock.elapsed();sync();timer.start();emit changed();return true;
 }
 void Replay::sync(){
@@ -58,15 +58,39 @@ void Replay::sync(){
     for(const auto &placement:library->placements){if(position<placement.startMs||position>=placement.startMs+placement.lengthMs())continue;const auto layer=library->layers.value(qBound(0,placement.layer,3));const auto level=layer.muted?0:gain*layer.volume/100.;if(placement.type=="Element"){if(layer.visible){const auto instance=library->placementElement(placement);const auto *element=&instance;const auto playback=play->graphicPlayback(*element,position,placement.startMs,placement.offsetMs);if(playback.visible)append(playback.resolved(*element),playback.time,level,playback.controlled,playback.advancing);}}else if(!placement.file.isEmpty())cues.append({"replay/placement/"+placement.id,placement.file,position-placement.startMs+placement.offsetMs,level,phase!=Leave,speed});}
     layers->sync(cues);
 }
+void Replay::setPaused(bool value){
+    if(!active()||m_paused==value)return;
+    m_paused=value;
+    if(value)player->pause();else if(phase!=Leave)player->play();
+    emit changed();
+}
+void Replay::setSpeed(double value){
+    const double clamped=qBound(.1,value,4.);
+    if(qFuzzyCompare(m_speed,clamped))return;
+    m_speed=clamped;
+    if(active())player->setPlaybackRate(m_speed);
+    emit changed();
+}
+void Replay::seekTo(qint64 positionMs){
+    if(!active())return;
+    position=qBound(rangeFrom,qMax(rangeFrom,end-1),positionMs);
+    elapsed=qMax<qint64>(0,position-rangeFrom);
+    phaseTime=0;
+    if(phase==Leave)phase=Running;
+    sync();
+    if(pending<0&&!segment.file.isEmpty())player->setPosition(segment.offsetMs+position-starts[qMax(0,index)]);
+    emit changed();
+}
 void Replay::tick(){
     const auto now=clock.elapsed();const auto dt=qBound(qint64(0),now-last,qint64(250));last=now;
     if(!active())return;
+    if(m_paused){sync();return;}
     // A decoder must be ready before advancing its playback clock.
     if((pending>=0||(player->hasVideo()&&frame.isNull()))&&phase!=Leave){if(now-lastReady>15000){cancel();emit failed("Replay media did not become ready in time.");}return;}
     lastReady=now;phaseTime+=dt;elapsed+=dt;
     if(phase==Leave){if(phaseTime>=exitEffect.durationMs){cancel();return;}}
     else {
-        const double speed=qBound(.1,sceneEffectValue(entryEffect,"scene.speed",elapsed,1),2.);
+        const double speed=qBound(.1,sceneEffectValue(entryEffect,"scene.speed",elapsed,1),2.)*m_speed;
         player->setPlaybackRate(speed);position=qMin(end,position+qRound64(dt*speed));
         if(position>=end){position=qMax<qint64>(0,end-1);returnToProgram();}
         else if(phase==Enter&&phaseTime>=entryEffect.durationMs){phase=Running;phaseTime=0;}

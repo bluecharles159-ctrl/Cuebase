@@ -145,8 +145,34 @@ void DObject::fitTextLayout(){
     if(style.value("text.autoFitY").toBool(true))height=qBound(1.,qCeil(doc.size().height()+2*inset)*1.,4096.)/kPxPerUnit;
     resizeSurface(width,height);
 }
+QString ElementDesign::materialStyleName(const QString &id) const {
+    if(id.isEmpty())return {};
+    return materialStyles.value(id).toObject().value("name").toString();
+}
+DObject ElementDesign::resolvedSurface(const DObject &source) const {
+    const auto styleId=source.style.value("material.style").toString();
+    if(styleId.isEmpty())return source;
+    const auto style=materialStyles.value(styleId).toObject();
+    if(style.isEmpty())return source;
+    DObject result=source;
+    // Shared properties are the base; anything the object already sets locally
+    // stays, so per-object overrides and animation keys keep working.
+    const auto properties=style.value("properties").toObject();
+    for(auto it=properties.begin();it!=properties.end();++it)
+        if(!result.style.contains(it.key()))result.style[it.key()]=it.value();
+    const auto material=style.value("material").toObject();
+    if(!material.isEmpty()){
+        if(material.contains("color"))result.mat.color=QColor(material.value("color").toString());
+        if(material.contains("alpha"))result.mat.alpha=material.value("alpha").toDouble(result.mat.alpha);
+        if(material.contains("roughness"))result.mat.roughness=material.value("roughness").toDouble(result.mat.roughness);
+        if(material.contains("metallic"))result.mat.metallic=material.value("metallic").toDouble(result.mat.metallic);
+        if(material.contains("emission"))result.mat.emission=material.value("emission").toDouble(result.mat.emission);
+        if(material.contains("shadeless"))result.mat.shadeless=material.value("shadeless").toBool(result.mat.shadeless);
+    }
+    return result;
+}
 QImage ElementDesign::baseTexture(const DObject &source) const {
-    DObject o=source;if(o.type=="Mesh"&&o.hasSurface())o.type=o.surfaceType();o.fitTextLayout();
+    DObject o=resolvedSurface(source);if(o.type=="Mesh"&&o.hasSurface())o.type=o.surfaceType();o.fitTextLayout();
     const QFileInfo media(o.image);
     QString signature=SurfaceMasks::fileSignature(o)+QString::fromUtf8(QJsonDocument(o.style).toJson(QJsonDocument::Compact))+
         QString("|%1|%2|%3|%4|%5|%6|%7").arg(o.type,o.text).arg(o.fontPx).arg(o.mat.color.name(QColor::HexArgb)).arg(o.w).arg(o.h).arg(o.image)+

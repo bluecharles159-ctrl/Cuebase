@@ -34,6 +34,7 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSignalBlocker>
+#include <QSlider>
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QToolButton>
@@ -49,6 +50,12 @@
 namespace {
 
 const char *kMediaFilter = "Media (*.mp4 *.mkv *.mov *.avi *.webm *.mp3 *.wav);;All files (*)";
+
+QString replayClock(qint64 ms) {
+    const int s = int(qMax<qint64>(0, ms) / 1000);
+    return s >= 3600 ? QString("%1:%2:%3").arg(s / 3600).arg(s / 60 % 60, 2, 10, QChar('0')).arg(s % 60, 2, 10, QChar('0'))
+                     : QString("%1:%2").arg(s / 60).arg(s % 60, 2, 10, QChar('0'));
+}
 
 QLabel *heading(const QString &title, const QString &sub) {
     auto *l = new QLabel(QString("<div style='font-size:12px; font-weight:700;'>%1</div>"
@@ -817,6 +824,31 @@ QWidget *makePlannerPage(Library *lib, Playout *play) {
     form->addRow("Replay entry effect",replayIn);form->addRow("Replay return effect",replayOut);
     auto *createEffect=new QPushButton(uiIcon("add"),"Create effect in Build");form->addRow(createEffect);QObject::connect(createEffect,&QPushButton::clicked,page,[=]{lib->requestEffect();});
     auto *returnReplay=new QPushButton(uiIcon("back"),"Return from replay");returnReplay->setEnabled(false);form->addRow(returnReplay);QObject::connect(returnReplay,&QPushButton::clicked,page,[=]{play->replay()->returnToProgram();});QObject::connect(play->replay(),&Replay::changed,page,[=]{returnReplay->setEnabled(play->replay()->active());});
+    // Independent replay transport: these act on the replay only, so the program
+    // keeps its own playhead, pause state and speed.
+    auto *replayRow=new QWidget;auto *replayLayout=new QHBoxLayout(replayRow);replayLayout->setContentsMargins(0,0,0,0);replayLayout->setSpacing(3);
+    auto *replayPause=new QPushButton(uiIcon("start"),QString());replayPause->setObjectName("replayPause");replayPause->setFixedSize(24,24);replayPause->setIconSize(QSize(14,14));replayPause->setToolTip("Pause / resume the replay");
+    auto *replaySpeed=new QComboBox;replaySpeed->setObjectName("replaySpeed");for(const auto &rate:QStringList{"0.25\u00d7","0.5\u00d7","1\u00d7","1.5\u00d7","2\u00d7","4\u00d7"})replaySpeed->addItem(rate);replaySpeed->setCurrentText("1\u00d7");replaySpeed->setToolTip("Replay speed");
+    auto *replayScrub=new QSlider(Qt::Horizontal);replayScrub->setObjectName("replayScrub");replayScrub->setRange(0,1000);replayScrub->setToolTip("Scrub within the replay range");
+    replayLayout->addWidget(replayPause);replayLayout->addWidget(replaySpeed);replayLayout->addWidget(replayScrub,1);
+    form->addRow("Replay controls",replayRow);
+    auto *replayTime=new QLabel;replayTime->setObjectName("replayTime");form->addRow(replayTime);
+    auto syncReplay=[=]{
+        auto *replay=play->replay();const bool on=replay->active();
+        replayRow->setEnabled(on);replayTime->setVisible(on);
+        if(!on){replayTime->clear();return;}
+        QSignalBlocker blockPause(replayPause),blockSpeed(replaySpeed),blockScrub(replayScrub);
+        replayPause->setIcon(uiIcon(replay->paused()?"start":"next"));
+        replayPause->setToolTip(replay->paused()?"Resume the replay":"Pause the replay");
+        replaySpeed->setCurrentText(QString::number(replay->speed(),'g',3)+"\u00d7");
+        const qint64 span=qMax<qint64>(1,replay->rangeEnd()-replay->rangeStart());
+        replayScrub->setValue(int(qBound<qint64>(0,replay->position-replay->rangeStart(),span)*1000/span));
+        replayTime->setText(QString("Replay %1 / %2").arg(replayClock(replay->position-replay->rangeStart()),replayClock(span)));
+    };
+    QObject::connect(replayPause,&QPushButton::clicked,page,[=]{auto *replay=play->replay();replay->setPaused(!replay->paused());});
+    QObject::connect(replaySpeed,&QComboBox::activated,page,[=](int index){play->replay()->setSpeed(replaySpeed->itemText(index).chopped(1).toDouble());});
+    QObject::connect(replayScrub,&QSlider::sliderMoved,page,[=](int value){auto *replay=play->replay();const qint64 span=qMax<qint64>(1,replay->rangeEnd()-replay->rangeStart());replay->seekTo(replay->rangeStart()+span*value/1000);});
+    QObject::connect(play->replay(),&Replay::changed,page,syncReplay);syncReplay();
 
     auto *addBtn = smallButton("Add Program");
     addBtn->setObjectName("save");
