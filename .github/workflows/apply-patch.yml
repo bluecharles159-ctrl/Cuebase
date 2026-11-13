@@ -1,0 +1,25 @@
+name: Apply prepared patch
+on:
+  workflow_dispatch:
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/cloud-build
+          fetch-depth: 0
+      - name: Apply patch
+        run: |
+          set -e
+          git config user.name "Cuebase Agent"
+          git config user.email "agent@cuebase.local"
+          base64 -d <<'PATCH_EOF' | xz -d > /tmp/change.patch
+PLACEHOLDER
+PATCH_EOF
+          git checkout -B work/complete-remaining-items
+          git apply --index --unidiff-zero /tmp/change.patch
+          git commit -m "Add shared material styles and independent replay controls"
+          git push origin work/complete-remaining-items
